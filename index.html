@@ -1035,16 +1035,16 @@ body { padding-bottom:88px; }
   </div>
   <!-- ══ 앱 설정: 이 앱을 굴리는 값들을 한 곳에서 ══ -->
   <div class="card">
-    <div class="card-title">🗂️ 카테고리</div>
+    <div class="card-title">🗂️ 카테고리 · 예산</div>
     <div id="cfg-cat-body"></div>
   </div>
   <div class="card">
-    <div class="card-title">🏦 계좌</div>
+    <div class="card-title">🏦 계좌 · 현재 잔액</div>
     <div id="cfg-acct-body"></div>
   </div>
   <div class="card">
-    <div class="card-title">💰 월 예산</div>
-    <div id="cfg-budget-body"></div>
+    <div class="card-title">💳 카드</div>
+    <div id="cfg-card-body"></div>
   </div>
   <div class="card">
     <div class="card-title">🎯 저축 월목표</div>
@@ -3593,109 +3593,291 @@ const CFG_LS = 'asset_cfg_v1';
 let CFG = { categories:{ '수입':[], '지출':[], '이동':[] }, accounts:[], budget:{}, settings:{} };
 try{ const raw = JSON.parse(LS.get(CFG_LS)||'null'); if(raw) CFG = Object.assign(CFG, raw); }catch(e){}
 function cfgSave(){ try{ LS.set(CFG_LS, JSON.stringify(CFG)); }catch(e){} }
-function cfgSetSubs(kind, i, val){
-  const arr = String(val||'').split(',').map(function(x){ return x.trim(); }).filter(Boolean);
-  if(CFG.categories[kind] && CFG.categories[kind][i]){ CFG.categories[kind][i].subs = arr; cfgSave(); }
-}
-function cfgToggleFold(id){ const el=document.getElementById(id); if(el) el.classList.toggle('folded'); }
-
 // 시트/코드 기본값에서 CFG 초안 만들기 (설정이 비어 있을 때만)
 function cfgSeedIfEmpty(){
   const c = CFG.categories;
   if(!c['지출'].length){
-    c['수입'] = Object.keys(CAT_IN_LABELS||{}).map(m=>({ major:m, subs:(CAT_IN_SUBS&&CAT_IN_SUBS[m])||[], flags:'' }));
-    c['지출'] = Object.keys(CAT_OUT_LABELS||{}).map(m=>({ major:m, subs:(CAT_OUT_SUBS&&CAT_OUT_SUBS[m])||[], flags:isFixedMajor(m)?'fixed':'' }));
-    c['이동'] = Object.keys(CAT_MV_LABELS||{}).map(m=>({ major:m, subs:(CAT_MV_SUBS&&CAT_MV_SUBS[m])||[], flags:SAVE_MAJORS.indexOf(m)>=0?'save':'' }));
+    c['수입'] = Object.keys(CAT_IN_LABELS||{}).map(m=>({ major:m, subs:(CAT_IN_SUBS&&CAT_IN_SUBS[m])||[], flags:'', budget:0, subBudget:{} }));
+    c['지출'] = Object.keys(CAT_OUT_LABELS||{}).map(m=>({ major:m, subs:(CAT_OUT_SUBS&&CAT_OUT_SUBS[m])||[], flags:isFixedMajor(m)?'fixed':'', budget:0, subBudget:{} }));
+    c['이동'] = Object.keys(CAT_MV_LABELS||{}).map(m=>({ major:m, subs:(CAT_MV_SUBS&&CAT_MV_SUBS[m])||[], flags:SAVE_MAJORS.indexOf(m)>=0?'save':'', budget:0, subBudget:{} }));
   }
+  // 구버전 호환: 따로 있던 CFG.budget 을 카테고리 안으로 옮긴다
+  ['수입','지출','이동'].forEach(k=>(c[k]||[]).forEach(x=>{
+    if(x.budget==null) x.budget = Number((CFG.budget||{})[x.major])||0;
+    if(!x.subBudget) x.subBudget = {};
+    if(!Array.isArray(x.subs)) x.subs = [];
+  }));
   if(!CFG.accounts.length){
     CFG.accounts = (STATE.acctsDef||[]).map(a=>({ key:a.key, label:a.label||a.key, group:a.group||'cash', bal:(STATE.initBal&&STATE.initBal[a.key])||0 }));
   }
-  if(!Object.keys(CFG.budget).length) CFG.budget = Object.assign({}, STATE.budget||{});
+  CFG.accounts.forEach(a=>{ if(a.asOf==null) a.asOf=''; });
+  if(!CFG.cards) CFG.cards = {};
   if(!Object.keys(CFG.settings).length) CFG.settings = { '급여일':25, '저축률목표':30, '카드실적목표':300000 };
   cfgSave();
 }
 
 const CFG_GROUPS = [['cash','현금·입출금'],['invest','투자·저축'],['contract','목적자금'],['debt','카드'],['longdebt','대출'],['estate','부동산']];
 
-// ── 카테고리 편집 ──
+// ── 표 공통 스타일 조각 ──
+const CT = {
+  row:'display:grid;grid-template-columns:22px 1fr 74px 108px 30px;gap:6px;align-items:center;',
+  rowSub:'display:grid;grid-template-columns:22px 1fr 74px 108px 30px;gap:6px;align-items:center;',
+  head:'display:grid;grid-template-columns:22px 1fr 74px 108px 30px;gap:6px;align-items:center;font-size:10.5px;color:var(--txt3);padding:0 0 5px;border-bottom:1px solid var(--line,#E5E8EB);',
+  inp:'width:100%;min-width:0;padding:7px 9px;border:1px solid #E5E8EB;border-radius:8px;font-size:13px;background:#FFF;',
+  num:'width:100%;min-width:0;padding:7px 9px;border:1px solid #E5E8EB;border-radius:8px;font-size:12.5px;text-align:right;background:#FFF;font-variant-numeric:tabular-nums;',
+  del:'width:26px;height:26px;border:1px solid #E5E8EB;border-radius:7px;background:var(--card);color:var(--txt3);cursor:pointer;font-size:12px;padding:0;',
+  add:'width:100%;padding:8px;border:1px dashed var(--blue);border-radius:9px;background:var(--blue-bg);color:var(--blue);font-size:12.5px;font-weight:700;cursor:pointer;'
+};
+const esc = v => String(v==null?'':v).replace(/"/g,'&quot;');
+const jq  = v => String(v==null?'':v).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+
+// ── 대분류 펼침 상태 ──
+let CFG_OPEN = {};
+function cfgToggleRow(kind, i){
+  const k = kind+'|'+i;
+  CFG_OPEN[k] = !CFG_OPEN[k];
+  renderCfgCategories();
+}
+function cfgSetSubs(kind, i, val){
+  const arr = String(val||'').split(',').map(function(x){ return x.trim(); }).filter(Boolean);
+  if(CFG.categories[kind] && CFG.categories[kind][i]){ CFG.categories[kind][i].subs = arr; cfgSave(); }
+}
+function cfgToggleFold(id){ const el=document.getElementById(id); if(el) el.classList.toggle('folded'); }
+
+// ── 소분류 조작 ──
+function cfgAddSub(kind, i){
+  const c = CFG.categories[kind][i];
+  c.subs = c.subs || []; c.subs.push('');
+  CFG_OPEN[kind+'|'+i] = true;
+  cfgSave(); renderCfgCategories();
+}
+function cfgRenameSub(kind, i, j, val){
+  const c = CFG.categories[kind][i];
+  const old = c.subs[j];
+  c.subs[j] = String(val||'').trim();
+  if(c.subBudget && old && c.subBudget[old]!=null && old!==c.subs[j]){
+    c.subBudget[c.subs[j]] = c.subBudget[old]; delete c.subBudget[old];
+  }
+  cfgSave();
+}
+function cfgDelSub(kind, i, j){
+  const c = CFG.categories[kind][i];
+  const nm = c.subs[j];
+  c.subs.splice(j,1);
+  if(c.subBudget) delete c.subBudget[nm];
+  cfgSave(); renderCfgCategories();
+}
+function cfgSetSubBudget(kind, i, j, val){
+  const c = CFG.categories[kind][i];
+  const nm = c.subs[j]; if(!nm) return;
+  c.subBudget = c.subBudget || {};
+  c.subBudget[nm] = Number(String(val).replace(/[^0-9]/g,''))||0;
+  cfgSave(); cfgRefreshTotals();
+}
+function cfgSetMajorBudget(kind, i, val){
+  CFG.categories[kind][i].budget = Number(String(val).replace(/[^0-9]/g,''))||0;
+  cfgSave(); cfgRefreshTotals();
+}
+// 소분류 예산이 있으면 대분류 예산은 그 합으로 본다
+function cfgMajorBudget(c){
+  const sub = Object.values(c.subBudget||{}).reduce((s,v)=>s+(Number(v)||0),0);
+  return sub>0 ? sub : (Number(c.budget)||0);
+}
+function cfgRefreshTotals(){
+  const el = document.getElementById('cfg-budget-total');
+  if(el) el.textContent = won((CFG.categories['지출']||[]).reduce((s,c)=>s+cfgMajorBudget(c),0));
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  카테고리 · 예산 (표 + 접기)
+//  좌측 열이 항상 카테고리라 표로 두는 게 읽기 쉽다.
+//  대분류를 누르면 소분류가 아래로 펼쳐지고, 예산도 소분류별로 넣을 수 있다.
+// ══════════════════════════════════════════════════════════════════
 function renderCfgCategories(){
   const el = document.getElementById('cfg-cat-body'); if(!el) return;
   cfgSeedIfEmpty();
-  const kinds = [['수입','💰',''],['지출','🧾','fixed'],['이동','🔄','save']];
-  el.innerHTML = `<div style="font-size:12px;color:var(--txt3);line-height:1.6;margin-bottom:10px">
-      대분류와 소분류를 정합니다. 지출은 <b>고정비</b> 여부, 이동은 <b>저축으로 셀지</b>를 체크하세요 — 저축률·재무 건강검진이 이 체크를 기준으로 계산됩니다.
-    </div>` +
-  kinds.map(([kind,emoji,flag])=>{
+
+  const kinds = [
+    ['지출','🧾','fixed','고정비','한 달에 쓸 예산'],
+    ['이동','🔄','save','저축','저축 항목만 체크'],
+    ['수입','💰','','','예산은 안 넣어도 됩니다']
+  ];
+
+  const block = (kind, emoji, flag, flagLabel, hint) => {
     const list = CFG.categories[kind]||[];
-    const rows = list.map((c,i)=>`
-      <div style="padding:7px 0;border-top:1px solid #F2F4F6">
-        <div style="display:flex;gap:6px;align-items:center">
-          <input value="${(c.major||'').replace(/"/g,'&quot;')}" placeholder="대분류"
-            oninput="CFG.categories['${kind}'][${i}].major=this.value; cfgSave()"
-            style="flex:1;min-width:0;padding:8px 10px;border:1px solid #E5E8EB;border-radius:9px;font-size:13px;font-weight:600">
-          ${flag?`<label style="flex:none;display:flex;align-items:center;gap:4px;font-size:11.5px;color:var(--txt2);white-space:nowrap">
-            <input type="checkbox" ${(c.flags||'').indexOf(flag)>=0?'checked':''}
-              onchange="CFG.categories['${kind}'][${i}].flags=this.checked?'${flag}':''; cfgSave(); cfgApply();">
-            ${flag==='fixed'?'고정비':'저축'}</label>`:''}
-          <button onclick="CFG.categories['${kind}'].splice(${i},1); cfgSave(); renderCfgCategories();"
-            style="flex:none;width:30px;height:30px;border:1px solid #E5E8EB;border-radius:9px;background:var(--card);color:var(--txt3);cursor:pointer">✕</button>
+    const rows = list.map((c,i)=>{
+      const open = !!CFG_OPEN[kind+'|'+i];
+      const subs = c.subs||[];
+      const subTotal = Object.values(c.subBudget||{}).reduce((s,v)=>s+(Number(v)||0),0);
+      const flagOn = (c.flags||'').indexOf(flag)>=0;
+
+      const subRows = open ? subs.map((sn,j)=>`
+        <div style="${CT.rowSub}padding:3px 0 3px 0">
+          <span></span>
+          <input value="${esc(sn)}" placeholder="소분류 이름"
+            onchange="cfgRenameSub('${kind}',${i},${j},this.value)"
+            style="${CT.inp}font-size:12.5px;margin-left:14px;width:calc(100% - 14px);border-color:#F0F2F4">
+          <span></span>
+          ${kind==='지출' ? `<input value="${(c.subBudget||{})[sn]||''}" placeholder="예산" inputmode="numeric"
+            oninput="cfgSetSubBudget('${kind}',${i},${j},this.value)" style="${CT.num}border-color:#F0F2F4">`
+            : '<span></span>'}
+          <button onclick="cfgDelSub('${kind}',${i},${j})" style="${CT.del}">✕</button>
+        </div>`).join('') + `
+        <div style="${CT.rowSub}padding:4px 0 8px">
+          <span></span>
+          <button onclick="cfgAddSub('${kind}',${i})" style="${CT.add}margin-left:14px;width:calc(100% - 14px);padding:6px">+ 소분류</button>
+          <span></span><span></span><span></span>
+        </div>` : '';
+
+      return `
+      <div style="border-top:1px solid #F2F4F6;padding:6px 0">
+        <div style="${CT.row}">
+          <button onclick="cfgToggleRow('${kind}',${i})" title="소분류 펼치기"
+            style="border:none;background:none;cursor:pointer;color:var(--blue);font-size:12px;padding:0;width:22px">
+            ${open?'▾':'▸'}<span style="font-size:9px;color:var(--txt3)">${subs.length||''}</span>
+          </button>
+          <input value="${esc(c.major)}" placeholder="대분류"
+            onchange="CFG.categories['${kind}'][${i}].major=this.value; cfgSave(); cfgApply();"
+            style="${CT.inp}font-weight:600">
+          ${flag ? `<label style="display:flex;align-items:center;justify-content:center;gap:3px;font-size:11px;color:var(--txt2);cursor:pointer">
+              <input type="checkbox" ${flagOn?'checked':''}
+                onchange="CFG.categories['${kind}'][${i}].flags=this.checked?'${flag}':''; cfgSave(); cfgApply();">
+              ${flagLabel}</label>` : '<span></span>'}
+          ${kind==='지출'
+            ? (subTotal>0
+                ? `<div style="text-align:right;font-size:12.5px;font-weight:700;color:var(--txt);font-variant-numeric:tabular-nums" title="소분류 예산의 합">${won(subTotal)}<div style="font-size:9px;color:var(--txt3);font-weight:400">소분류 합</div></div>`
+                : `<input value="${Number(c.budget)||''}" placeholder="예산" inputmode="numeric"
+                     oninput="cfgSetMajorBudget('${kind}',${i},this.value)" style="${CT.num}">`)
+            : '<span></span>'}
+          <button onclick="if(confirm('${jq(c.major)} 를 지울까요?')){CFG.categories['${kind}'].splice(${i},1); cfgSave(); renderCfgCategories(); cfgApply();}"
+            style="${CT.del}">✕</button>
         </div>
-        <input value="${(c.subs||[]).join(', ').replace(/"/g,'&quot;')}" placeholder="소분류 (쉼표로 구분)"
-          oninput="cfgSetSubs('${kind}',${i},this.value)"
-          style="width:100%;margin-top:5px;padding:7px 10px;border:1px solid #F2F4F6;border-radius:9px;font-size:12px;color:var(--txt2)">
-      </div>`).join('');
-    return `<div style="margin-bottom:14px">
-      <div style="font-size:13px;font-weight:800;color:var(--txt);margin-bottom:2px">${emoji} ${kind}</div>
+        ${subRows}
+      </div>`;
+    }).join('');
+
+    return `<div style="margin-bottom:20px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px">
+        <span style="font-size:13px;font-weight:800;color:var(--txt)">${emoji} ${kind}</span>
+        <span style="font-size:11px;color:var(--txt3)">${hint}</span>
+      </div>
+      <div style="${CT.head}">
+        <span></span><span>카테고리</span>
+        <span style="text-align:center">${flagLabel||''}</span>
+        <span style="text-align:right">${kind==='지출'?'월 예산':''}</span><span></span>
+      </div>
       ${rows}
-      <button onclick="CFG.categories['${kind}'].push({major:'',subs:[],flags:''}); cfgSave(); renderCfgCategories();"
-        style="width:100%;margin-top:7px;padding:8px;border:1px dashed var(--blue);border-radius:10px;background:var(--blue-bg);color:var(--blue);font-size:12.5px;font-weight:700;cursor:pointer">+ ${kind} 대분류 추가</button>
+      <button onclick="CFG.categories['${kind}'].push({major:'',subs:[],flags:'',budget:0,subBudget:{}}); cfgSave(); renderCfgCategories();"
+        style="${CT.add}margin-top:8px">+ ${kind} 대분류 추가</button>
     </div>`;
-  }).join('');
+  };
+
+  const total = (CFG.categories['지출']||[]).reduce((s,c)=>s+cfgMajorBudget(c),0);
+  el.innerHTML = `
+    <div style="font-size:12px;color:var(--txt3);line-height:1.6;margin-bottom:12px">
+      <b>▸</b> 를 누르면 소분류가 펼쳐집니다. 소분류에 예산을 넣으면 대분류 예산은 <b>자동으로 그 합</b>이 됩니다.
+      지출의 <b>고정비</b>와 이동의 <b>저축</b> 체크가 리포트 판정 기준입니다.
+    </div>
+    ${block(...kinds[0])}
+    ${block(...kinds[1])}
+    ${block(...kinds[2])}
+    <div style="display:flex;justify-content:space-between;padding-top:11px;border-top:1px solid #E5E8EB;font-size:13.5px;font-weight:800">
+      <span>월 지출 예산 합계</span>
+      <span id="cfg-budget-total" style="font-variant-numeric:tabular-nums">${won(total)}</span>
+    </div>`;
 }
 
-// ── 계좌 편집 ──
+// ══════════════════════════════════════════════════════════════════
+//  계좌 · 잔액
+// ══════════════════════════════════════════════════════════════════
+const AT = {
+  head:'display:grid;grid-template-columns:1fr 104px 112px 30px;gap:6px;align-items:center;font-size:10.5px;color:var(--txt3);padding:0 0 5px;border-bottom:1px solid #E5E8EB;',
+  row:'display:grid;grid-template-columns:1fr 104px 112px 30px;gap:6px;align-items:center;padding:6px 0;border-top:1px solid #F2F4F6;'
+};
 function renderCfgAccounts(){
   const el = document.getElementById('cfg-acct-body'); if(!el) return;
   cfgSeedIfEmpty();
   const rows = CFG.accounts.map((a,i)=>`
-    <div style="padding:7px 0;border-top:1px solid #F2F4F6;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-      <input value="${(a.key||'').replace(/"/g,'&quot;')}" placeholder="계좌명"
-        oninput="CFG.accounts[${i}].key=this.value; cfgSave()"
-        style="flex:1;min-width:110px;padding:8px 10px;border:1px solid #E5E8EB;border-radius:9px;font-size:13px;font-weight:600">
-      <select onchange="CFG.accounts[${i}].group=this.value; cfgSave()"
-        style="flex:none;padding:8px;border:1px solid #E5E8EB;border-radius:9px;font-size:12px;background:#FFF;color:var(--txt2)">
+    <div style="${AT.row}">
+      <input value="${esc(a.key)}" placeholder="계좌·카드 이름"
+        oninput="CFG.accounts[${i}].key=this.value; cfgSave()" style="${CT.inp}font-weight:600">
+      <select onchange="CFG.accounts[${i}].group=this.value; cfgSave(); cfgApply(); renderCfgCards();"
+        style="${CT.inp}font-size:12px;padding:7px 6px">
         ${CFG_GROUPS.map(([v,t])=>`<option value="${v}" ${a.group===v?'selected':''}>${t}</option>`).join('')}
       </select>
-      <input value="${Number(a.bal)||''}" placeholder="초기잔고" inputmode="numeric"
-        oninput="CFG.accounts[${i}].bal=Number(this.value.replace(/[^0-9-]/g,''))||0; cfgSave()"
-        style="width:110px;flex:none;padding:8px 10px;border:1px solid #E5E8EB;border-radius:9px;font-size:12.5px;text-align:right">
-      <button onclick="CFG.accounts.splice(${i},1); cfgSave(); renderCfgAccounts();"
-        style="flex:none;width:30px;height:30px;border:1px solid #E5E8EB;border-radius:9px;background:var(--card);color:var(--txt3);cursor:pointer">✕</button>
+      <input value="${Number(a.bal)||''}" placeholder="현재 잔액" inputmode="numeric"
+        oninput="CFG.accounts[${i}].bal=Number(this.value.replace(/[^0-9-]/g,''))||0; cfgSave(); cfgRefreshNet();"
+        style="${CT.num}">
+      <button onclick="CFG.accounts.splice(${i},1); cfgSave(); renderCfgAccounts(); renderCfgCards(); cfgApply();" style="${CT.del}">✕</button>
     </div>`).join('');
-  el.innerHTML = `<div style="font-size:12px;color:var(--txt3);line-height:1.6;margin-bottom:10px">
-      순자산·저축률·카드 결제 계산이 전부 여기서 나옵니다. <b>성격</b>을 맞게 골라주세요 — 카드는 '카드', 대출 원금은 '대출'입니다.
-    </div>${rows}
-    <button onclick="CFG.accounts.push({key:'',label:'',group:'cash',bal:0}); cfgSave(); renderCfgAccounts();"
-      style="width:100%;margin-top:8px;padding:9px;border:1px dashed var(--blue);border-radius:10px;background:var(--blue-bg);color:var(--blue);font-size:12.5px;font-weight:700;cursor:pointer">+ 계좌 추가</button>`;
-}
 
-// ── 예산 편집 (지출 대분류 기준) ──
-function renderCfgBudget(){
-  const el = document.getElementById('cfg-budget-body'); if(!el) return;
-  cfgSeedIfEmpty();
-  const majors = (CFG.categories['지출']||[]).map(c=>c.major).filter(Boolean);
-  const total = majors.reduce((s,m)=>s+(Number(CFG.budget[m])||0),0);
-  const rows = majors.map(m=>`
-    <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #F2F4F6">
-      <span style="flex:1;min-width:0;font-size:13px;color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m}</span>
-      <input value="${Number(CFG.budget[m])||''}" placeholder="0" inputmode="numeric"
-        oninput="CFG.budget['${m.replace(/'/g,"\\\\'")}']=Number(this.value.replace(/[^0-9]/g,''))||0; cfgSave()"
-        style="width:120px;flex:none;padding:8px 10px;border:1px solid #E5E8EB;border-radius:9px;font-size:13px;text-align:right">
-    </div>`).join('');
-  el.innerHTML = `<div style="font-size:12px;color:var(--txt3);line-height:1.6;margin-bottom:10px">대분류 월 예산입니다. 재무 건강검진의 고정비·변동비 신호등이 이 값 대비로 판정합니다.</div>
+  const sum = g => CFG.accounts.filter(a=>a.group===g).reduce((s,a)=>s+(Number(a.bal)||0),0);
+  const plus = sum('cash')+sum('invest')+sum('contract')+sum('estate');
+  const minus = sum('debt')+sum('longdebt');
+
+  el.innerHTML = `
+    <div style="font-size:12px;color:var(--txt3);line-height:1.6;margin-bottom:12px">
+      <b>지금 이 시점의 잔액</b>을 적으세요. 앱은 이 값에 앞으로의 거래를 더하고 빼서 잔고를 계산합니다.
+      카드와 대출은 <b>갚아야 할 금액</b>을 양수로 적으면 순자산에서 빠집니다.
+    </div>
+    <div style="${AT.head}">
+      <span>이름</span><span>성격</span><span style="text-align:right">현재 잔액</span><span></span>
+    </div>
     ${rows}
-    <div style="display:flex;justify-content:space-between;margin-top:10px;padding-top:9px;border-top:1px solid #E5E8EB;font-size:13px;font-weight:800">
-      <span>월 지출 예산 합계</span><span style="font-variant-numeric:tabular-nums">${won(total)}</span></div>`;
+    <button onclick="CFG.accounts.push({key:'',label:'',group:'cash',bal:0}); cfgSave(); renderCfgAccounts();"
+      style="${CT.add}margin-top:9px">+ 계좌 추가</button>
+    <div style="margin-top:12px;padding-top:11px;border-top:1px solid #E5E8EB;font-size:12.5px;color:var(--txt2);line-height:1.9">
+      <div style="display:flex;justify-content:space-between"><span>자산 합계</span><b style="color:var(--txt)">${won(plus)}</b></div>
+      <div style="display:flex;justify-content:space-between"><span>부채 합계</span><b style="color:var(--red)">− ${won(minus)}</b></div>
+      <div style="display:flex;justify-content:space-between;border-top:1px solid #F2F4F6;margin-top:4px;padding-top:5px;font-size:13.5px;font-weight:800;color:var(--txt)">
+        <span>시작 순자산</span><span id="cfg-net-total" style="font-variant-numeric:tabular-nums">${won(plus-minus)}</span></div>
+    </div>`;
+}
+function cfgRefreshNet(){ renderCfgAccounts(); }
+
+// ══════════════════════════════════════════════════════════════════
+//  카드 설정 — 계좌에서 성격을 '카드'로 고른 것들이 여기 나옵니다
+// ══════════════════════════════════════════════════════════════════
+const KT = {
+  head:'display:grid;grid-template-columns:1fr 76px 112px;gap:6px;align-items:center;font-size:10.5px;color:var(--txt3);padding:0 0 5px;border-bottom:1px solid #E5E8EB;',
+  row:'display:grid;grid-template-columns:1fr 76px 112px;gap:6px;align-items:center;padding:6px 0;border-top:1px solid #F2F4F6;'
+};
+function renderCfgCards(){
+  const el = document.getElementById('cfg-card-body'); if(!el) return;
+  cfgSeedIfEmpty();
+  const cards = CFG.accounts.filter(a=>a.group==='debt' && a.key);
+  if(!cards.length){
+    el.innerHTML = `<div style="font-size:12.5px;color:var(--txt3);padding:10px 0;line-height:1.6">
+      위 <b>계좌</b>에서 성격을 <b>카드</b>로 지정하면 여기에 나타납니다.<br>카드마다 결제일과 실적 목표를 따로 정할 수 있어요.</div>`;
+    return;
+  }
+  const defTarget = Number(CFG.settings['카드실적목표'])||300000;
+  const rows = cards.map(a=>{
+    const c = (CFG.cards||{})[a.key] || {};
+    return `<div style="${KT.row}">
+      <span style="font-size:13px;font-weight:600;color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.key}</span>
+      <input value="${c.payDay||''}" placeholder="결제일" inputmode="numeric"
+        oninput="cfgSetCard('${jq(a.key)}','payDay',this.value)" style="${CT.num}">
+      <input value="${c.target||''}" placeholder="${defTarget.toLocaleString('ko-KR')}" inputmode="numeric"
+        oninput="cfgSetCard('${jq(a.key)}','target',this.value)" style="${CT.num}">
+    </div>`;
+  }).join('');
+  el.innerHTML = `
+    <div style="font-size:12px;color:var(--txt3);line-height:1.6;margin-bottom:12px">
+      <b>결제일</b>은 현금흐름에서 언제 돈이 빠지는지 계산할 때 씁니다.
+      <b>실적 목표</b>는 카드 혜택 조건 금액이에요. 비워두면 기본값 ${won(defTarget)}을 씁니다.
+    </div>
+    <div style="${KT.head}">
+      <span>카드</span><span style="text-align:right">결제일</span><span style="text-align:right">실적 목표</span>
+    </div>
+    ${rows}`;
+}
+function cfgSetCard(key, field, val){
+  CFG.cards = CFG.cards || {};
+  CFG.cards[key] = CFG.cards[key] || {};
+  const n = Number(String(val).replace(/[^0-9]/g,''))||0;
+  CFG.cards[key][field] = n;
+  cfgSave();
 }
 
 // ── 기본값 ──
@@ -3710,11 +3892,11 @@ function renderCfgMisc(){
       </div>
       <input value="${CFG.settings[key]!=null?CFG.settings[key]:''}" inputmode="numeric"
         oninput="CFG.settings['${key}']=Number(this.value.replace(/[^0-9]/g,''))||0; cfgSave()"
-        style="width:90px;flex:none;padding:8px 10px;border:1px solid #E5E8EB;border-radius:9px;font-size:13px;text-align:right">
+        style="${CT.num}width:100px;flex:none">
     </div>`;
-  el.innerHTML = f('급여일','급여일','현금흐름·월 구분에 씁니다')
-    + f('저축률목표','저축률 목표 (%)','저축 예산이 없을 때 판정 기준')
-    + f('카드실적목표','카드 실적 목표 (원)','카드별 월 사용 목표액');
+  el.innerHTML = f('급여일','급여일','현금흐름 계산 기준일')
+    + f('저축률목표','저축률 목표 (%)','저축 월목표가 없을 때 판정 기준')
+    + f('카드실적목표','카드 실적 기본 목표 (원)','카드별로 따로 정하지 않았을 때');
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -3769,8 +3951,26 @@ function cfgApply(){
       accts.forEach(a=>{ if(a.bal!=null) STATE.initBal[a.key] = Number(a.bal)||0; });
     }
 
-    // ── 4) 예산 ──
-    if(Object.keys(CFG.budget||{}).length) STATE.budget = Object.assign({}, STATE.budget, CFG.budget);
+    // ── 4) 예산: 카테고리 표에 적은 값에서 만든다 (소분류 예산이 있으면 그 합이 대분류 예산) ──
+    const bud = {}, subBud = {};
+    (C['지출']||[]).forEach(c=>{
+      if(!c.major) return;
+      const v = cfgMajorBudget(c);
+      if(v>0) bud[c.major] = v;
+      const sb = c.subBudget||{};
+      Object.keys(sb).forEach(k=>{ if(sb[k]>0){ subBud[c.major] = subBud[c.major]||{}; subBud[c.major][k] = sb[k]; } });
+    });
+    if(Object.keys(bud).length){ STATE.budget = Object.assign({}, STATE.budget, bud); CFG.budget = bud; }
+    if(Object.keys(subBud).length) STATE.subBudget = Object.assign({}, STATE.subBudget, subBud);
+
+    // ── 4-b) 카드별 결제일 · 실적 목표 ──
+    if(CFG.cards && Object.keys(CFG.cards).length && typeof CASH_PLAN==='object' && CASH_PLAN){
+      CASH_PLAN.cardPayDays = CASH_PLAN.cardPayDays || {};
+      Object.keys(CFG.cards).forEach(k=>{
+        const d = Number(CFG.cards[k].payDay)||0;
+        if(d>0) CASH_PLAN.cardPayDays[cardIssuer(k)] = d;
+      });
+    }
 
     // ── 5) 계좌 자동완성 datalist 갱신 ──
     ['acct-datalist','acct-datalist2','inv-acct-list'].forEach(id=>{
@@ -3792,14 +3992,15 @@ function cfgSaveToSheet(){
   const payload = {
     action:'saveConfig',
     config:{
-      budget: CFG.budget,
+      budget: CFG.budget || {},
       subBudget: STATE.subBudget || {},
       cardBudget: STATE.cardBudget || {},
+      cards: CFG.cards || {},
       saveGoals: goals.map(g=>({ n:g.name, g:g.monthly, mk:g.keyword||g.name })),
       initBalRaw: CFG.accounts.map(a=>({ key:a.key, bal:a.bal||0, group:a.group||'cash', label:a.label||a.key })),
       categories: {
         '수입': (CFG.categories['수입']||[]).map(c=>({major:c.major, subs:c.subs||[], flags:c.flags||''})),
-        '지출': (CFG.categories['지출']||[]).map(c=>({major:c.major, subs:c.subs||[], flags:c.flags||''})),
+        '지출': (CFG.categories['지출']||[]).map(c=>({major:c.major, subs:c.subs||[], flags:c.flags||'', budget:cfgMajorBudget(c), subBudget:c.subBudget||{}})),
         '이동': (CFG.categories['이동']||[]).map(c=>({major:c.major, subs:c.subs||[], flags:c.flags||''}))
       },
       cadence: (typeof STATE!=='undefined' && STATE.catCadence) ? STATE.catCadence : {},
@@ -3823,7 +4024,16 @@ function cfgMergeFromSheet(config){
   if(config.initBalRaw && config.initBalRaw.length){
     CFG.accounts = config.initBalRaw.map(a=>({ key:a.key, label:a.label||a.key, group:a.group||'cash', bal:(config.initBal&&config.initBal[a.key])||a.bal||0 }));
   }
-  if(config.budget && Object.keys(config.budget).length) CFG.budget = Object.assign({}, config.budget);
+  if(config.budget && Object.keys(config.budget).length){
+    CFG.budget = Object.assign({}, config.budget);
+    // 예산·소분류 예산을 카테고리 행 안으로 넣어야 표에 보인다
+    (CFG.categories['지출']||[]).forEach(c=>{
+      if(config.budget[c.major]!=null) c.budget = Number(config.budget[c.major])||0;
+      const sb = (config.subBudget||{})[c.major];
+      if(sb) c.subBudget = Object.assign({}, sb);
+    });
+  }
+  if(config.cards && Object.keys(config.cards).length) CFG.cards = Object.assign({}, config.cards);
   if(config.settings && Object.keys(config.settings).length) CFG.settings = Object.assign({}, CFG.settings, config.settings);
   cfgSave();
   cfgApply();
@@ -3831,7 +4041,7 @@ function cfgMergeFromSheet(config){
 }
 
 function renderAllSettings(){
-  ['renderCfgCategories','renderCfgAccounts','renderCfgBudget','renderCfgMisc','renderSaveGoalSettings','renderCatSettings']
+  ['renderCfgCategories','renderCfgAccounts','renderCfgCards','renderCfgMisc','renderSaveGoalSettings','renderCatSettings']
     .forEach(fn=>{ try{ if(typeof window[fn]==='function') window[fn](); }catch(e){ console.error(fn, e); } });
 }
 
@@ -4702,9 +4912,14 @@ function renderCardStatus(){
 // 설정 탭에서 성격이 '카드'인 계좌를 그대로 실적 그룹으로 만든다.
 // 목표 금액은 설정 › 기본값의 '카드실적목표'를 쓴다.
 function cardPerfGroups(){
-  const target = (typeof CFG!=='undefined' && Number(CFG.settings && CFG.settings['카드실적목표'])) || 300000;
+  const def = (typeof CFG!=='undefined' && Number(CFG.settings && CFG.settings['카드실적목표'])) || 300000;
   const cards = (typeof CFG!=='undefined' ? (CFG.accounts||[]) : []).filter(a=>a.group==='debt' && a.key);
-  return cards.map(a=>({ label:a.label||a.key, cards:[a.key], target }));
+  const per = (typeof CFG!=='undefined' && CFG.cards) || {};
+  return cards.map(a=>({
+    label: a.label||a.key,
+    cards: [a.key],
+    target: Number(per[a.key] && per[a.key].target) || def
+  }));
 }
 function renderCardPerf(){
   const el = document.getElementById('bud-card-perf');
