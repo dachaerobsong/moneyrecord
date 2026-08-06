@@ -7327,7 +7327,13 @@ function computeAnnualInsight(year){
   // 순자산 월별 추이 (계좌 잔고 역산 — 별도 스냅샷 불필요)
   let nwVals = months.map(ym=>{ try{ return netWorthAtMonth(ym); }catch(e){ return null; } });
   if(nwVals.every(v=>v==null)) nwVals = [];
-  const nwStart = nwVals.length ? nwVals[0] : null;
+  // [수정] "연초 잔고"는 반드시 전년도 12월 말(=올해 거래가 하나도 반영되지 않은 시점) 기준이어야 한다.
+  // 예전엔 nwVals[0](=올해 1월 "말" 잔고, 즉 1월 거래가 이미 다 반영된 값)을 그대로 시작점으로 써서
+  // 1월 한 달의 수입·지출·저축이 "연간 순자산변화"에서 통째로 빠지는 문제가 있었다.
+  // (총수입/총지출/총저축 합계는 1~12월 전체인데 순자산변화만 2~12월분이 되어버림)
+  let nwStart = null;
+  try{ nwStart = netWorthAtMonth((year-1)+'-12'); }catch(e){}
+  if(nwStart==null) nwStart = nwVals.length ? nwVals[0] : null; // 최초 추적 연도 등 이전 데이터가 전혀 없을 때의 대비책
   const nwEnd = nwVals.length ? nwVals[nwVals.length-1] : null;
 
   // 작년 동기간(같은 개월 수) 대비 — 공정 비교를 위해 "1~N월"로 자름 (진행 중인 해와 개월 수를 맞춤)
@@ -7346,7 +7352,9 @@ function computeAnnualInsight(year){
       const pSave = prevMonths.reduce((s,ym)=> s + prevTxByMonth[ym].filter(isSaveTx).reduce((a,t)=>a+(Number(t.amount)||0),0), 0);
       const pSaveRate = pIncome>0 ? Math.round(pSave/pIncome*100) : null;
       let pNwStart=null, pNwEnd=null;
-      try{ pNwStart = netWorthAtMonth(prevMonths[0]); pNwEnd = netWorthAtMonth(prevMonths[prevMonths.length-1]); }catch(e){}
+      try{ pNwStart = netWorthAtMonth((prevYear-1)+'-12'); }catch(e){}
+      if(pNwStart==null){ try{ pNwStart = netWorthAtMonth(prevMonths[0]); }catch(e){} } // 대비책(위와 동일한 이유)
+      try{ pNwEnd = netWorthAtMonth(prevMonths[prevMonths.length-1]); }catch(e){}
       const pNwDiff = (pNwStart!=null && pNwEnd!=null) ? Math.round(pNwEnd-pNwStart) : null;
       const curNwDiff = (nwStart!=null && nwEnd!=null) ? Math.round(nwEnd-nwStart) : null;
       yoy = {
@@ -8477,7 +8485,7 @@ function renderRptAsset(dIn){
       <span style="font-size:20px;font-weight:800;color:${diff>=0?'var(--txt)':'var(--red)'};letter-spacing:-.3px">${diff>=0?'+':'−'}${won(Math.abs(diff))}</span>
       <span style="font-size:11.5px;color:var(--txt3)">월평균 ${diff>=0?'+':'−'}${manW(Math.abs(perMonth))}</span>
     </div>
-    <div style="font-size:11px;color:var(--txt3);margin-bottom:10px">${d.year}년 1월 ${won(Math.round(d.nwStart))} → ${d.months.length}월 ${won(Math.round(d.nwEnd))}</div>
+    <div style="font-size:11px;color:var(--txt3);margin-bottom:10px">${d.year-1}년 12월 말 ${won(Math.round(d.nwStart))} → ${d.year}년 ${d.months.length}월 ${won(Math.round(d.nwEnd))}</div>
     ${rptLineSVG(d.nwVals, diff>=0?'var(--c-save)':'var(--c-out)', {h:104,
       titles: d.nwVals.map((v,i)=>`${i+1}월 순자산 ${v==null?'–':won(Math.round(v))}`),
       click: (i)=>`rptShowDrill('expense-all','','${d.months[i]||''}','${i+1}월 지출 전체')`
