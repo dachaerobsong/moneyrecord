@@ -1035,10 +1035,7 @@ body { padding-bottom:88px; }
     </div>
   </div>
   <!-- ══ 앱 설정: 이 앱을 굴리는 값들을 한 곳에서 ══ -->
-  <div class="card">
-    <div class="card-title">🗂️ 카테고리 · 예산</div>
-    <div id="cfg-cat-body"></div>
-  </div>
+  <!-- 순서: ① 계좌 → ② 카드 → ③ 카테고리·예산 (계좌를 알아야 카드를 잡고, 그 계좌들로 뭘 분류할지가 카테고리라 이 순서가 자연스러움) -->
   <div class="card">
     <div class="card-title">🏦 계좌 · 현재 잔액</div>
     <div id="cfg-acct-body"></div>
@@ -1046,6 +1043,10 @@ body { padding-bottom:88px; }
   <div class="card">
     <div class="card-title">💳 카드</div>
     <div id="cfg-card-body"></div>
+  </div>
+  <div class="card">
+    <div class="card-title">🗂️ 카테고리 · 예산</div>
+    <div id="cfg-cat-body"></div>
   </div>
   <div class="card">
     <div class="card-title">🎯 저축 월목표</div>
@@ -1119,7 +1120,7 @@ const LS = {
 // 통째로 다시 채운다(cfgApplyCategories). 그래서 const 가 아니라 let 이다.
 let CAT_OUT_SUBS = {'주거비':['월세/이자','관리비','공과금'],'보험':['보험료'],'통신비':['휴대폰','인터넷'],'식비':['장보기','배달','외식','카페'],'생활용품':['생활소모품','가전/가구'],'꾸밈비':['의류/잡화','미용'],'자기계발':['수강료','도서','운동'],'건강':['병원/약국','건강보조'],'교통비':['대중교통','택시','주유'],'경조사':['경조사비'],'문화생활':['공연/전시','구독'],'기타':['기타']};
 let CAT_IN_SUBS = {'근로소득':['월급','상여'],'금융소득':['이자','배당'],'기타소득':['환급','부수입']};
-let CAT_MV_SUBS = {'카드납부':[],'예적금':['적금','청약','대출원금'],'연금':['개인연금'],'주식':['ISA','일반투자'],'목적':['목적자금'],'비상금':['비상금'],'계좌이체':['계좌이체']};
+let CAT_MV_SUBS = {'카드납부':[],'예적금':['적금','청약','대출원금','목적자금'],'연금':['개인연금'],'주식':['ISA','일반투자'],'비상금':['비상금'],'계좌이체':['계좌이체']};
 
 // ── 화면 숨김 필터: 계좌이체(이동) 및 숨김 지정 카드의 카드납부(이동) ──
 // 앱에서 삭제한 항목이지만 계좌 잔고에는 영향을 주므로 데이터는 유지하고
@@ -1952,12 +1953,12 @@ function fetchFromSheet(silent) {
         if(data.config.saveGoals) STATE.saveGoals = data.config.saveGoals;
       if(typeof cfgMergeFromSheet==='function') cfgMergeFromSheet(data.config);
         if(data.config.initBalRaw){
-          const VALID = ['cash','debt','longdebt','estate','contract','invest'];
+          const VALID = ['cash','debt','longdebt','estate','invest'];
           STATE.acctsDef = data.config.initBalRaw.map(r => {
             let g = VALID.indexOf(r.group)>=0 ? r.group : (GRP_INVEST.indexOf(r.key)>=0 ? 'invest' : 'cash');
+            if(g==='contract') g='invest';
             if(GRP_LONGDEBT.indexOf(r.key)>=0) g='longdebt';
             else if(GRP_DEBT.indexOf(r.key)>=0) g='debt';
-            else if(GRP_CONTRACT.indexOf(r.key)>=0) g='contract';
             return { key:r.key, label:r.label||r.key, group:g, goal:r.goal||0 };
           });
           STATE.initBal = {};
@@ -3269,7 +3270,7 @@ function saveEdit() {
 // ── 카테고리 이모지 라벨 (예산 키 매칭 폴백용) ──
 let CAT_OUT_LABELS = {'주거비':'🏠 주거비','보험':'🗃️ 보험','통신비':'📞 통신비','식비':'🍽️ 식비','생활용품':'🛒 생활용품','꾸밈비':'👗 꾸밈비','자기계발':'👩‍🎓 자기계발','건강':'😷 건강','교통비':'🚌 교통비','경조사':'🎁 경조사','문화생활':'📺 문화생활','기타':'✔️ 기타'};
 let CAT_IN_LABELS = {'근로소득':'👷 근로소득','금융소득':'💵 금융소득','기타소득':'💰 기타소득'};
-let CAT_MV_LABELS = {'카드납부':'💳 카드납부','계좌이체':'🔄 계좌이체','예적금':'예적금','연금':'연금','주식':'주식','목적':'목적','비상금':'비상금'};
+let CAT_MV_LABELS = {'카드납부':'💳 카드납부','계좌이체':'🔄 계좌이체','예적금':'예적금','연금':'연금','주식':'주식','비상금':'비상금'};
 // 대분류를 시트가 기대하는 라벨(이모지) 형식으로 변환. 이미 라벨이면 그대로 정규화 매칭.
 function majorLabel(type, val){
   const v = String(val||'').trim();
@@ -3641,13 +3642,13 @@ function cfgSeedIfEmpty(){
   if(!CFG.accounts.length){
     CFG.accounts = (STATE.acctsDef||[]).map(a=>({ key:a.key, label:a.label||a.key, group:a.group||'cash', bal:(STATE.initBal&&STATE.initBal[a.key])||0 }));
   }
-  CFG.accounts.forEach(a=>{ if(a.asOf==null) a.asOf=''; if(a.sub==null) a.sub=''; if(a.memo==null) a.memo=''; });
+  CFG.accounts.forEach(a=>{ if(a.asOf==null) a.asOf=''; if(a.sub==null) a.sub=''; if(a.memo==null) a.memo=''; if(a.group==='contract') a.group='invest'; });
   if(!CFG.cards) CFG.cards = {};
   if(!Object.keys(CFG.settings).length) CFG.settings = { '급여일':25, '저축률목표':30, '카드실적목표':300000 };
   cfgSave();
 }
 
-const CFG_GROUPS = [['cash','현금·입출금'],['invest','투자·저축'],['contract','목적자금'],['debt','카드'],['longdebt','대출'],['estate','부동산']];
+const CFG_GROUPS = [['cash','현금·입출금'],['invest','투자·저축'],['debt','카드'],['longdebt','대출'],['estate','부동산']];
 
 // ── 표 공통 스타일 조각 ──
 const CT = {
@@ -3975,7 +3976,8 @@ function renderCfgAccounts(){
           <input value="${esc(a.memo||'')}" placeholder="메모 (선택)"
             oninput="CFG.accounts[${i}].memo=this.value; cfgSave()" style="${CT.inp}font-size:12px;color:var(--txt3)">
           <input value="${Number(a.bal)||''}" placeholder="잔액" inputmode="numeric"
-            oninput="CFG.accounts[${i}].bal=Number(this.value.replace(/[^0-9-]/g,''))||0; cfgSave(); cfgRefreshNet();" style="${CT.num}">
+            oninput="CFG.accounts[${i}].bal=Number(this.value.replace(/[^0-9-]/g,''))||0; cfgSave();"
+            onchange="cfgRefreshNet();" style="${CT.num}">
           <button onclick="cfgAccDelRow(${i})" style="${CT.del}">✕</button>
         </div>`;
       }).join('') + `<div style="padding:4px 0 8px 26px">
@@ -4004,7 +4006,7 @@ function renderCfgAccounts(){
     </div>`;
   };
 
-  const plusGroups = ['cash','invest','contract','estate'];
+  const plusGroups = ['cash','invest','estate'];
   const minusGroups = ['debt','longdebt'];
   const sumG = gs => gs.reduce((s,g)=>s+CFG.accounts.filter(a=>a.group===g).reduce((s2,a)=>s2+(Number(a.bal)||0),0),0);
   const plus = sumG(plusGroups), minus = sumG(minusGroups);
@@ -4261,7 +4263,7 @@ function cfgSaveToSheet(){
       cardBudget: STATE.cardBudget || {},
       cards: CFG.cards || {},
       saveGoals: goals.map(g=>({ n:g.name, g:g.monthly, mk:g.keyword||g.name })),
-      initBalRaw: cfgAccSortedList().filter(a=>a.key).map(a=>({ key:a.key, bal:a.bal||0, group:a.group||'cash', label:a.label||a.key, sub:a.sub||'', memo:a.memo||'' })),
+      initBalRaw: cfgAccSortedList().filter(a=>a.key).map(a=>({ key:a.key, bal:a.bal||0, group:a.group||'cash', label:a.key, sub:a.sub||'', memo:a.memo||'' })),
       categories: {
         '수입': (CFG.categories['수입']||[]).map(c=>({major:c.major, subs:c.subs||[], flags:c.flags||''})),
         '지출': (CFG.categories['지출']||[]).map(c=>({major:c.major, subs:c.subs||[], flags:c.flags||'', budget:cfgMajorBudget(c), subBudget:c.subBudget||{}})),
@@ -8287,7 +8289,7 @@ function isEventTx(t){
 //  예전엔 저축 정의가 3가지(넓은 isSaveTx / 좁은 isSaveInsightTx / 또 다른 인라인 합계)
 //  로 갈려 있어서, 예산만큼 저축한 달도 총평에서 "부족"으로 판정됐다.
 // ══════════════════════════════════════════════════════════════════
-const SAVE_MAJORS = ['예적금','연금','주식','목적'];
+const SAVE_MAJORS = ['예적금','연금','주식'];
 function isSaveTx(t){
   if(!t || (t.type!=='이동' && t.type!=='저축')) return false;
   return SAVE_MAJORS.indexOf(normBudgetKey(t.major||'')) >= 0;
