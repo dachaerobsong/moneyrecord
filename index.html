@@ -3672,20 +3672,45 @@ function cfgSetSubBudget(kind, i, j, val){
   const nm = c.subs[j]; if(!nm) return;
   c.subBudget = c.subBudget || {};
   c.subBudget[nm] = Number(String(val).replace(/[^0-9]/g,''))||0;
-  cfgSave(); cfgRefreshTotals();
+  cfgSave(); cfgRefreshTotals(kind, i);
 }
 function cfgSetMajorBudget(kind, i, val){
   CFG.categories[kind][i].budget = Number(String(val).replace(/[^0-9]/g,''))||0;
-  cfgSave(); cfgRefreshTotals();
+  cfgSave(); cfgRefreshTotals(kind, i);
 }
 // 소분류 예산이 있으면 대분류 예산은 그 합으로 본다
 function cfgMajorBudget(c){
   const sub = Object.values(c.subBudget||{}).reduce((s,v)=>s+(Number(v)||0),0);
   return sub>0 ? sub : (Number(c.budget)||0);
 }
-function cfgRefreshTotals(){
-  const el = document.getElementById('cfg-budget-total');
-  if(el) el.textContent = won((CFG.categories['지출']||[]).reduce((s,c)=>s+cfgMajorBudget(c),0));
+// 대분류 예산 칸 — 소분류 예산이 하나라도 있으면 입력칸 대신 '합계'를 보여준다
+function cfgMajorBudgetCell(kind, i){
+  const c = (CFG.categories[kind]||[])[i]; if(!c) return '';
+  const subTotal = Object.values(c.subBudget||{}).reduce((s,v)=>s+(Number(v)||0),0);
+  if(subTotal>0){
+    return `<div style="text-align:right;font-size:12.5px;font-weight:700;color:var(--txt);font-variant-numeric:tabular-nums" title="소분류 예산의 합">
+      ${won(subTotal)}<div style="font-size:9px;color:var(--txt3);font-weight:400">소분류 합</div></div>`;
+  }
+  return `<input value="${Number(c.budget)||''}" placeholder="예산" inputmode="numeric"
+    oninput="cfgSetMajorBudget('${kind}',${i},this.value)" style="${CT.num}">`;
+}
+// 소분류 예산을 타이핑하는 도중에도 대분류 합과 총계가 즉시 따라오게 한다.
+// (전체를 다시 그리면 입력칸의 커서가 튀므로, 바뀐 칸만 교체한다)
+function cfgRefreshTotals(kind, i){
+  if(kind!=null && i!=null){
+    const cell = document.getElementById('mb_'+kind+'_'+i);
+    if(cell && document.activeElement !== cell.querySelector('input')){
+      cell.innerHTML = cfgMajorBudgetCell(kind, i);
+    }
+  }
+  const list = CFG.categories['지출']||[];
+  const sum = f => list.filter(f).reduce((s,c)=>s+cfgMajorBudget(c),0);
+  const fixed = sum(c=>(c.flags||'').indexOf('fixed')>=0);
+  const vari  = sum(c=>(c.flags||'').indexOf('fixed')<0);
+  const set = (id, v) => { const e=document.getElementById(id); if(e) e.textContent = won(v); };
+  set('cfg-budget-fixed', fixed);
+  set('cfg-budget-var', vari);
+  set('cfg-budget-total', fixed+vari);
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -3743,12 +3768,7 @@ function renderCfgCategories(){
               <input type="checkbox" ${flagOn?'checked':''}
                 onchange="CFG.categories['${kind}'][${i}].flags=this.checked?'${flag}':''; cfgSave(); cfgApply();">
               ${flagLabel}</label>` : '<span></span>'}
-          ${kind==='지출'
-            ? (subTotal>0
-                ? `<div style="text-align:right;font-size:12.5px;font-weight:700;color:var(--txt);font-variant-numeric:tabular-nums" title="소분류 예산의 합">${won(subTotal)}<div style="font-size:9px;color:var(--txt3);font-weight:400">소분류 합</div></div>`
-                : `<input value="${Number(c.budget)||''}" placeholder="예산" inputmode="numeric"
-                     oninput="cfgSetMajorBudget('${kind}',${i},this.value)" style="${CT.num}">`)
-            : '<span></span>'}
+          ${kind==='지출' ? `<div id="mb_${kind}_${i}">${cfgMajorBudgetCell(kind,i)}</div>` : '<span></span>'}
           <button onclick="if(confirm('${jq(c.major)} 를 지울까요?')){CFG.categories['${kind}'].splice(${i},1); cfgSave(); renderCfgCategories(); cfgApply();}"
             style="${CT.del}">✕</button>
         </div>
@@ -3772,7 +3792,10 @@ function renderCfgCategories(){
     </div>`;
   };
 
-  const total = (CFG.categories['지출']||[]).reduce((s,c)=>s+cfgMajorBudget(c),0);
+  const outList = CFG.categories['지출']||[];
+  const fixedSum = outList.filter(c=>(c.flags||'').indexOf('fixed')>=0).reduce((s,c)=>s+cfgMajorBudget(c),0);
+  const varSum   = outList.filter(c=>(c.flags||'').indexOf('fixed')<0).reduce((s,c)=>s+cfgMajorBudget(c),0);
+  const total = fixedSum + varSum;
   el.innerHTML = `
     <div style="font-size:12px;color:var(--txt3);line-height:1.6;margin-bottom:12px">
       <b>▸</b> 를 누르면 소분류가 펼쳐집니다. 소분류에 예산을 넣으면 대분류 예산은 <b>자동으로 그 합</b>이 됩니다.
@@ -3781,9 +3804,12 @@ function renderCfgCategories(){
     ${block(...kinds[0])}
     ${block(...kinds[1])}
     ${block(...kinds[2])}
-    <div style="display:flex;justify-content:space-between;padding-top:11px;border-top:1px solid #E5E8EB;font-size:13.5px;font-weight:800">
-      <span>월 지출 예산 합계</span>
-      <span id="cfg-budget-total" style="font-variant-numeric:tabular-nums">${won(total)}</span>
+    <div style="margin-top:6px;padding-top:11px;border-top:1px solid #E5E8EB;font-size:12.5px;color:var(--txt2);line-height:1.9">
+      <div style="display:flex;justify-content:space-between"><span>🧱 고정비</span><b id="cfg-budget-fixed" style="color:var(--txt);font-variant-numeric:tabular-nums">${won(fixedSum)}</b></div>
+      <div style="display:flex;justify-content:space-between"><span>🎈 변동비</span><b id="cfg-budget-var" style="color:var(--txt);font-variant-numeric:tabular-nums">${won(varSum)}</b></div>
+      <div style="display:flex;justify-content:space-between;border-top:1px solid #F2F4F6;margin-top:4px;padding-top:5px;font-size:13.5px;font-weight:800;color:var(--txt)">
+        <span>월 지출 예산 합계</span>
+        <span id="cfg-budget-total" style="font-variant-numeric:tabular-nums">${won(total)}</span></div>
     </div>`;
 }
 
