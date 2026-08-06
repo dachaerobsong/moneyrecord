@@ -137,7 +137,6 @@ body { padding-bottom:88px; }
 #p-home #h-asset-donut-card { display:none !important; }
 #sub-analysis-month > .card:first-child { border:0; background:#F2F7FF; }
 #sub-analysis-month > .card:first-child .card-title { margin-bottom:8px; }
-#p-goals > .card-title { font-size:15px !important; color:var(--txt) !important; margin:26px 0 10px; }
 #p-invest .invest-sub-panel:first-of-type { padding-top:0; }
 .tabbar { height:72px; border-radius:0; box-shadow:0 -1px 8px rgba(0,0,0,.03); }
 .tab-btn { font-size:10px; gap:3px; }
@@ -512,7 +511,6 @@ body { padding-bottom:88px; }
   <button class="tab-btn sb-item on" data-tab="home" onclick="changeTab('home', this)"><span class="icon">🏠</span><span>홈</span></button>
   <button class="tab-btn sb-item" data-tab="ledger" onclick="changeTab('ledger', this)"><span class="icon">💰</span><span>가계부</span></button>
   <button class="tab-btn sb-item" data-tab="analysis" onclick="changeTab('analysis', this)"><span class="icon">📊</span><span>분석</span></button>
-  <button class="tab-btn sb-item" data-tab="goals" onclick="changeTab('goals', this)"><span class="icon">🎯</span><span>목표</span></button>
   <button class="tab-btn sb-item" data-tab="invest" onclick="changeTab('invest', this)"><span class="icon">📈</span><span>투자</span></button>
   <div class="sb-net"><div class="lb">순자산</div><div class="vv" id="sb-net-worth">—</div></div>
 </nav>
@@ -544,6 +542,12 @@ body { padding-bottom:88px; }
   <section class="card">
     <h2 class="card-title">자산 구성</h2>
     <div id="h-asset-comp"><div style="text-align:center;color:var(--txt3);padding:16px;font-size:13px">설정에서 시트를 연동하면<br>실제 계좌 잔고 기반으로 표시됩니다</div></div>
+  </section>
+
+  <!-- 순자산 추이 & 1년 예측 (구 목표 탭에서 이동) -->
+  <section class="card" id="nw-trend-card">
+    <div class="card-title">📈 순자산 추이 &amp; 예측</div>
+    <div id="nw-trend-body"><div style="text-align:center;color:var(--txt3);padding:16px;font-size:13px">데이터 준비 중...</div></div>
   </section>
 
   <!-- 자산배분 도넛 -->
@@ -901,6 +905,31 @@ body { padding-bottom:88px; }
       <div id="rpt-save-body"></div>
     </section>
 
+    <!-- ④-b 장기 저축 목표 진행률 (구 목표 탭에서 이동) — 지금 페이스대로면 결국 얼마나 모이는지 -->
+    <div id="rpt-goals-card">
+      <div class="card-title" style="margin-bottom:8px;padding-left:2px">🎯 저축 목표 진행률 <small style="font-size:11px;color:var(--txt3);font-weight:500">계좌별 목표 금액 대비 · 지금 페이스대로면 언제 달성</small></div>
+      <div id="goals-body">
+        <div class="card"><div style="text-align:center;color:var(--txt3);padding:16px;font-size:13px">설정에서 시트를 연동하고<br>계좌 설정에 목표금액(goal)을 입력하면 표시됩니다</div></div>
+      </div>
+    </div>
+
+    <!-- ④-c 저축 시뮬레이션 -->
+    <section class="card" id="rpt-savingsim-card" style="padding:16px 18px">
+      <div class="card-title" style="margin-bottom:8px">🧮 저축 시뮬레이션</div>
+      <div class="form-group">
+        <label>목표 선택</label>
+        <select id="sim-goal-select" onchange="simOnGoalChange()">
+          <option value="">직접 입력</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:10px">
+        <div class="form-group" style="flex:1"><label>목표 금액 (원)</label><input type="number" id="sim-target" placeholder="0" oninput="renderSavingsSim()"></div>
+        <div class="form-group" style="flex:1"><label>현재 금액 (원)</label><input type="number" id="sim-current" placeholder="0" oninput="renderSavingsSim()"></div>
+      </div>
+      <div class="form-group"><label>월 저축액 (원)</label><input type="number" id="sim-monthly" placeholder="예: 500000" oninput="renderSavingsSim()"></div>
+      <div id="sim-result" style="margin-top:6px"></div>
+    </section>
+
     <!-- ⑤ 소비 구조 — 고정비 -->
     <section class="card" id="rpt-fixed-card" style="padding:16px 18px">
       <div class="card-title" style="margin-bottom:8px">🧱 고정비 <small style="font-size:11px;color:var(--txt3);font-weight:500">줄이기 어려운 구조적 지출</small></div>
@@ -998,37 +1027,6 @@ body { padding-bottom:88px; }
 </main>
 
 <!-- ════════════════════════════════════════════
-  TAB 4: GOALS (저축 목표)
-═════════════════════════════════════════════ -->
-<main id="p-goals" class="panel">
-  <section class="card" id="nw-trend-card">
-    <div class="card-title">📈 순자산 추이 &amp; 예측</div>
-    <div id="nw-trend-body"><div style="text-align:center;color:var(--txt3);padding:16px;font-size:13px">데이터 준비 중...</div></div>
-  </section>
-  <div class="card-title" style="padding-left: 8px;">장기 저축 목표 진행률</div>
-  <div id="goals-body">
-    <div class="card"><div style="text-align:center;color:var(--txt3);padding:16px;font-size:13px">설정에서 시트를 연동하고<br>계좌 설정에 목표금액(goal)을 입력하면 표시됩니다</div></div>
-  </div>
-
-  <!-- 저축 시뮬레이션 -->
-  <div class="card-title" style="padding-left: 8px;">🧮 저축 시뮬레이션</div>
-  <section class="card">
-    <div class="form-group">
-      <label>목표 선택</label>
-      <select id="sim-goal-select" onchange="simOnGoalChange()">
-        <option value="">직접 입력</option>
-      </select>
-    </div>
-    <div style="display:flex;gap:10px">
-      <div class="form-group" style="flex:1"><label>목표 금액 (원)</label><input type="number" id="sim-target" placeholder="0" oninput="renderSavingsSim()"></div>
-      <div class="form-group" style="flex:1"><label>현재 금액 (원)</label><input type="number" id="sim-current" placeholder="0" oninput="renderSavingsSim()"></div>
-    </div>
-    <div class="form-group"><label>월 저축액 (원)</label><input type="number" id="sim-monthly" placeholder="예: 500000" oninput="renderSavingsSim()"></div>
-    <div id="sim-result" style="margin-top:6px"></div>
-  </section>
-</main>
-
-<!-- ════════════════════════════════════════════
   TAB 5: SETTINGS (설정)
 ═════════════════════════════════════════════ -->
 <main id="p-settings" class="panel">
@@ -1096,7 +1094,6 @@ body { padding-bottom:88px; }
   <button class="tab-btn on" data-tab="home" onclick="changeTab('home', this)"><span class="icon">🏠</span><span>홈</span></button>
   <button class="tab-btn" data-tab="ledger" onclick="changeTab('ledger', this)"><span class="icon">💰</span><span>가계부</span></button>
   <button class="tab-btn" data-tab="analysis" onclick="changeTab('analysis', this)"><span class="icon">📊</span><span>분석</span></button>
-  <button class="tab-btn" data-tab="goals" onclick="changeTab('goals', this)"><span class="icon">🎯</span><span>목표</span></button>
   <button class="tab-btn" data-tab="invest" onclick="changeTab('invest', this)"><span class="icon">📈</span><span>투자</span></button>
 </nav>
 </div><!-- /app-main -->
@@ -1435,8 +1432,7 @@ function changeTab(tabName, btnElement) {
   if(btnElement) btnElement.classList.add('on');
   try{ LS.set('gb_last_tab', tabName); }catch(e){}
   try{
-    if(tabName==='goals'){ renderGoals(); if(typeof renderSavingsSim==='function') renderSavingsSim(); }
-    if(tabName==='home'){ renderAssetOverview(); if(typeof renderMonthlyChart==='function') renderMonthlyChart(); }
+    if(tabName==='home'){ renderAssetOverview(); if(typeof renderNetWorthTrend==='function') renderNetWorthTrend(); if(typeof renderMonthlyChart==='function') renderMonthlyChart(); }
     if(tabName==='invest') renderInvest();
     if(tabName==='settings'){ if(typeof renderCatSettings==='function') renderCatSettings(); }
     if(tabName==='analysis'){
@@ -1448,8 +1444,14 @@ function changeTab(tabName, btnElement) {
 }
 // 설정은 하단 탭에서 빠지고 상단바 ⚙️ 아이콘으로 이동 — 하단 탭 목록엔 없으므로 버튼 하이라이트 없이 패널만 전환
 function goToSettingsTab(){ changeTab('settings', null); }
-function goToGoalsTab(){ const btn=document.querySelector('.tab-btn[data-tab="goals"]'); if(btn) changeTab('goals', btn); }
 function goToTab(tabName){ const btn=document.querySelector(`.tab-btn[data-tab="${tabName}"]`); if(btn) changeTab(tabName, btn); }
+// 저축 목표 진행률은 연간 리포트로 이동함 (구 목표 탭)
+function goToAnnualGoals(){
+  goToTab('analysis');
+  const periodBtn = document.querySelector('#p-analysis .sub-tab[data-sub="period"]');
+  if(typeof setAnalysisSub==='function') setAnalysisSub('period', periodBtn);
+  setTimeout(()=>{ const el=document.getElementById('rpt-goals-card'); if(el) el.scrollIntoView({behavior:'smooth', block:'start'}); }, 50);
+}
 
 // IA layout is intentional: current state → monthly health → future plans.
 // This preserves the existing data/rendering functions while placing each module
@@ -1457,17 +1459,13 @@ function goToTab(tabName){ const btn=document.querySelector(`.tab-btn[data-tab="
 function applyRedesignIA(){
   const home = document.getElementById('p-home');
   const asset = document.getElementById('h-asset-comp')?.closest('.card');
+  const trend = document.getElementById('nw-trend-card');
   const month = document.getElementById('h-month-summary-card');
   const goals = document.getElementById('h-goal-summary-card');
   const invest = document.getElementById('h-invest-summary-card');
   if(home && asset && month && goals && invest){
-    home.append(asset, month, goals, invest);
+    home.append(asset, trend || document.createComment(''), month, goals, invest);
   }
-
-  const goalsPanel = document.getElementById('p-goals');
-  const goalList = document.getElementById('goals-body');
-  const trend = document.getElementById('nw-trend-card');
-  if(goalsPanel && goalList && trend) goalList.after(trend);
 
   // Finance IA: 이번 달 진단과 예산 관리는 한 탭(월간 리포트) 안에 그대로 둔다.
   // (예전엔 여기서 예산 섹션들을 별도 탭으로 런타임에 떼어냈었는데, 탭이 늘어나고
@@ -1717,6 +1715,8 @@ function setAnalysisSub(subName, el) {
       const yl=document.getElementById('rpt-year-label'); if(yl) yl.textContent=RPT_YEAR+'년';
       if(typeof renderMonthlyChart==='function') renderMonthlyChart();
       if(typeof renderAnnualReport==='function') renderAnnualReport();
+      if(typeof renderGoals==='function') renderGoals();
+      if(typeof renderSavingsSim==='function') renderSavingsSim();
     }
   } catch(err) {
     showToast('렌더 오류: ' + err.message);
@@ -2039,7 +2039,8 @@ function fetchFromSheet(silent) {
             account: outAcct || inAcct || e.account || '',
             inAcct,
             outAcct,
-            memo: e.memo||''
+            memo: e.memo||'',
+            note: e.note||''
           };
         }).filter(e => e.date.match(/^20\d\d-\d\d-\d\d/) && ['지출','수입','이동'].indexOf(e.type)>=0);
         // 주의: 숨김 처리한 이동도 계좌 잔고에는 영향을 주므로 데이터에서는 유지하고,
@@ -2276,7 +2277,7 @@ function renderAssetOverview(){
           </div>
           <div style="font-size:16px;font-weight:800;color:${pctColor};flex:none">${pct}%</div>
         </div>
-        <button onclick="goToGoalsTab()" style="width:100%;padding:9px;border:1px solid var(--blue);border-radius:12px;background:var(--blue-bg);color:var(--blue);font-size:12.5px;font-weight:700;cursor:pointer">
+        <button onclick="goToAnnualGoals()" style="width:100%;padding:9px;border:1px solid var(--blue);border-radius:12px;background:var(--blue-bg);color:var(--blue);font-size:12.5px;font-weight:700;cursor:pointer">
           전체 목표 보기 →
         </button>`;
     }
@@ -2447,7 +2448,6 @@ function computeGoalAccts(){
   return goalAccts;
 }
 function renderGoals(){
-  renderNetWorthTrend();
   const el = document.getElementById('goals-body');
   if(!el) return;
   const def = STATE.acctsDef||[];
@@ -4220,7 +4220,7 @@ function renderCfgAccounts(){
         oninput="cfgSetAcct(${i},'bal',this.value)" style="${CT.num}">
       ${CFG_GROUP_SIDE[a.group]==='자산'
         ? `<input value="${Number(a.goal)||''}" placeholder="목표금액" inputmode="numeric"
-             title="이 계좌로 모으려는 최종 금액 — 목표 탭에 진행률로 표시됩니다"
+             title="이 계좌로 모으려는 최종 금액 — 연간 리포트에 진행률로 표시됩니다"
              oninput="cfgSetAcct(${i},'goal',this.value)" style="${CT.num}">`
         : '<span></span>'}
       <label title="숨기기 (잔액 0인 계좌만)" style="display:flex;justify-content:center;cursor:pointer">
@@ -4256,7 +4256,7 @@ function renderCfgAccounts(){
     <div style="font-size:12px;color:var(--txt3);line-height:1.6;margin-bottom:12px">
       <b>지금 이 시점의 잔액</b>을 적으세요. 앱은 이 값에 앞으로의 거래를 더하고 빼서 잔고를 계산합니다.<br>
       카드는 <b>소분류에 카드사</b>를 적어주세요 — 같은 카드사 카드끼리 묶어서 결제일·실적을 계산합니다.<br>
-      <b>목표금액</b>은 그 계좌로 최종적으로 모으려는 돈이에요 (예: 전세금 1억). 넣으면 <b>목표 탭</b>에 진행률로 나옵니다.
+      <b>목표금액</b>은 그 계좌로 최종적으로 모으려는 돈이에요 (예: 전세금 1억). 넣으면 <b>연간 리포트</b>에 진행률로 나옵니다.
       부채(카드·대출)는 <b>갚아야 할 금액</b>을 양수로 적으면 순자산에서 빠집니다.
     </div>
     ${datalists}
@@ -4393,16 +4393,13 @@ function renderCfgCards(){
   }
   const budMap = STATE.cardBudget || {};
 
+  // 이 화면은 '설정'만 담당한다 — 실적·사용액 등 실시간 현황은 리포트/분석 쪽에서 본다.
   const blocks = names.map(issuer=>{
     const cards = groups[issuer];
-    let used=0, perf=0, excluded=0, bud=0;
+    let bud=0;
     const lines = cards.map(a=>{
       const c = (CFG.cards||{})[a.key] || {};
-      const u = cfgCardUsage(a.key);
       const b = Number(budMap[a.key])||0; bud += b;
-      // 실적 합산에서 뺀 카드(예: 가족카드)는 사용액만 세고 실적에는 안 넣는다
-      used += u.used;
-      if(!c.perfOff){ perf += u.perf; excluded += u.excluded; }
       return `<div style="display:grid;grid-template-columns:${KT_COLS};gap:5px;align-items:center;padding:4px 0 4px 12px;border-top:1px solid #F6F7F9;${c.perfOff?'opacity:.55':''}">
         <span style="font-size:12.5px;color:var(--txt2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.key}</span>
         <input value="${c.payDay||''}" placeholder="일" inputmode="numeric" title="결제일"
@@ -4414,31 +4411,19 @@ function renderCfgCards(){
       </div>`;
     }).join('');
 
-    const st = cfgTierStatus(issuer, perf);
     const open = !!CFG_CARD_OPEN[issuer];
-    // 구간이 있으면 '다음 구간'이 목표. 최고 구간까지 갔으면 그 구간이 목표.
-    const target = st ? (st.next ? st.next.amount : st.tiers[st.tiers.length-1].amount)
-                      : cfgPerfTarget(issuer, cards);
-    const pct = target>0 ? Math.round(perf/target*100) : null;
-    const dotC = (st && !st.next) ? 'var(--green)'
-               : pct===null ? 'var(--txt3)' : pct>=100 ? 'var(--green)' : pct>=80 ? 'var(--warning)' : 'var(--red)';
-    const left = Math.max(0, target - perf);
-    const barW = Math.min(100, pct||0);
+    const tiers = cfgTiers(issuer);
 
     const tierPanel = open ? `
       <div style="padding:8px 0 10px 12px;border-top:1px dashed #E5E8EB;margin-top:6px">
         <div style="font-size:10.5px;color:var(--txt3);margin-bottom:6px">실적 구간 — 금액과 그 구간의 혜택을 적어두세요</div>
-        ${cfgTiers(issuer).map((t,ti)=>{
-          const hit = Number(t.amount)>0 && perf >= Number(t.amount);
-          return `<div style="display:grid;grid-template-columns:16px 92px 1fr 26px;gap:5px;align-items:center;padding:3px 0">
-            <span style="font-size:11px;text-align:center">${hit?'✅':'▫️'}</span>
+        ${tiers.map((t,ti)=>`<div style="display:grid;grid-template-columns:92px 1fr 26px;gap:5px;align-items:center;padding:3px 0">
             <input value="${Number(t.amount)||''}" placeholder="금액" inputmode="numeric"
               onchange="cfgSetTier('${jq(issuer)}',${ti},'amount',this.value)" style="${CT.num}padding:6px 8px">
             <input value="${esc(t.benefit)}" placeholder="혜택 (예: 1만8천 · 교통 5천)"
               oninput="cfgSetTier('${jq(issuer)}',${ti},'benefit',this.value)" style="${CT.inp}font-size:12px;padding:6px 8px">
             <button onclick="cfgDelTier('${jq(issuer)}',${ti})" style="${CT.del}">✕</button>
-          </div>`;
-        }).join('')}
+          </div>`).join('')}
         <button onclick="cfgAddTier('${jq(issuer)}')" style="${CT.add}margin-top:5px;padding:6px;font-size:12px">+ 구간 추가</button>
         <input value="${esc((CFG.cardMemo||{})[issuer])}" placeholder="실적 조건 메모 (예: 핸드폰은 실적 포함, 자동결제 건수엔 미포함)"
           oninput="cfgSetCardMemo('${jq(issuer)}',this.value)"
@@ -4449,29 +4434,12 @@ function renderCfgCards(){
       <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:4px">
         <span onclick="cfgCardToggle('${jq(issuer)}')" style="cursor:pointer;font-size:13.5px;font-weight:800;color:var(--txt)">
           <span style="color:var(--blue);font-size:11px">${open?'▾':'▸'}</span> 💳 ${issuer}</span>
-        <span style="font-size:10.5px;color:var(--txt3)">${cards.filter(a=>!((CFG.cards||{})[a.key]||{}).perfOff).length}/${cards.length}장 합산${st?` · ${st.tiers.length}구간`:''}</span>
+        <span style="font-size:10.5px;color:var(--txt3)">${cards.filter(a=>!((CFG.cards||{})[a.key]||{}).perfOff).length}/${cards.length}장 합산${tiers.length?` · ${tiers.length}구간`:''}</span>
         <span style="flex:1"></span>
-        <span style="font-size:14px;font-weight:800;color:${dotC};font-variant-numeric:tabular-nums">${won(perf)}</span>
-        <span style="font-size:11px;color:var(--txt3)">/</span>
-        ${st ? `<span style="font-size:12px;font-weight:700;color:var(--txt2);font-variant-numeric:tabular-nums">${won(target)}</span>`
-             : `<input value="${(CFG.cardPerf||{})[issuer] ?? ''}" placeholder="${target.toLocaleString('ko-KR')}" inputmode="numeric" title="실적 목표"
-                  onchange="cfgSetPerfTarget('${jq(issuer)}',this.value)" style="${CT.num}width:92px;flex:none">`}
-        ${pctBadgeHtml(pct, dotC)}
+        <span style="font-size:10.5px;color:var(--txt3)">실적 목표</span>
+        <input value="${(CFG.cardPerf||{})[issuer] ?? ''}" placeholder="금액" inputmode="numeric" title="실적 목표"
+          onchange="cfgSetPerfTarget('${jq(issuer)}',this.value)" style="${CT.num}width:92px;flex:none">
       </div>
-      <div style="height:5px;background:#F2F4F6;border-radius:99px;overflow:hidden;margin-bottom:3px">
-        <div style="height:100%;width:${barW}%;background:${dotC};border-radius:99px"></div>
-      </div>
-      <div style="font-size:10.5px;color:var(--txt3);margin-bottom:5px">
-        ${st
-          ? (st.next ? `<b style="color:var(--txt2)">${manW(st.next.amount - perf)}</b> 더 쓰면 ${manW(st.next.amount)} 구간${st.next.benefit?` — ${st.next.benefit}`:''}`
-                     : `최고 구간 달성${st.reached && st.reached.benefit?` — ${st.reached.benefit}`:''}`)
-          : (pct===null ? '목표 미설정'
-             : pct>=100 ? `목표 달성 · ${won(perf-target)} 초과`
-             : `${won(left)} 더 쓰면 달성`)}
-        ${excluded>0 ? ` · 실적 제외 ${won(excluded)} 뺀 금액` : ''}
-        ${used!==perf && excluded===0 ? ` · 사용 ${won(used)}` : ''}
-      </div>
-      ${st && st.reached ? `<div style="font-size:10.5px;color:var(--green);margin-bottom:5px">✅ 현재 ${manW(st.reached.amount)} 구간${st.reached.benefit?` — ${st.reached.benefit}`:''}</div>` : ''}
       ${(CFG.cardMemo||{})[issuer] ? `<div style="font-size:10.5px;color:var(--txt2);background:var(--card2);border-radius:7px;padding:5px 8px;margin-bottom:6px">${(CFG.cardMemo||{})[issuer]}</div>` : ''}
       <div style="display:grid;grid-template-columns:${KT_COLS};gap:5px;font-size:10px;color:var(--txt3);padding-bottom:2px;padding-left:12px">
         <span>카드</span><span style="text-align:right">결제일</span>
@@ -4487,6 +4455,7 @@ function renderCfgCards(){
       실적은 <b>카드사 단위로 합산</b>됩니다 (국카 + 국카! = 한 실적).
       실적에 안 잡히는 카드는 <b>실적 합산</b> 체크를 꺼주세요 (예: 실미 카드).
       <b>예산</b>은 카테고리에서 그 카드로 결제하도록 지정한 금액의 합입니다.
+      실적 진행 현황은 <b>월간/연간 리포트</b>에서 확인할 수 있어요.
     </div>
     ${blocks}`;
 }
@@ -7642,10 +7611,10 @@ function renderAnnualInsight(dIn){
         <div style="font-size:12px;font-weight:700;color:var(--txt)">🎯 저축 목표 진행</div>
         <div style="font-size:10.5px;color:var(--txt3);margin-top:1px">${g.total}개 중 ${g.achieved}개 달성${g.lowest?` · 가장 뒤처진 건 "${String(g.lowest.name).replace(/</g,'&lt;')}" ${g.lowest.pct}%`:''}</div>
       </div>
-      <button onclick="goToGoalsTab()" style="flex-shrink:0;font-size:11.5px;padding:6px 12px;border:none;border-radius:99px;background:var(--blue-bg);color:var(--blue);font-weight:700;cursor:pointer;white-space:nowrap">목표 탭 →</button>
+      <button onclick="goToAnnualGoals()" style="flex-shrink:0;font-size:11.5px;padding:6px 12px;border:none;border-radius:99px;background:var(--blue-bg);color:var(--blue);font-weight:700;cursor:pointer;white-space:nowrap">목표 진행률 →</button>
     </div>`;
   } else {
-    H += `<div style="font-size:11.5px;color:var(--txt3)">🎯 설정된 저축 목표가 없어요 — <span onclick="goToGoalsTab()" style="color:var(--blue);font-weight:600;cursor:pointer">목표 탭에서 설정하기 →</span></div>`;
+    H += `<div style="font-size:11.5px;color:var(--txt3)">🎯 설정된 저축 목표가 없어요 — <span onclick="goToAnnualGoals()" style="color:var(--blue);font-weight:600;cursor:pointer">저축 목표 진행률에서 설정하기 →</span></div>`;
   }
   H += `</div>`;
 
@@ -9188,6 +9157,8 @@ function restoreLastView(){
     let lastTab = LS.get('gb_last_tab');
     // 구버전(탭 재구조화 이전)에는 설정이 하단 탭이었음 — 지금은 상단바 아이콘이라 탭 복원 대상에서 제외
     if(lastTab==='settings'){ goToSettingsTab(); return; }
+    // 구버전(목표 탭)은 연간 리포트로 흡수됨 — 지금은 없는 탭이므로 분석 탭으로 대체
+    if(lastTab==='goals') lastTab = 'analysis';
     if(lastTab && lastTab!=='home'){
       const btn = document.querySelector(`.tab-btn[data-tab="${lastTab}"]`);
       if(btn) changeTab(lastTab, btn);
