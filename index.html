@@ -1061,7 +1061,7 @@ body { padding-bottom:88px; }
     <div id="cfg-misc-body"></div>
   </div>
   <div class="card" style="position:sticky;bottom:12px;z-index:20">
-    <div style="font-size:12px;color:var(--txt3);line-height:1.6;margin-bottom:10px">위 설정은 앱에 바로 반영됩니다. <b>시트에 저장</b>을 누르면 연결된 구글 시트의 <b>앱설정</b> 시트에 기록돼, 다른 기기에서도 같은 설정으로 열립니다.</div>
+    <div style="font-size:12px;color:var(--txt3);line-height:1.6;margin-bottom:10px">위 설정은 앱에 바로 반영됩니다. <b>시트에 저장</b>을 누르면 <b>카테고리 · 예산 · 계좌 · 카드 · 템플릿 · 기본값</b>이 모두 구글 시트에 기록돼, 다른 기기에서도 같은 설정으로 열립니다. (리포트 내보내기는 위 카드에서 따로 실행하세요)</div>
     <button onclick="cfgSaveToSheet()" style="width:100%;padding:14px;background:var(--blue);color:#fff;border:none;border-radius:14px;font-size:15px;font-weight:800;cursor:pointer">☁️ 시트에 저장</button>
     <div id="cfg-save-status" style="font-size:12px;color:var(--txt3);text-align:center;margin-top:8px"></div>
   </div>
@@ -2108,9 +2108,10 @@ const GROUP_META = {
   estate:   {label:'🏠 부동산/기타',      order:4},
   debt:     {label:'📉 카드 미결제',      order:5, neg:true},
 };
-let ASSET_GRP_OPEN = {};
+let ASSET_GRP_OPEN = {};   // DOMContentLoaded 시 저장값으로 채움
 function assetGrpToggle(g){
   ASSET_GRP_OPEN[g] = !ASSET_GRP_OPEN[g];
+  FOLD.assetGrp = ASSET_GRP_OPEN; foldSave();
   renderAssetOverview();
 }
 function renderAssetOverview(){
@@ -3738,17 +3739,44 @@ const esc = v => String(v==null?'':v).replace(/"/g,'&quot;');
 const jq  = v => String(v==null?'':v).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
 
 // ── 대분류 펼침 상태 ──
-let CFG_OPEN = {};
+// ══════════════════════════════════════════════════════════════════
+//  접힘 상태 저장
+//  예전엔 메모리에만 있어서 새로고침하면 전부 다시 펴졌다.
+//  카드·섹션·대분류·카드사·자산그룹 상태를 한 곳에 모아 저장한다.
+// ══════════════════════════════════════════════════════════════════
+const FOLD_KEY = 'ui_fold_v1';
+let FOLD = { cards:{}, sec:{}, rows:{}, cardIssuer:{}, assetGrp:{} };
+try{
+  const raw = JSON.parse(LS.get(FOLD_KEY) || 'null');
+  if(raw && typeof raw==='object') FOLD = Object.assign(FOLD, raw);
+}catch(e){}
+function foldSave(){ try{ LS.set(FOLD_KEY, JSON.stringify(FOLD)); }catch(e){} }
+
+let CFG_OPEN = FOLD.rows || {};
 function cfgToggleRow(kind, i){
   const k = kind+'|'+i;
   CFG_OPEN[k] = !CFG_OPEN[k];
+  FOLD.rows = CFG_OPEN; foldSave();
   renderCfgCategories();
 }
 function cfgSetSubs(kind, i, val){
   const arr = String(val||'').split(',').map(function(x){ return x.trim(); }).filter(Boolean);
   if(CFG.categories[kind] && CFG.categories[kind][i]){ CFG.categories[kind][i].subs = arr; cfgSave(); }
 }
-function cfgToggleFold(id){ const el=document.getElementById(id); if(el) el.classList.toggle('folded'); }
+function cfgToggleFold(id){
+  const el = document.getElementById(id); if(!el) return;
+  const folded = el.classList.toggle('folded');
+  FOLD.cards[id] = folded; foldSave();
+}
+// 저장해둔 접힘 상태를 화면에 적용
+function applySavedFolds(){
+  Object.keys(FOLD.cards||{}).forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.classList.toggle('folded', !!FOLD.cards[id]);
+  });
+  // ASSET_GRP_OPEN 은 FOLD 보다 먼저 선언돼 있어 여기서 값을 채운다
+  try{ Object.assign(ASSET_GRP_OPEN, FOLD.assetGrp||{}); }catch(e){}
+}
 
 // ── 소분류 조작 ──
 function cfgAddSub(kind, i){
@@ -3810,13 +3838,18 @@ function cfgPayOf(c, sub){
   return { acct:m.acct||'', day:m.day||0 };
 }
 // ── 섹션(지출/이동/수입) 접기 · 전체 접기 ──
-let CFG_SEC_OPEN = { '지출':true, '이동':true, '수입':true };
-function cfgToggleSec(kind){ CFG_SEC_OPEN[kind] = !CFG_SEC_OPEN[kind]; renderCfgCategories(); }
+let CFG_SEC_OPEN = Object.assign({ '지출':true, '이동':true, '수입':true }, FOLD.sec || {});
+function cfgToggleSec(kind){
+  CFG_SEC_OPEN[kind] = !CFG_SEC_OPEN[kind];
+  FOLD.sec = CFG_SEC_OPEN; foldSave();
+  renderCfgCategories();
+}
 function cfgFoldAll(open){
   ['지출','이동','수입'].forEach(k=>{
     CFG_SEC_OPEN[k] = open;
     (CFG.categories[k]||[]).forEach((c,i)=>{ CFG_OPEN[k+'|'+i] = open; });
   });
+  FOLD.sec = CFG_SEC_OPEN; FOLD.rows = CFG_OPEN; foldSave();
   renderCfgCategories();
 }
 
@@ -3910,7 +3943,7 @@ function cfgDrop(ev, kind, i){
   if(from === i || from < 0 || from >= list.length) return;
   const moved = list.splice(from, 1)[0];
   list.splice(i, 0, moved);
-  CFG_OPEN = {};   // 인덱스가 밀리므로 펼침 상태는 초기화
+  CFG_OPEN = {}; FOLD.rows = CFG_OPEN; foldSave();   // 인덱스가 밀리므로 펼침 상태는 초기화
   cfgSave(); renderCfgCategories(); cfgApply();
 }
 
@@ -4257,8 +4290,12 @@ function cfgSetPerfTarget(issuer, val){
 // 카드사 혜택은 "30만: 1만8천 / 70만: 2만 / 120만: 2만3천" 처럼 여러 단계다.
 // 목표 금액 하나로는 표현이 안 되므로 구간을 여러 개 두고, 지금 어디까지 왔는지 보여준다.
 // 실적이 카드사 단위로 합산되므로 구간도 카드사 단위로 관리한다.
-let CFG_CARD_OPEN = {};
-function cfgCardToggle(issuer){ CFG_CARD_OPEN[issuer] = !CFG_CARD_OPEN[issuer]; renderCfgCards(); }
+let CFG_CARD_OPEN = FOLD.cardIssuer || {};
+function cfgCardToggle(issuer){
+  CFG_CARD_OPEN[issuer] = !CFG_CARD_OPEN[issuer];
+  FOLD.cardIssuer = CFG_CARD_OPEN; foldSave();
+  renderCfgCards();
+}
 function cfgTiers(issuer){
   CFG.cardTiers = CFG.cardTiers || {};
   return CFG.cardTiers[issuer] || [];
@@ -4511,8 +4548,7 @@ function renderCfgTemplates(){
     </div>
     ${rows || '<div style="font-size:12.5px;color:var(--txt3);padding:12px 0">아직 만든 템플릿이 없어요</div>'}
     <button onclick="cfgAddTpl()" style="${CT.add}margin-top:9px">+ 템플릿 추가</button>
-    <button onclick="cfgSaveTemplates()" style="width:100%;margin-top:8px;padding:10px;border:none;border-radius:11px;background:var(--blue);color:#fff;font-size:13px;font-weight:700;cursor:pointer">☁️ 템플릿을 시트에 저장</button>
-    <div id="cfg-tpl-status" style="font-size:11.5px;color:var(--txt3);text-align:center;margin-top:7px"></div>`;
+    <div style="font-size:11px;color:var(--txt3);text-align:center;margin-top:8px">맨 아래 <b>☁️ 시트에 저장</b>을 누르면 함께 저장돼요</div>`;
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -4836,7 +4872,15 @@ function cfgSaveToSheet(){
         })
         .catch(()=> '저장 요청을 보냈어요. 시트의 [앱설정] 탭을 확인해 주세요.');
     })
-    .then(msg=>{ if(st) st.textContent = msg; cfgApply(); })
+    .then(msg=>{
+      // 템플릿은 저장 대상 시트가 달라(템플릿 탭) 따로 보내지만, 버튼은 하나로 둔다
+      const tpls = (templates||[]).filter(t=>t && (t.major||t.sub||t.memo));
+      if(!tpls.length){ if(st) st.textContent = msg; cfgApply(); return; }
+      if(st) st.textContent = msg + ' · 템플릿 저장 중…';
+      return Promise.all(tpls.map(t=>sheetPost({ action:'saveTemplate', template:t })))
+        .then(()=>{ if(st) st.textContent = msg + ` · 템플릿 ${tpls.length}개 저장`; cfgApply(); })
+        .catch(()=>{ if(st) st.textContent = msg + ' · 템플릿 저장은 실패했어요'; cfgApply(); });
+    })
     .catch(e=>{
       if(st) st.innerHTML = `저장 실패: ${e.message}<br>
         <span style="color:var(--txt3)">확인할 것 — ① 주소가 <b>/exec</b> 로 끝나는지
@@ -9141,8 +9185,8 @@ function initFoldableCards(){
     if(RPT_FOLDED[id]) card.classList.add('folded');
   });
 }
-document.addEventListener('DOMContentLoaded', ()=>{ initFoldableCards(); if(typeof cfgSeedIfEmpty==='function'){ cfgSeedIfEmpty(); cfgApply(); } if(typeof renderAllSettings==='function') renderAllSettings(); });
-window.addEventListener('load', ()=>{ initFoldableCards(); if(typeof renderAllSettings==='function') renderAllSettings(); });
+document.addEventListener('DOMContentLoaded', ()=>{ initFoldableCards(); if(typeof cfgSeedIfEmpty==='function'){ cfgSeedIfEmpty(); cfgApply(); } if(typeof renderAllSettings==='function') renderAllSettings(); if(typeof applySavedFolds==='function') applySavedFolds(); });
+window.addEventListener('load', ()=>{ initFoldableCards(); if(typeof renderAllSettings==='function') renderAllSettings(); if(typeof applySavedFolds==='function') applySavedFolds(); });
 
 </script>
 </body>
