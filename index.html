@@ -933,23 +933,20 @@ body { padding-bottom:88px; }
       <div class="form-group"><label>계좌</label>
         <input type="text" id="inv-acct" list="inv-acct-list" placeholder="예: ISA, 종합계좌, IRP" autocomplete="off">
         <datalist id="inv-acct-list">
-          <option>미래ISA</option><option>미래종합</option><option>미래금현물</option>
-          <option>연금저축</option><option>IRP</option><option>ISA</option>
+          
         </datalist>
       </div>
       <div class="form-group"><label>유형</label>
         <select id="inv-type" onchange="invToggleFields()">
           <option value="매수">매수</option>
-          <option value="매수.">매수. (전량매수)</option>
           <option value="매도">매도</option>
-          <option value="매도.">매도. (전량매도)</option>
           <option value="입금">입금</option>
           <option value="출금">출금</option>
           <option value="분배금">분배금</option>
           <option value="이자">이자</option>
           <option value="이용료">이용료</option>
           <option value="재투자">재투자</option>
-          <option value="mmf">mmf</option>
+          
         </select>
       </div>
       <div id="inv-trade-fields">
@@ -1356,6 +1353,36 @@ const DEMO_INITBAL = {};
 const DEMO_ACCTSDEF = [];
 
 function getUrl(){ return LS.get('scriptUrl') || ''; }
+
+// ══════════════════════════════════════════════════════════════════
+//  시트 쓰기 — Apps Script POST 전용 헬퍼
+//  Apps Script 웹앱은 POST 응답을 googleusercontent.com 으로 리디렉션하는데,
+//  이 리디렉션 응답에 CORS 헤더가 없어 브라우저가 "Failed to fetch"로 막는 경우가 있다.
+//  (GET 은 되는데 저장만 안 되는 증상이 이것)
+//  그래서 ① 일반 POST 를 먼저 시도하고, 막히면 ② no-cors 로 다시 보낸다.
+//  no-cors 는 응답을 읽을 수 없을 뿐 요청 자체는 서버에 도달하므로 저장은 된다.
+// ══════════════════════════════════════════════════════════════════
+function sheetPost(payload, opts){
+  opts = opts || {};
+  const url = getUrl();
+  if(!url) return Promise.reject(new Error('시트 주소가 없어요. 설정에서 /exec 주소를 먼저 넣어주세요.'));
+  const body = JSON.stringify(payload);
+  const base = { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:body };
+
+  return fetch(url, base)
+    .then(function(r){
+      if(!r.ok) throw new Error('서버 응답 ' + r.status);
+      return r.text().then(function(t){
+        try{ return JSON.parse(t); }catch(e){ return { ok:true, raw:t }; }
+      });
+    })
+    .catch(function(err){
+      // ② CORS·리디렉션으로 막힌 경우 — 응답은 못 읽지만 요청은 보낸다
+      return fetch(url, Object.assign({}, base, { mode:'no-cors' }))
+        .then(function(){ return { ok:true, opaque:true }; })
+        .catch(function(){ throw err; });
+    });
+}
 
 // ── 잠금 ──
 // 한 번 열면(같은 탭에서) 새로고침해도 다시 잠기지 않도록 세션 동안만 기억 (앱을 완전히 껐다 켜면 다시 물어봄)
@@ -3999,10 +4026,16 @@ function cfgApply(){
     }
 
     // ── 5) 계좌 자동완성 datalist 갱신 ──
-    ['acct-datalist','acct-datalist2','inv-acct-list'].forEach(id=>{
+    ['acct-datalist','acct-datalist2'].forEach(id=>{
       const dl = document.getElementById(id);
       if(dl) dl.innerHTML = ACCOUNT_LIST.map(k=>`<option>${k}</option>`).join('');
     });
+    // 투자 탭은 투자·목적자금 계좌만 후보로 (예전엔 증권사 계좌명이 코드에 박혀 있었다)
+    const invDl = document.getElementById('inv-acct-list');
+    if(invDl){
+      const invAccts = accts.filter(a=>a.group==='invest'||a.group==='contract').map(a=>a.key);
+      invDl.innerHTML = (invAccts.length?invAccts:ACCOUNT_LIST).map(k=>`<option>${k}</option>`).join('');
+    }
 
     ['renderBudgetHome','renderMonthReport','renderAnnualReport','renderHome','renderLedger']
       .forEach(fn=>{ try{ if(typeof window[fn]==='function') window[fn](); }catch(e){} });
@@ -4034,9 +4067,27 @@ function cfgSaveToSheet(){
     }
   };
   if(st) st.textContent = '저장 중…';
-  fetch(url, { method:'POST', headers:{'Content-Type':'text/plain'}, body: JSON.stringify(payload) })
-    .then(()=>{ if(st) st.textContent = '시트의 [앱설정] 시트에 저장했어요 · ' + new Date().toLocaleTimeString('ko-KR'); cfgApply(); })
-    .catch(e=>{ if(st) st.textContent = '저장 실패: ' + e.message; });
+  sheetPost(payload)
+    .then(res=>{
+      if(res && res.ok===false) throw new Error(res.error || '시트가 오류를 돌려줬어요');
+      // no-cors 로 보낸 경우엔 응답을 못 읽으므로, 다시 읽어와서 실제로 저장됐는지 확인한다
+      return fetch(getUrl() + '?action=config')
+        .then(r=>r.json())
+        .then(d=>{
+          const n = d && d.config && d.config.categories
+            ? ['수입','지출','이동'].reduce((s,k)=>s+((d.config.categories[k]||[]).length),0) : 0;
+          if(n>0) return `저장했어요 · 시트에서 카테고리 ${n}개 확인 · ` + new Date().toLocaleTimeString('ko-KR');
+          return '저장 요청을 보냈어요. 시트의 [앱설정] 탭을 확인해 주세요 · ' + new Date().toLocaleTimeString('ko-KR');
+        })
+        .catch(()=> '저장 요청을 보냈어요. 시트의 [앱설정] 탭을 확인해 주세요.');
+    })
+    .then(msg=>{ if(st) st.textContent = msg; cfgApply(); })
+    .catch(e=>{
+      if(st) st.innerHTML = `저장 실패: ${e.message}<br>
+        <span style="color:var(--txt3)">확인할 것 — ① 주소가 <b>/exec</b> 로 끝나는지
+        ② 배포 시 액세스가 <b>모든 사용자</b>인지
+        ③ Code.gs 를 바꿨다면 <b>배포 › 배포 관리 › 새 버전</b>으로 다시 배포했는지</span>`;
+    });
 }
 
 // ── 시트에서 읽어온 설정을 CFG에 병합 ──
