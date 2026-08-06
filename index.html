@@ -453,6 +453,10 @@ body { padding-bottom:88px; }
       <label>메모</label>
       <input type="text" id="edit-memo" placeholder="카드면: 할인:5000 환불:3000 해외수수료:1500 형식 가능">
     </div>
+    <div class="form-group">
+      <label>비고 <span style="font-size:11px;color:var(--txt3);font-weight:400">· 분석에 쓰이지 않는 기록용</span></label>
+      <input type="text" id="edit-note" placeholder="예: 실제로는 3일 결제인데 편의상 1일로 기재">
+    </div>
     <div style="display:flex;gap:10px;margin-top:8px">
       <button onclick="closeEditModal()" style="flex:1;padding:15px;border-radius:14px;border:1px solid #E5E0D5;background:var(--card);color:var(--txt2);font-size:15px;font-weight:700;cursor:pointer">취소</button>
       <button onclick="saveEdit()" style="flex:2;padding:15px;border-radius:14px;border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer">저장</button>
@@ -639,6 +643,10 @@ body { padding-bottom:88px; }
         <div class="form-group">
           <label>메모</label>
           <input type="text" id="tx-memo" placeholder="사용처 및 세부 메모 (카드면 할인:5000 환불:3000 해외수수료:1500)">
+        </div>
+        <div class="form-group">
+          <label>비고 <span style="font-size:11px;color:var(--txt3);font-weight:400">· 분석에 쓰이지 않는 기록용</span></label>
+          <input type="text" id="tx-note" placeholder="예: 실제로는 3일 결제인데 편의상 1일로 기재">
         </div>
         <button type="submit" class="submit-btn">구글 시트에 기록</button>
       </form>
@@ -1745,6 +1753,7 @@ function updateSubOptions() {
 // ── 거래 입력 → 시트 기록 ──
 // 입력 후 폼 초기화하되 날짜·구분은 유지 (같은 날짜 연속 입력 편의)
 function resetLedgerFormKeepDate(){
+  const nt=document.getElementById('tx-note'); if(nt) nt.value='';
   const d  = document.getElementById('tx-date')?.value;
   const ty = document.getElementById('tx-type')?.value;
   const mj = document.getElementById('tx-major')?.value;
@@ -1772,6 +1781,9 @@ function submitTransaction() {
     amount: parseInt(document.getElementById('tx-amount').value),
     account: document.getElementById('tx-account').value,
     memo: document.getElementById('tx-memo').value,
+    // 비고: 순수 기록용. 카드 실적 조정(할인:/환불:)이나 카테고리 매칭 등
+    // 어떤 계산에도 쓰이지 않는다.
+    note: (document.getElementById('tx-note')?.value || '').trim(),
     id: Date.now()
   };
   const acct = data.account;
@@ -1804,7 +1816,7 @@ function submitTransaction() {
     body: JSON.stringify({
       action:'addEntry', id:String(data.id), date:data.date, type:data.type,
       major:data.major, sub:data.category, memo:data.memo, amount:data.amount,
-      inAcct, outAcct
+      inAcct, outAcct, note:data.note||''
     })
   })
   .then(() => {
@@ -2448,7 +2460,7 @@ function renderGoals(){
   const trendMonths = nwTrendMonths(12);
   const goalAccts = computeGoalAccts();
   if(!goalAccts.length){
-    el.innerHTML = '<div class="card"><div style="text-align:center;color:var(--txt3);padding:16px;font-size:13px">설정된 저축 목표가 없습니다<br>시트의 계좌 설정에 목표금액(goal)을 입력해 주세요</div></div>';
+    el.innerHTML = '<div class="card"><div style="text-align:center;color:var(--txt3);padding:16px;font-size:13px">설정된 저축 목표가 없습니다<br><span style="font-size:12px">설정 › 🏦 계좌 · 현재 잔액 에서<br>모으려는 계좌에 <b>목표금액</b>을 입력해 주세요</span></div></div>';
     populateSimGoalSelect([]);
     return;
   }
@@ -2563,6 +2575,7 @@ function renderHistoryList() {
   if(q) {
     data = data.filter(t =>
       String(t.memo||'').toLowerCase().includes(q) ||
+      String(t.note||'').toLowerCase().includes(q) ||
       String(t.category||'').toLowerCase().includes(q) ||
       String(t.major||'').toLowerCase().includes(q) ||
       String(t.account||'').toLowerCase().includes(q)
@@ -2609,7 +2622,12 @@ function renderHistoryList() {
     const leadColor = HIST_SORT==='cat' ? 'var(--blue)' : 'var(--txt2)'; // 카테고리순에선 날짜가 앞이라 색으로 구분
     const leadWeight = HIST_SORT==='cat' ? '600' : '500'; // 날짜순에선 분류 bold 해제
     const rest = [acct, t.memo].filter(Boolean).join(' · ');
-    const line = `<span style="flex:1;min-width:0;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span style="color:${leadColor};font-weight:${leadWeight}">${lead}</span>${rest?`<span style="color:var(--txt3)"> · ${rest}</span>`:''}</span>`;
+    // 비고는 분석에 안 쓰이는 기록이라, 메모와 섞이지 않게 아래 줄에 흐리게 둔다
+    const noteTxt = String(t.note||'').trim();
+    const line = `<span style="flex:1;min-width:0;font-size:13px;overflow:hidden">
+      <span style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span style="color:${leadColor};font-weight:${leadWeight}">${lead}</span>${rest?`<span style="color:var(--txt3)"> · ${rest}</span>`:''}</span>
+      ${noteTxt?`<span style="display:block;font-size:11px;color:var(--txt3);opacity:.85;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${noteTxt.replace(/"/g,'&quot;')}">🗒 ${noteTxt}</span>`:''}
+    </span>`;
     if(BULK_MODE){
       const checked = BULK_SEL.has(String(t.id));
       const box = editable
@@ -3213,6 +3231,7 @@ function editTx(id) {
   if(eo) eo.value = t.outAcct || '';
   if(ei) ei.value = t.inAcct || '';
   document.getElementById('edit-memo').value = t.memo || '';
+  const _en=document.getElementById('edit-note'); if(_en) _en.value = t.note || '';
   // 모달 열기
   document.getElementById('edit-modal').style.display = 'flex';
 }
@@ -3279,6 +3298,7 @@ function saveEdit() {
   t.category = document.getElementById('edit-category').value;
   t.amount = parseInt(document.getElementById('edit-amount').value) || 0;
   t.memo = document.getElementById('edit-memo').value;
+  t.note = (document.getElementById('edit-note')?.value || '').trim();
   // 계좌 / inAcct / outAcct 갱신
   if(t.type==='이동') {
     const outA = (document.getElementById('edit-out-acct')?.value || '').trim();
@@ -3302,7 +3322,7 @@ function saveEdit() {
       body: JSON.stringify({
         action:'updateEntry', id:String(t.id), date:t.date, type:t.type,
         major:t.major, sub:t.category, memo:t.memo, amount:t.amount,
-        inAcct: t.inAcct, outAcct: t.outAcct
+        inAcct: t.inAcct, outAcct: t.outAcct, note: t.note||''
       })
     }).catch(()=>{});
     showToast('✏️ 수정 완료');
@@ -4162,13 +4182,15 @@ function renderCfgCategories(){
 //  계좌 · 자산 — 구분 > 대분류 > 소분류 > 이름 4단 구조
 //  카드가 여러 장이거나 통장이 여러 개여도 소분류(카드사·상품)로 묶여 정리된다.
 // ══════════════════════════════════════════════════════════════════
+const AT_COLS = '1fr 104px 110px 114px 114px 28px 26px';
 const AT = {
-  head:'display:grid;grid-template-columns:1fr 108px 116px 118px 30px 26px;gap:5px;align-items:center;font-size:10.5px;color:var(--txt3);padding:0 0 5px;border-bottom:1px solid #E5E8EB;',
-  row:'display:grid;grid-template-columns:1fr 108px 116px 118px 30px 26px;gap:5px;align-items:center;padding:5px 0;border-top:1px solid #F2F4F6;'
+  head:'display:grid;grid-template-columns:'+AT_COLS+';gap:5px;align-items:center;font-size:10.5px;color:var(--txt3);padding:0 0 5px;border-bottom:1px solid #E5E8EB;',
+  row:'display:grid;grid-template-columns:'+AT_COLS+';gap:5px;align-items:center;padding:5px 0;border-top:1px solid #F2F4F6;'
 };
 function cfgSetAcct(i, field, val){
   const a = CFG.accounts[i]; if(!a) return;
   if(field==='bal') a.bal = Number(String(val).replace(/[^0-9-]/g,''))||0;
+  else if(field==='goal') a.goal = Number(String(val).replace(/[^0-9-]/g,''))||0;
   else if(field==='hidden') a.hidden = !!val;
   else a[field] = String(val||'');
   cfgSave();
@@ -4196,6 +4218,11 @@ function renderCfgAccounts(){
         oninput="cfgSetAcct(${i},'sub',this.value)" style="${CT.inp}font-size:12px">
       <input value="${Number(a.bal)||''}" placeholder="현재 잔액" inputmode="numeric"
         oninput="cfgSetAcct(${i},'bal',this.value)" style="${CT.num}">
+      ${CFG_GROUP_SIDE[a.group]==='자산'
+        ? `<input value="${Number(a.goal)||''}" placeholder="목표금액" inputmode="numeric"
+             title="이 계좌로 모으려는 최종 금액 — 목표 탭에 진행률로 표시됩니다"
+             oninput="cfgSetAcct(${i},'goal',this.value)" style="${CT.num}">`
+        : '<span></span>'}
       <label title="숨기기 (잔액 0인 계좌만)" style="display:flex;justify-content:center;cursor:pointer">
         <input type="checkbox" ${a.hidden?'checked':''} onchange="cfgSetAcct(${i},'hidden',this.checked)">
       </label>
@@ -4228,13 +4255,15 @@ function renderCfgAccounts(){
   el.innerHTML = `
     <div style="font-size:12px;color:var(--txt3);line-height:1.6;margin-bottom:12px">
       <b>지금 이 시점의 잔액</b>을 적으세요. 앱은 이 값에 앞으로의 거래를 더하고 빼서 잔고를 계산합니다.<br>
-      카드는 <b>소분류에 카드사</b>를 적어주세요 — 같은 카드사 카드끼리 묶어서 결제일·실적을 계산합니다.
+      카드는 <b>소분류에 카드사</b>를 적어주세요 — 같은 카드사 카드끼리 묶어서 결제일·실적을 계산합니다.<br>
+      <b>목표금액</b>은 그 계좌로 최종적으로 모으려는 돈이에요 (예: 전세금 1억). 넣으면 <b>목표 탭</b>에 진행률로 나옵니다.
       부채(카드·대출)는 <b>갚아야 할 금액</b>을 양수로 적으면 순자산에서 빠집니다.
     </div>
     ${datalists}
     <div style="${AT.head}">
       <span>이름</span><span>대분류</span><span>소분류</span>
-      <span style="text-align:right">현재 잔액</span><span style="text-align:center">숨김</span><span></span>
+      <span style="text-align:right">현재 잔액</span><span style="text-align:right">목표금액</span>
+      <span style="text-align:center">숨김</span><span></span>
     </div>
     ${blocks || '<div style="font-size:12.5px;color:var(--txt3);padding:12px 0">아직 등록한 계좌가 없어요</div>'}
     <button onclick="CFG.accounts.push({key:'',sub:'',group:'cash',bal:0,hidden:false}); cfgSave(); renderCfgAccounts();"
@@ -4778,7 +4807,7 @@ function cfgApply(){
       GRP_LONGDEBT.length=0; pick('longdebt').forEach(k=>GRP_LONGDEBT.push(k));
       ACCOUNT_LIST.length=0; accts.forEach(a=>ACCOUNT_LIST.push(a.key));
       CARD_EMPHASIZE.length=0; pick('debt').forEach(k=>CARD_EMPHASIZE.push(k));
-      STATE.acctsDef = accts.map(a=>({ key:a.key, label:a.label||a.key, group:a.group||'cash' }));
+      STATE.acctsDef = accts.map(a=>({ key:a.key, label:a.label||a.key, group:a.group||'cash', goal:Number(a.goal)||0 }));
       STATE.initBal = STATE.initBal || {};
       accts.forEach(a=>{ if(a.bal!=null) STATE.initBal[a.key] = Number(a.bal)||0; });
     }
@@ -4900,7 +4929,8 @@ function cfgSaveToSheet(){
       cardPerf: CFG.cardPerf || {},
       saveGoals: goals.map(g=>({ n:g.name, g:g.monthly, mk:g.keyword||g.name })),
       initBalRaw: CFG.accounts.map(a=>({ key:a.key, bal:a.bal||0, group:a.group||'cash',
-                                          label:a.label||a.key, sub:a.sub||'', hidden:!!a.hidden, memo:a.memo||'' })),
+                                          label:a.label||a.key, sub:a.sub||'', hidden:!!a.hidden,
+                                          memo:a.memo||'', goal:Number(a.goal)||0 })),
       categories: (function(){
         const pack = c => ({
           major: c.major, subs: c.subs||[],
@@ -4970,7 +5000,7 @@ function cfgMergeFromSheet(config){
   }
   if(config.initBalRaw && config.initBalRaw.length){
     CFG.accounts = config.initBalRaw.map(a=>({ key:a.key, label:a.label||a.key, group:a.group||'cash',
-      sub:a.sub||'', hidden:!!a.hidden, memo:a.memo||'',
+      sub:a.sub||'', hidden:!!a.hidden, memo:a.memo||'', goal:Number(a.goal)||0,
       bal:(config.initBal&&config.initBal[a.key])||a.bal||0 }));
   }
   if(config.budget && Object.keys(config.budget).length){
@@ -4994,6 +5024,9 @@ function cfgMergeFromSheet(config){
 }
 
 function renderAllSettings(){
+  // 렌더 뒤에 접힘 상태를 다시 입힌다 — 시트 로드·탭 이동 등으로 다시 그려질 때
+  // 카드가 펴진 채로 남는 경로를 막기 위함
+  setTimeout(()=>{ try{ applySavedFolds(); }catch(e){} }, 0);
   ['renderCfgCategories','renderCfgAccounts','renderCfgCards','renderCfgTemplates','renderCfgReport','renderCfgMisc']
     .forEach(fn=>{ try{ if(typeof window[fn]==='function') window[fn](); }catch(e){ console.error(fn, e); } });
 }
@@ -9205,7 +9238,7 @@ document.addEventListener('DOMContentLoaded', syncStickyTop);
 ['changeTab','setAnalysisSub','setLedgerSub','setInvestSub'].forEach(fn=>{
   const orig = window[fn];
   if(typeof orig==='function'){
-    window[fn] = function(){ const r = orig.apply(this, arguments); setTimeout(syncStickyTop, 0); return r; };
+    window[fn] = function(){ const r = orig.apply(this, arguments); setTimeout(()=>{ syncStickyTop(); try{ applySavedFolds(); }catch(e){} }, 0); return r; };
   }
 });// ══════════════════════════════════════════════════════════════════
 //  [패치] 리포트 카드 접기 — 카드 제목을 누르면 본문만 접힌다.
