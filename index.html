@@ -1322,15 +1322,11 @@ let STATE = {
     '저축': CAT_MV_SUBS
   }
 };
-// 데모 데이터 (시트 연동 전 표시용)
-let DEMO = [
-  { date:'2026-06-22', type:'수입', amount:2500000, category:'월급',     major:'근로소득', account:'KB뱅크', memo:'6월 급여' },
-  { date:'2026-06-23', type:'지출', amount:800000,  category:'월세/이자', major:'주거비', account:'주거래통장', memo:'월세 납부' },
-  { date:'2026-06-24', type:'지출', amount:690000,  category:'외식',     major:'식비',   account:'신용카드', memo:'카드 사용' },
-  { date:'2026-06-25', type:'지출', amount:310000,  category:'생활소모품', major:'생활용품', account:'신용카드', memo:'카드 사용' },
-  { date:'2026-06-20', type:'이동', amount:500000,  category:'청약', major:'예적금', account:'주거래통장', memo:'청약 납입' }
-];
-// 데모용 카드 예산 + 통장 잔고 (시안 재현)
+// 데모 데이터 — 배포판에서는 비워 둔다.
+// (샘플 거래가 들어 있으면 첫 실행 때 리포트에 없는 달의 숫자·색이 찍혀서
+//  "내가 넣지도 않은 6월 내역이 있다"처럼 보인다)
+let DEMO = [];
+
 const DEMO_CARD_BUDGET = {};
 const DEMO_INITBAL = {};
 const DEMO_ACCTSDEF = [];
@@ -7313,9 +7309,9 @@ function renderRptSave(dIn){
     <div style="display:flex;gap:4px;margin-top:4px">${rateRow}</div>
     <div style="display:flex;gap:4px;margin-top:1px">${monthRow}</div>
     <div style="font-size:10px;color:var(--txt3);margin-top:6px">막대 = 월 저축액 · 숫자 = 그 달 저축률(%) · <b style="color:var(--blue)">막대를 누르면 그 달 실제 이동 내역</b></div>
-    <div style="font-size:11px;color:var(--txt2);margin-top:10px;padding-top:9px;border-top:1px solid #F2F4F6;line-height:1.6">
+    ${d.totalSave>0 ? `<div style="font-size:11px;color:var(--txt2);margin-top:10px;padding-top:9px;border-top:1px solid #F2F4F6;line-height:1.6">
       가장 많이 모은 달은 <b>${best+1}월</b> ${manW(d.saveVals[best])}${zeroN?` · 저축이 없던 달 ${zeroN}개월`:''}
-    </div>
+    </div>` : `<div style="font-size:11.5px;color:var(--txt3);margin-top:10px;padding-top:9px;border-top:1px solid #F2F4F6">아직 저축·이동 내역이 없어요</div>`}
     ${rptSaveReconcileHtml(d)}`;
 }
 
