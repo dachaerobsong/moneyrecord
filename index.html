@@ -3935,6 +3935,14 @@ function cfgAccAddSub(group){
   cfgAccAdd(group, name.trim() || '미분류');
 }
 function cfgAccToggle(group, sub){ ACC_OPEN[group+'|'+sub] = (ACC_OPEN[group+'|'+sub]===false); renderCfgAccounts(); }
+// 화면에 보이는 순서(대분류 → 소분류 등장 순서 → 그 안 이름 순서) 그대로 뽑아낸다 — 시트 저장 순서를 화면과 맞추기 위함
+function cfgAccSortedList(){
+  const out = [];
+  CFG_GROUPS.forEach(([g])=>{
+    cfgAccBySub(g).forEach(({idxs})=>{ idxs.forEach(i=>out.push(CFG.accounts[i])); });
+  });
+  return out;
+}
 function cfgAccRenameSub(group, oldSub, newVal){
   const v = newVal.trim();
   CFG.accounts.forEach(a=>{ if(a.group===group && ((a.sub||'').trim()||'미분류')===oldSub) a.sub = v; });
@@ -4253,7 +4261,7 @@ function cfgSaveToSheet(){
       cardBudget: STATE.cardBudget || {},
       cards: CFG.cards || {},
       saveGoals: goals.map(g=>({ n:g.name, g:g.monthly, mk:g.keyword||g.name })),
-      initBalRaw: CFG.accounts.map(a=>({ key:a.key, bal:a.bal||0, group:a.group||'cash', label:a.label||a.key, sub:a.sub||'', memo:a.memo||'' })),
+      initBalRaw: cfgAccSortedList().filter(a=>a.key).map(a=>({ key:a.key, bal:a.bal||0, group:a.group||'cash', label:a.label||a.key, sub:a.sub||'', memo:a.memo||'' })),
       categories: {
         '수입': (CFG.categories['수입']||[]).map(c=>({major:c.major, subs:c.subs||[], flags:c.flags||''})),
         '지출': (CFG.categories['지출']||[]).map(c=>({major:c.major, subs:c.subs||[], flags:c.flags||'', budget:cfgMajorBudget(c), subBudget:c.subBudget||{}})),
