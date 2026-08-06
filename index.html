@@ -1961,6 +1961,20 @@ function fetchFromSheet(silent) {
     .then(data => {
       if(!data.ok) throw new Error(data.error||'오류');
 
+      // 시트의 [템플릿] 탭도 함께 반영 — 예전엔 템플릿 모달을 열 때만 읽어서,
+      // 설정 화면에는 브라우저에 남아 있던 옛 목록만 보였다.
+      if(Array.isArray(data.templates)){
+        try{
+          templates = data.templates.map(t=>{
+            const n = (typeof normalizeTpl==='function') ? normalizeTpl(t) : t;
+            if(!n.account && typeof tplAccount==='function') n.account = tplAccount(n);
+            return n;
+          });
+          saveTemplatesLocal();
+          if(typeof renderCfgTemplates==='function') renderCfgTemplates();
+        }catch(e){ console.error('템플릿 반영 실패', e); }
+      }
+
       // ① config 먼저 처리 (acctsDef가 entries 파싱에 필요)
       if(data.config){
         // [추가] GAS가 [저축목표] 블록을 어떤 이름으로 내려주든 나중에 찾아낼 수 있도록 원본 보관
@@ -3816,10 +3830,15 @@ function cfgSetMajorBudget(kind, i, val){
 // 여기서 정한 값이 현금흐름(언제 얼마 빠지는지)과 카드 예산으로 그대로 흘러간다.
 function cfgAcctOptions(sel){
   const list = (CFG.accounts||[]).filter(a=>a.key);
-  return '<option value="">(미지정)</option>' + list.map(a=>{
+  let html = '<option value="">(미지정)</option>' + list.map(a=>{
     const tag = a.group==='debt' ? '💳' : a.group==='cash' ? '🏦' : '·';
     return `<option value="${esc(a.key)}" ${sel===a.key?'selected':''}>${tag} ${a.key}</option>`;
   }).join('');
+  // 계좌 목록에 없는 이름이 시트에 있으면 지우지 말고 그대로 남긴다
+  if(sel && !list.some(a=>a.key===sel)){
+    html += `<option value="${esc(sel)}" selected>${sel} (계좌 미등록)</option>`;
+  }
+  return html;
 }
 function cfgSetPay(kind, i, sub, field, val){
   const c = CFG.categories[kind][i]; if(!c) return;
@@ -4465,12 +4484,26 @@ function cfgSetCard(key, field, val){
 const TT_COLS = '1fr 66px 92px 92px 110px 26px';
 function cfgTplList(){
   if(typeof loadTemplatesLocal==='function' && !templates.length) loadTemplatesLocal();
-  return templates || [];
+  // 시트에서 온 원본은 필드명이 제각각이라, 표준 형태로 한 번 정규화해서 배열 자체를 교체한다.
+  // (이걸 안 하면 화면 드롭다운이 값을 못 찾아 빈칸으로 보인다)
+  templates = (templates||[]).map(raw=>{
+    const t = (typeof normalizeTpl==='function') ? normalizeTpl(raw) : (raw||{});
+    // 수입은 입금계좌, 지출은 출금계좌가 '결제수단'이다 — 어느 쪽에 들어와 있든 account 로 모은다
+    if(!t.account) t.account = (typeof tplAccount==='function') ? tplAccount(t) : '';
+    return t;
+  });
+  return templates;
 }
 function cfgSetTpl(i, field, val){
   const t = templates[i]; if(!t) return;
   t[field] = String(val||'');
-  if(field==='name' || field==='memo'){ if(!t.name) t.name = t.memo || t.sub || t.major; }
+  if(field==='name' || field==='memo'){ t.name = t.memo || t.sub || t.major || t.name || ''; }
+  // 계좌는 유형에 따라 시트 열이 달라진다 (수입=입금계좌 / 지출=출금계좌)
+  if(field==='account' || field==='type'){
+    const acc = t.account || '';
+    if(t.type==='수입'){ t.inAcct = acc; t.outAcct = ''; }
+    else if(t.type==='지출'){ t.outAcct = acc; t.inAcct = ''; }
+  }
   saveTemplatesLocal();
 }
 function cfgAddTpl(){
@@ -4498,12 +4531,37 @@ function cfgSaveTemplates(){
     .then(()=>{ if(st) st.textContent = `${list.length}개를 시트에 저장했어요`; })
     .catch(e=>{ if(st) st.textContent = '저장 실패: '+e.message; });
 }
+let CFG_TPL_FETCHED = false;
+function cfgFetchTemplates(force){
+  const url = getUrl();
+  if(!url || (CFG_TPL_FETCHED && !force)) return;
+  CFG_TPL_FETCHED = true;
+  fetch(url+'?action=templates').then(r=>r.json()).then(d=>{
+    const arr = Array.isArray(d) ? d : (d && (d.templates || d.data)) || [];
+    if(!arr.length) return;
+    templates = arr.map(t=>{
+      const n = normalizeTpl(t);
+      if(!n.account) n.account = tplAccount(n);
+      return n;
+    });
+    saveTemplatesLocal();
+    renderCfgTemplates();
+  }).catch(()=>{});
+}
 function renderCfgTemplates(){
   const el = document.getElementById('cfg-tpl-body'); if(!el) return;
   cfgSeedIfEmpty();
+  cfgFetchTemplates(false);
   const list = cfgTplList();
   const catsOf = kind => (CFG.categories[kind]||[]).filter(c=>c.major);
   const acctOpts = sel => cfgAcctOptions(sel);
+  // 시트에 있는 값이 설정 카테고리에 없더라도 그대로 보여준다.
+  // (없다고 빈칸으로 두면 "안 불러와졌다"로 보이고, 저장하면 실제로 값이 날아간다)
+  const optsWith = (list, cur) => {
+    const arr = (list||[]).slice();
+    if(cur && arr.indexOf(cur)<0) arr.push(cur);
+    return arr.map(v=>`<option value="${esc(v)}" ${cur===v?'selected':''}>${v}${(list||[]).indexOf(v)<0?' (설정에 없음)':''}</option>`).join('');
+  };
 
   const rows = list.map((raw,i)=>{
     const t = templates[i];
@@ -4519,11 +4577,11 @@ function renderCfgTemplates(){
       </select>
       <select onchange="cfgSetTpl(${i},'major',this.value); renderCfgTemplates()" style="${CT.inp}font-size:11.5px;padding:6px 3px">
         <option value="">대분류</option>
-        ${majors.map(c=>`<option value="${esc(c.major)}" ${t.major===c.major?'selected':''}>${c.major}</option>`).join('')}
+        ${optsWith(majors.map(c=>c.major), t.major)}
       </select>
       <select onchange="cfgSetTpl(${i},'sub',this.value)" style="${CT.inp}font-size:11.5px;padding:6px 3px">
         <option value="">소분류</option>
-        ${subs.map(sn=>`<option value="${esc(sn)}" ${t.sub===sn?'selected':''}>${sn}</option>`).join('')}
+        ${optsWith(subs, t.sub)}
       </select>
       <select onchange="cfgSetTpl(${i},${kind==='이동'?"'outAcct'":"'account'"},this.value)" style="${CT.inp}font-size:11.5px;padding:6px 3px">
         ${acctOpts(kind==='이동' ? t.outAcct : t.account)}
@@ -4547,7 +4605,10 @@ function renderCfgTemplates(){
       <span>내용</span><span>유형</span><span>대분류</span><span>소분류</span><span>계좌</span><span></span>
     </div>
     ${rows || '<div style="font-size:12.5px;color:var(--txt3);padding:12px 0">아직 만든 템플릿이 없어요</div>'}
-    <button onclick="cfgAddTpl()" style="${CT.add}margin-top:9px">+ 템플릿 추가</button>
+    <div style="display:flex;gap:6px;margin-top:9px">
+      <button onclick="cfgAddTpl()" style="${CT.add}flex:1">+ 템플릿 추가</button>
+      <button onclick="cfgFetchTemplates(true)" style="flex:none;padding:8px 14px;border:1px solid #E5E8EB;border-radius:9px;background:var(--card);color:var(--txt2);font-size:12.5px;font-weight:600;cursor:pointer">↻ 시트에서 다시 읽기</button>
+    </div>
     <div style="font-size:11px;color:var(--txt3);text-align:center;margin-top:8px">맨 아래 <b>☁️ 시트에 저장</b>을 누르면 함께 저장돼요</div>`;
 }
 
