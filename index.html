@@ -1064,6 +1064,11 @@ body { padding-bottom:88px; }
     <div id="cfg-save-status" style="font-size:12px;color:var(--txt3);text-align:center;margin-top:8px"></div>
   </div>
   <div class="card">
+    <div class="card-title">🧹 이 브라우저 초기화</div>
+    <div style="font-size:12px;color:var(--txt3);line-height:1.6;margin-bottom:10px">이 브라우저에 저장된 설정·메모·시트 주소를 전부 지웁니다. <b>구글 시트의 내용은 지워지지 않습니다.</b> 처음부터 다시 설정하고 싶을 때 쓰세요.</div>
+    <button onclick="resetLocalApp()" style="width:100%;padding:13px;background:var(--card);color:var(--red);border:1px solid var(--red);border-radius:14px;font-size:14px;font-weight:700;cursor:pointer">이 브라우저의 설정 지우기</button>
+  </div>
+  <div class="card">
     <div class="card-title">🧾 시트 설정값 점검</div>
     <div style="font-size:12px;color:var(--txt3);line-height:1.6;margin-bottom:10px">앱이 시트에서 실제로 읽어온 예산·저축목표·계좌를 그대로 보여줍니다. 저축 판정이 안 될 때 여기서 이름이 맞는지 확인하세요.</div>
     <button onclick="debugConfig()" style="width:100%;padding:13px;background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue);border-radius:14px;font-size:14px;font-weight:700;cursor:pointer">설정값 확인</button>
@@ -1087,6 +1092,25 @@ body { padding-bottom:88px; }
 </div><!-- /app-main -->
 
 <script>
+// ══════════════════════════════════════════════════════════════════
+//  저장소 네임스페이스
+//  같은 브라우저에서 다른 버전의 앱을 열어본 적이 있으면 localStorage 키가
+//  겹쳐서 예전 데이터(급여액·고정지출 일정 등)를 그대로 물려받는다.
+//  모든 키에 접두어를 붙여 이 앱의 저장 공간을 완전히 분리한다.
+// ══════════════════════════════════════════════════════════════════
+const LS_NS = 'aio1:';
+const LS = {
+  get(k){ try{ return localStorage.getItem(LS_NS + k); }catch(e){ return null; } },
+  set(k, v){ try{ localStorage.setItem(LS_NS + k, v); }catch(e){} },
+  remove(k){ try{ localStorage.removeItem(LS_NS + k); }catch(e){} },
+  clearAll(){
+    try{
+      Object.keys(localStorage).filter(function(k){ return k.indexOf(LS_NS)===0; })
+        .forEach(function(k){ LS.remove(k); });
+    }catch(e){}
+  }
+};
+
 // ── 상태 ──
 // 기존 앱의 카테고리 구조 (대분류 → 소분류)
 // ── 카테고리 기본값 ────────────────────────────────────────────────
@@ -1167,8 +1191,8 @@ function toggleCardIssuer(id){
 // ── 카드 결제 현황 공용 렌더 (타일형 / 리스트형 + 전체 접기·펼치기) ──
 const ALWAYS_ISSUERS = ['국민','롯데','삼성','신한'];
 let CARD_GRP_OPEN = {};
-let CARD_OPEN = (()=>{ try{ return JSON.parse(localStorage.getItem('cardOpenV1'))||{}; }catch(e){ return {}; } })();
-function saveCardOpen(){ try{ localStorage.setItem('cardOpenV1', JSON.stringify(CARD_OPEN)); }catch(e){} }
+let CARD_OPEN = (()=>{ try{ return JSON.parse(LS.get('cardOpenV1'))||{}; }catch(e){ return {}; } })();
+function saveCardOpen(){ try{ LS.set('cardOpenV1', JSON.stringify(CARD_OPEN)); }catch(e){} }
 function cardIsOpen(detId){ return !!CARD_OPEN[detId]; }
 // 카드 베이스명: 뒤에 붙은 마커(!, -) 제거 — 같은 카드의 변형 표기를 하나로 합산
 function cardBaseName(name){ const s=String(name||''); const b=s.replace(/[!\-].*$/,''); return b||s; }
@@ -1331,7 +1355,7 @@ const DEMO_CARD_BUDGET = {};
 const DEMO_INITBAL = {};
 const DEMO_ACCTSDEF = [];
 
-function getUrl(){ return localStorage.getItem('scriptUrl') || ''; }
+function getUrl(){ return LS.get('scriptUrl') || ''; }
 
 // ── 잠금 ──
 // 한 번 열면(같은 탭에서) 새로고침해도 다시 잠기지 않도록 세션 동안만 기억 (앱을 완전히 껐다 켜면 다시 물어봄)
@@ -1351,7 +1375,7 @@ function changeTab(tabName, btnElement) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('on'));
   document.getElementById(`p-${tabName}`).classList.add('on');
   if(btnElement) btnElement.classList.add('on');
-  try{ localStorage.setItem('gb_last_tab', tabName); }catch(e){}
+  try{ LS.set('gb_last_tab', tabName); }catch(e){}
   try{
     if(tabName==='goals'){ renderGoals(); if(typeof renderSavingsSim==='function') renderSavingsSim(); }
     if(tabName==='home'){ renderAssetOverview(); if(typeof renderMonthlyChart==='function') renderMonthlyChart(); }
@@ -1440,8 +1464,8 @@ function invCalcAmt(){
 }
 
 // ── 주식 내역 로컬 캐시 ──
-function savePfCache(){ try{ localStorage.setItem('gb_pf_cache', JSON.stringify(pfTx)); }catch(e){} }
-function loadPfCache(){ try{ const c=JSON.parse(localStorage.getItem('gb_pf_cache')||'null'); if(c && c.length){ pfTx=c; return true; } }catch(e){} return false; }
+function savePfCache(){ try{ LS.set('gb_pf_cache', JSON.stringify(pfTx)); }catch(e){} }
+function loadPfCache(){ try{ const c=JSON.parse(LS.get('gb_pf_cache')||'null'); if(c && c.length){ pfTx=c; return true; } }catch(e){} return false; }
 
 // ── 시트에서 주식 거래내역 전체 불러오기 ──
 function loadPfData(silent){
@@ -1537,10 +1561,10 @@ function renderInvestSummary(){
 }
 
 // ── 거래 내역 (계좌별 그룹 · 접기/펼치기) ──
-let INV_ACC_OPEN = (()=>{ try{ return JSON.parse(localStorage.getItem('invAccOpenV1'))||{}; }catch(e){ return {}; } })();
+let INV_ACC_OPEN = (()=>{ try{ return JSON.parse(LS.get('invAccOpenV1'))||{}; }catch(e){ return {}; } })();
 function invAccToggle(key){
   INV_ACC_OPEN[key] = !INV_ACC_OPEN[key];
-  try{ localStorage.setItem('invAccOpenV1', JSON.stringify(INV_ACC_OPEN)); }catch(e){}
+  try{ LS.set('invAccOpenV1', JSON.stringify(INV_ACC_OPEN)); }catch(e){}
   renderInvestHistory();
 }
 function renderInvestHistory(){
@@ -1603,7 +1627,7 @@ function setLedgerSub(subName, el) {
   document.querySelectorAll('#p-ledger .sub-tab').forEach(b => b.classList.remove('on'));
   document.getElementById('sub-ledger-' + subName).style.display = 'block';
   if(el) el.classList.add('on');
-  try{ localStorage.setItem('gb_last_ledgersub', subName); }catch(e){}
+  try{ LS.set('gb_last_ledgersub', subName); }catch(e){}
   try {
     if(subName === 'history') renderHistoryList();
     if(subName === 'balance'){
@@ -1628,7 +1652,7 @@ function setAnalysisSub(subName, el) {
   const periodControls = document.getElementById('analysis-period-controls');
   if(periodControls) periodControls.style.display = subName === 'period' ? 'none' : 'flex';
   if(el) el.classList.add('on');
-  try{ localStorage.setItem('gb_last_analysissub', subName); }catch(e){}
+  try{ LS.set('gb_last_analysissub', subName); }catch(e){}
   try {
     if(subName === 'month') { renderBudgetHome(); if(typeof renderRptInsight==='function') renderRptInsight(); }
     if(subName === 'period'){
@@ -1754,14 +1778,14 @@ function submitTransaction() {
 // 시트 데이터(거래내역)와 무관한 "이 기기의 분석 설정"이라 별도 키로 관리 (시트 동기화에 영향받지 않음)
 function saveCatSettings(){
   try{
-    localStorage.setItem('gb_cat_settings', JSON.stringify({
+    LS.set('gb_cat_settings', JSON.stringify({
       catCadence: STATE.catCadence, fixedExceptions: STATE.fixedExceptions
     }));
   }catch(e){ console.warn('설정 저장 실패:', e); }
 }
 function loadCatSettings(){
   try{
-    const c = JSON.parse(localStorage.getItem('gb_cat_settings')||'null');
+    const c = JSON.parse(LS.get('gb_cat_settings')||'null');
     if(!c) return false;
     if(c.catCadence) STATE.catCadence = c.catCadence;
     if(c.fixedExceptions) STATE.fixedExceptions = c.fixedExceptions;
@@ -1841,7 +1865,7 @@ function toggleFixedException(sub, checked){
 }
 function saveStateCache(){
   try{
-    localStorage.setItem('gb_state_cache', JSON.stringify({
+    LS.set('gb_state_cache', JSON.stringify({
       ts: Date.now(),
       transactions: STATE.transactions, budget: STATE.budget, subBudget: STATE.subBudget,
       cardBudget: STATE.cardBudget, saveGoals: STATE.saveGoals,
@@ -1851,7 +1875,7 @@ function saveStateCache(){
 }
 function loadStateCache(){
   try{
-    const c = JSON.parse(localStorage.getItem('gb_state_cache')||'null');
+    const c = JSON.parse(LS.get('gb_state_cache')||'null');
     if(!c || !c.transactions || !c.transactions.length) return false;
     STATE.transactions = c.transactions;
     if(c.budget) STATE.budget = c.budget;
@@ -1954,7 +1978,7 @@ function fetchFromSheet(silent) {
       if(data.cellMemos){
         gbMemoLoad();
         Object.assign(GB_MEMO, data.cellMemos);
-        try{ localStorage.setItem('asset_gb_memo', JSON.stringify(GB_MEMO)); }catch(e){}
+        try{ LS.set('asset_gb_memo', JSON.stringify(GB_MEMO)); }catch(e){}
       }
 
       saveStateCache(); // 다음 실행 때 즉시 렌더용
@@ -3229,11 +3253,11 @@ function majorLabel(type, val){
 
 // ── 예산 홈 상태 ──
 let BUD_MONTH = currentMonthStr();
-let BUD_EXPAND = (()=>{ try{ return JSON.parse(localStorage.getItem('budExpandV2'))||{}; }catch(e){ return {}; } })();
-let BUD_ALL_OPEN = (()=>{ try{ return JSON.parse(localStorage.getItem('budAllOpenV2'))||false; }catch(e){ return false; } })();
-function saveBudExpand(){ try{ localStorage.setItem('budExpandV2', JSON.stringify(BUD_EXPAND)); localStorage.setItem('budAllOpenV2', JSON.stringify(BUD_ALL_OPEN)); }catch(e){} }
+let BUD_EXPAND = (()=>{ try{ return JSON.parse(LS.get('budExpandV2'))||{}; }catch(e){ return {}; } })();
+let BUD_ALL_OPEN = (()=>{ try{ return JSON.parse(LS.get('budAllOpenV2'))||false; }catch(e){ return false; } })();
+function saveBudExpand(){ try{ LS.set('budExpandV2', JSON.stringify(BUD_EXPAND)); LS.set('budAllOpenV2', JSON.stringify(BUD_ALL_OPEN)); }catch(e){} }
 let GB_MEMO = {};
-function gbMemoLoad(){ try{ GB_MEMO = JSON.parse(localStorage.getItem('asset_gb_memo')||'{}'); }catch(e){ GB_MEMO={}; } }
+function gbMemoLoad(){ try{ GB_MEMO = JSON.parse(LS.get('asset_gb_memo')||'{}'); }catch(e){ GB_MEMO={}; } }
 function gbMemoKey(major, sub){ return BUD_MONTH + '|' + (major||'') + (sub?('|'+sub):''); }
 function gbGetMemo(major, sub){ gbMemoLoad(); return GB_MEMO[gbMemoKey(major,sub)] || ''; }
 function budSaveMemo(inp){
@@ -3242,7 +3266,7 @@ function budSaveMemo(inp){
   const val = inp.value.trim();
   const k = gbMemoKey(major, sub);
   if(val) GB_MEMO[k] = val; else delete GB_MEMO[k];
-  try{ localStorage.setItem('asset_gb_memo', JSON.stringify(GB_MEMO)); }catch(e){}
+  try{ LS.set('asset_gb_memo', JSON.stringify(GB_MEMO)); }catch(e){}
   // 시트에도 실시간 저장 (기기 바뀌어도 백업/공유되도록) — 서버 액션: gb_saveCellMemo
   const url = getUrl();
   if(url){
@@ -3448,9 +3472,9 @@ function saveGoalListFromBudget(){
 // 앱에 직접 적어두면 그 값을 최우선으로 쓴다. 한 번 적으면 로컬에 저장된다.
 const SAVE_GOAL_LS = 'asset_save_goals_v1';
 let LOCAL_SAVE_GOALS = [];
-try{ LOCAL_SAVE_GOALS = JSON.parse(localStorage.getItem(SAVE_GOAL_LS) || '[]') || []; }catch(e){ LOCAL_SAVE_GOALS = []; }
+try{ LOCAL_SAVE_GOALS = JSON.parse(LS.get(SAVE_GOAL_LS) || '[]') || []; }catch(e){ LOCAL_SAVE_GOALS = []; }
 function saveLocalGoals(){
-  try{ localStorage.setItem(SAVE_GOAL_LS, JSON.stringify(LOCAL_SAVE_GOALS)); }catch(e){}
+  try{ LS.set(SAVE_GOAL_LS, JSON.stringify(LOCAL_SAVE_GOALS)); }catch(e){}
 }
 // 실제로 쓸 목표 목록 — ① 앱 설정 ② 시트 [저축목표] ③ 예산에서 유추
 function saveGoalsResolved(){
@@ -3462,6 +3486,13 @@ function saveGoalsResolved(){
   const b = saveGoalListFromBudget();
   if(b.length) return { list:b, src:'예산 시트에서 찾은 저축 항목' };
   return { list:[], src:'' };
+}
+
+// ── 설정 탭: 이 브라우저 초기화 ──
+function resetLocalApp(){
+  if(!confirm('이 브라우저에 저장된 설정·메모·시트 주소를 전부 지울까요?\n\n구글 시트의 내용은 그대로 남습니다.')) return;
+  LS.clearAll();
+  location.reload();
 }
 
 // ── 설정 탭: 저축 월목표 편집 ──
@@ -3560,8 +3591,8 @@ function saveGoalActual(goal, txList){
 // ══════════════════════════════════════════════════════════════════
 const CFG_LS = 'asset_cfg_v1';
 let CFG = { categories:{ '수입':[], '지출':[], '이동':[] }, accounts:[], budget:{}, settings:{} };
-try{ const raw = JSON.parse(localStorage.getItem(CFG_LS)||'null'); if(raw) CFG = Object.assign(CFG, raw); }catch(e){}
-function cfgSave(){ try{ localStorage.setItem(CFG_LS, JSON.stringify(CFG)); }catch(e){} }
+try{ const raw = JSON.parse(LS.get(CFG_LS)||'null'); if(raw) CFG = Object.assign(CFG, raw); }catch(e){}
+function cfgSave(){ try{ LS.set(CFG_LS, JSON.stringify(CFG)); }catch(e){} }
 function cfgSetSubs(kind, i, val){
   const arr = String(val||'').split(',').map(function(x){ return x.trim(); }).filter(Boolean);
   if(CFG.categories[kind] && CFG.categories[kind][i]){ CFG.categories[kind][i].subs = arr; cfgSave(); }
@@ -3755,7 +3786,7 @@ function cfgApply(){
 // ── 시트에 저장 ──
 function cfgSaveToSheet(){
   const st = document.getElementById('cfg-save-status');
-  const url = (typeof getUrl==='function') ? getUrl() : localStorage.getItem('sheetUrl');
+  const url = (typeof getUrl==='function') ? getUrl() : LS.get('sheetUrl');
   if(!url){ if(st) st.textContent='먼저 위에서 구글 시트 URL을 연결해 주세요.'; return; }
   const goals = (typeof saveGoalsResolved==='function') ? saveGoalsResolved().list : [];
   const payload = {
@@ -3962,14 +3993,14 @@ function isKpassTx(t){
 // ── 실질 대중교통비 ─────────────────────────────────────────────────
 // 기후동행카드와 비교하려면 "택시·기차 뺀 대중교통만" + "K-패스 환급 차감"이어야 한다.
 // 카드 할인은 결제액에 이미 반영되어 있으므로 다시 빼지 않고 참고로만 표기한다.
-const TRANSIT_BENCH_DEFAULT = 62000;
+const TRANSIT_BENCH_DEFAULT = 0;   // 정기권 가격은 사람마다 달라 기본값을 두지 않는다
 function transitBenchmark(){
-  try{ const v = Number(localStorage.getItem('transitBench')); if(v>0) return v; }catch(e){}
+  try{ const v = Number(LS.get('transitBench')); if(v>0) return v; }catch(e){}
   return TRANSIT_BENCH_DEFAULT;
 }
 function setTransitBenchmark(v){
   const n = Number(String(v).replace(/[^\d]/g,''))||0;
-  try{ localStorage.setItem('transitBench', String(n||TRANSIT_BENCH_DEFAULT)); }catch(e){}
+  try{ LS.set('transitBench', String(n)); }catch(e){}
   if(typeof renderBudgetHome==='function') renderBudgetHome();
 }
 function computeTransitReal(ym){
@@ -5146,13 +5177,13 @@ function budToggleAll(){
   document.querySelectorAll('[id^="budr_"],[id^="budcatr_"]').forEach(r => { BUD_EXPAND[r.id.replace(/_wrap$/,'')] = BUD_ALL_OPEN; });
   BUD_SECTIONS.forEach(([b]) => { BUD_SEC_OPEN[b] = BUD_ALL_OPEN; });
   saveBudExpand();
-  try{ localStorage.setItem('budSecOpenV2', JSON.stringify(BUD_SEC_OPEN)); }catch(e){}
+  try{ LS.set('budSecOpenV2', JSON.stringify(BUD_SEC_OPEN)); }catch(e){}
   renderBudgetHome();
   const btn = document.getElementById('bud-toggle-all');
   if(btn) btn.textContent = BUD_ALL_OPEN ? '모두 접기' : '모두 펼치기';
 }
 // ── 섹션 전체 펼치기/접기 (열면 하위 세부 다 열림, 접으면 카테고리 헤더만) ──
-let BUD_SEC_OPEN = (()=>{ try{ return JSON.parse(localStorage.getItem('budSecOpenV2'))||{}; }catch(e){ return {}; } })();
+let BUD_SEC_OPEN = (()=>{ try{ return JSON.parse(LS.get('budSecOpenV2'))||{}; }catch(e){ return {}; } })();
 const BUD_SECTIONS = [['bud-income','sec-in'],['bud-save','sec-save'],['bud-cat-spend','sec-analysis']];
 function applyBudSection(bodyId, carId){
   const body=document.getElementById(bodyId); if(body) body.style.display='block'; // 섹션 몸통은 항상 표시(카테고리 헤더 유지)
@@ -5166,7 +5197,7 @@ function budToggleSection(bodyId, carId){
   const body=document.getElementById(bodyId);
   if(body) body.querySelectorAll('[id^="budr_"],[id^="budcatr_"]').forEach(r=>{ BUD_EXPAND[r.id.replace(/_wrap$/,'')] = open; });
   saveBudExpand();
-  try{ localStorage.setItem('budSecOpenV2', JSON.stringify(BUD_SEC_OPEN)); }catch(e){}
+  try{ LS.set('budSecOpenV2', JSON.stringify(BUD_SEC_OPEN)); }catch(e){}
   renderBudgetHome();
 }
 // ── 월 이동 시 스크롤 위치 보정 ──
@@ -5422,8 +5453,8 @@ function exportHistoryCSV(){
 //  거래 템플릿 (반복/고정거래)
 // ════════════════════════════════════════════
 let templates = [];
-function loadTemplatesLocal(){ try{ templates = JSON.parse(localStorage.getItem('gb_templates')||'[]'); }catch(e){ templates=[]; } }
-function saveTemplatesLocal(){ try{ localStorage.setItem('gb_templates', JSON.stringify(templates)); }catch(e){} }
+function loadTemplatesLocal(){ try{ templates = JSON.parse(LS.get('gb_templates')||'[]'); }catch(e){ templates=[]; } }
+function saveTemplatesLocal(){ try{ LS.set('gb_templates', JSON.stringify(templates)); }catch(e){} }
 // 시트/서버에서 온 템플릿의 필드명(한글 헤더 포함)을 표준 필드로 정규화
 function normalizeTpl(t){
   t = t || {};
@@ -5606,7 +5637,7 @@ function populateAcctDatalist(){
 }
 
 function saveUrl(url) {
-  localStorage.setItem('scriptUrl', url.trim());
+  LS.set('scriptUrl', url.trim());
 }
 
 function showToast(msg) {
@@ -5673,7 +5704,7 @@ const DEFAULT_CASH_PLAN = {
 };
 function loadCashPlan(){
   let p = null;
-  try{ const s=localStorage.getItem(CASH_PLAN_KEY); if(s){ const q=JSON.parse(s); if(q&&q.items) p=q; } }catch(e){}
+  try{ const s=LS.get(CASH_PLAN_KEY); if(s){ const q=JSON.parse(s); if(q&&q.items) p=q; } }catch(e){}
   if(!p) p = JSON.parse(JSON.stringify(DEFAULT_CASH_PLAN));
   if(!p.cardPayDays) p.cardPayDays = {};
   if(!p.cashAccounts) p.cashAccounts = [];
@@ -5687,7 +5718,7 @@ function loadCashPlan(){
   }catch(e){}
   return p;
 }
-function saveCashPlanObj(p){ try{ localStorage.setItem(CASH_PLAN_KEY, JSON.stringify(p)); }catch(e){} }
+function saveCashPlanObj(p){ try{ LS.set(CASH_PLAN_KEY, JSON.stringify(p)); }catch(e){} }
 let CASH_PLAN = null;
 
 // 고정지출 일정 항목 ↔ 실제 거래 매칭
@@ -5761,7 +5792,7 @@ function issuerUsageForMonth(year, monthIdx){
 function buildCashEvents(plan, offset){
   offset = offset||0;
   const realToday=new Date(); realToday.setHours(0,0,0,0);
-  const pd=plan.payday||21;
+  const pd=plan.payday || Number(CFG.settings && CFG.settings['급여일']) || 25;
   // 다음 급여일 (오늘 포함 이후) → offset만큼 이후 주기로 이동
   let py=new Date(realToday.getFullYear(), realToday.getMonth(), Math.min(pd, ldom(realToday.getFullYear(),realToday.getMonth())));
   if(py<realToday){ const ny=realToday.getFullYear(), nm=realToday.getMonth()+1; py=new Date(ny,nm, Math.min(pd, ldom(ny,nm))); }
@@ -5815,7 +5846,7 @@ function cashCycleNav(delta){
 function renderCashPlan(){
   CASH_PLAN = CASH_PLAN || loadCashPlan();
   const plan = CASH_PLAN;
-  const pdEl=document.getElementById('cash-payday-lbl'); if(pdEl) pdEl.textContent=plan.payday||21;
+  const pdEl=document.getElementById('cash-payday-lbl'); if(pdEl) pdEl.textContent=plan.payday || Number(CFG.settings && CFG.settings['급여일']) || 25;
 
   const {events, payday, today} = buildCashEvents(plan, CASH_CYCLE_OFFSET);
   const cycleLblEl = document.getElementById('cash-cycle-lbl');
@@ -5832,7 +5863,9 @@ function renderCashPlan(){
   // 최근 급여
   const salTx=(STATE.transactions||[]).filter(t=>t.type==='수입'&&String(t.category||'').indexOf('월급')>=0)
     .sort((a,b)=>String(b.date).localeCompare(String(a.date)))[0];
-  const salary= salTx ? Math.abs(Number(salTx.amount)||0) : (plan.salary||5600000);
+  // [수정] 예전엔 급여 내역이 없으면 560만이라는 값이 코드에 박혀 있었다.
+  //        처음 쓰는 사람에겐 넣지도 않은 급여가 찍혀 보이므로, 없으면 0으로 두고 안내한다.
+  const salary= salTx ? Math.abs(Number(salTx.amount)||0) : (Number(plan.salary)||0);
 
   const bankSum=arr=>arr.filter(e=>e.source==='bank').reduce((s,e)=>s+e.amount,0);
   const preEvents=events.filter(e=>+e.date < +payday);
@@ -5862,7 +5895,11 @@ function renderCashPlan(){
           <b style="color:${short?'#FFB4A8':'#D6F5E3'}">${short?'− ':''}${won(diff)}</b>
         </div>
       </div>
-      <div style="font-size:12px;color:rgba(255,255,255,0.75);margin-top:10px;line-height:1.6">급여일(${plan.payday||21}일) +${won(salary)} − 급여일 출금 ${won(paydayOut)} → 직후 ${won(afterPayday)}</div>
+      <div style="font-size:12px;color:rgba(255,255,255,0.75);margin-top:10px;line-height:1.6">${
+        salary>0
+          ? `급여일(${plan.payday || Number(CFG.settings && CFG.settings['급여일']) || 25}일) +${won(salary)} − 급여일 출금 ${won(paydayOut)} → 직후 ${won(afterPayday)}`
+          : `급여 내역이 아직 없어요 — 수입을 '월급'으로 한 번 입력하면 급여일 이후 잔고까지 계산해요`
+      }</div>
       ${CASH_CYCLE_OFFSET>0 ? `<div style="font-size:11px;color:rgba(255,255,255,0.65);margin-top:6px">* 미리보기 주기예요 — 위 잔고는 오늘 시점 기준이라, 실제 그때 잔고와는 달라질 수 있어요</div>` : ''}`;
   }
 
@@ -6731,7 +6768,7 @@ function rptSaveDrillMemo(ym, key, val){
   val = String(val||'').trim();
   const k = ym + '|' + key;
   if(val) GB_MEMO[k] = val; else delete GB_MEMO[k];
-  try{ localStorage.setItem('asset_gb_memo', JSON.stringify(GB_MEMO)); }catch(e){}
+  try{ LS.set('asset_gb_memo', JSON.stringify(GB_MEMO)); }catch(e){}
   const url = getUrl();
   if(url){
     fetch(url, { method:'POST', headers:{'Content-Type':'text/plain'}, body: JSON.stringify({ action:'gb_saveCellMemo', mon: ym, key: key, memo: val }) }).catch(()=>{});
@@ -7948,7 +7985,7 @@ window.onload = () => {
 // ── 새로고침해도 마지막에 보던 탭/서브탭 그대로 유지 ──
 function restoreLastView(){
   try{
-    let lastTab = localStorage.getItem('gb_last_tab');
+    let lastTab = LS.get('gb_last_tab');
     // 구버전(탭 재구조화 이전)에는 설정이 하단 탭이었음 — 지금은 상단바 아이콘이라 탭 복원 대상에서 제외
     if(lastTab==='settings'){ goToSettingsTab(); return; }
     if(lastTab && lastTab!=='home'){
@@ -7956,7 +7993,7 @@ function restoreLastView(){
       if(btn) changeTab(lastTab, btn);
     }
     if(lastTab==='ledger'){
-      let lastSub = localStorage.getItem('gb_last_ledgersub');
+      let lastSub = LS.get('gb_last_ledgersub');
       // 구버전 값(예산/분석·리포트는 분석 탭으로 이동됨) 방어 — 가계부엔 더 이상 없는 서브탭이므로 기본값으로
       if(lastSub==='budget' || lastSub==='report' || lastSub==='analysis') lastSub='input';
       if(lastSub){
@@ -7965,7 +8002,7 @@ function restoreLastView(){
       }
     }
     if(lastTab==='analysis'){
-      let lastASub = localStorage.getItem('gb_last_analysissub') || 'month';
+      let lastASub = LS.get('gb_last_analysissub') || 'month';
       if(lastASub==='insights' || lastASub==='budget') lastASub='month'; // 구버전(소비 패턴 탭·예산 탭)은 월간 리포트로 통합됨
       const subBtn = document.querySelector(`#p-analysis .sub-tab[data-sub="${lastASub}"]`);
       if(subBtn) setAnalysisSub(lastASub, subBtn);
@@ -8009,14 +8046,14 @@ document.addEventListener('DOMContentLoaded', syncStickyTop);
 // ══════════════════════════════════════════════════════════════════
 const RPT_FOLD_KEY = 'asset_rpt_folded';
 let RPT_FOLDED = {};
-try{ RPT_FOLDED = JSON.parse(localStorage.getItem(RPT_FOLD_KEY) || '{}'); }catch(e){ RPT_FOLDED = {}; }
+try{ RPT_FOLDED = JSON.parse(LS.get(RPT_FOLD_KEY) || '{}'); }catch(e){ RPT_FOLDED = {}; }
 function rptToggleFold(cardId){
   const card = document.getElementById(cardId);
   if(!card) return;
   const now = !card.classList.contains('folded');
   card.classList.toggle('folded', now);
   RPT_FOLDED[cardId] = now;
-  try{ localStorage.setItem(RPT_FOLD_KEY, JSON.stringify(RPT_FOLDED)); }catch(e){}
+  try{ LS.set(RPT_FOLD_KEY, JSON.stringify(RPT_FOLDED)); }catch(e){}
 }
 // 접을 수 있는 카드 목록 — 제목 줄에 화살표를 붙이고 클릭 핸들러를 건다.
 const FOLDABLE_CARDS = ['rpt-asset-card','rpt-save-card','rpt-fixed-card','rpt-var-card',
