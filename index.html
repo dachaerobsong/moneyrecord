@@ -448,9 +448,22 @@ body { padding-bottom:88px; }
         <input type="text" id="edit-in-acct" list="acct-datalist3" placeholder="예: 적금계좌, ISA" autocomplete="off">
       </div>
     </div>
+    <div class="form-group" id="edit-adj-wrap">
+      <label onclick="toggleAdjBox('edit')" style="cursor:pointer;user-select:none">
+        <span id="edit-adj-car" style="color:var(--blue)">▸</span> 할인 · 수수료
+        <span style="font-size:11px;color:var(--txt3);font-weight:400">· 카드 실적 계산용</span>
+      </label>
+      <div id="edit-adj-body" style="display:none">
+        <div style="display:flex;gap:8px">
+          <input type="number" id="edit-disc" placeholder="할인 (원)" inputmode="numeric">
+          <input type="number" id="edit-fee" placeholder="수수료 (원)" inputmode="numeric">
+        </div>
+        <div id="edit-adj-legacy" style="font-size:11px;color:var(--warning);margin-top:6px;display:none"></div>
+      </div>
+    </div>
     <div class="form-group">
       <label>메모</label>
-      <input type="text" id="edit-memo" placeholder="카드면: 할인:5000 환불:3000 해외수수료:1500 형식 가능">
+      <input type="text" id="edit-memo" placeholder="사용처 및 세부 메모">
     </div>
     <div class="form-group">
       <label>비고 <span style="font-size:11px;color:var(--txt3);font-weight:400">· 분석에 쓰이지 않는 기록용</span></label>
@@ -659,9 +672,26 @@ body { padding-bottom:88px; }
             <datalist id="acct-datalist3"></datalist>
           </div>
         </div>
+        <!-- 카드 실적 조정 — 지출일 때만 노출. 대부분 비어 있으므로 기본은 접어둔다 -->
+        <div class="form-group" id="tx-adj-wrap">
+          <label onclick="toggleAdjBox('tx')" style="cursor:pointer;user-select:none">
+            <span id="tx-adj-car" style="color:var(--blue)">▸</span> 할인 · 수수료
+            <span style="font-size:11px;color:var(--txt3);font-weight:400">· 카드 실적 계산용, 없으면 비워두세요</span>
+          </label>
+          <div id="tx-adj-body" style="display:none">
+            <div style="display:flex;gap:8px">
+              <input type="number" id="tx-disc" placeholder="할인 (원)" inputmode="numeric">
+              <input type="number" id="tx-fee" placeholder="수수료 (원)" inputmode="numeric">
+            </div>
+            <div style="font-size:11px;color:var(--txt3);margin-top:6px;line-height:1.5">
+              할인 = 결제 시 이미 깎인 금액 · 수수료 = 해외결제수수료 등<br>
+              반영 방식은 <b>설정 › 카드</b>의 카드사별 실적 산정 방식을 따릅니다.
+            </div>
+          </div>
+        </div>
         <div class="form-group">
           <label>메모</label>
-          <input type="text" id="tx-memo" placeholder="사용처 및 세부 메모 (카드면 할인:5000 환불:3000 해외수수료:1500)">
+          <input type="text" id="tx-memo" placeholder="사용처 및 세부 메모">
         </div>
         <div class="form-group">
           <label>비고 <span style="font-size:11px;color:var(--txt3);font-weight:400">· 분석에 쓰이지 않는 기록용</span></label>
@@ -1183,14 +1213,40 @@ function cardIssuer(name){
 // 실적 계산 시 자동 반영 (할인=결제 후 실적엔 더해줌 · 환불/해외수수료=실적에서 빼줌)
 function parseCardMemoAdj(memo){
   const s = String(memo||'');
+  // 라벨 뒤에 다른 글자가 이어지면(할인쿠폰, 수수료면제 …) 금액이 아니므로 잡지 않는다.
+  // [버그] 예전엔 "5,000원 할인쿠폰 받았음" 같은 메모도 할인 5,000원으로 읽어 실적이 부풀었다.
+  const B = '(?![가-힣A-Za-z])';
   const pick = (label) => {
     // 라벨이 숫자보다 먼저 오는 경우 ("할인:3530", "할인 3530")
-    let m = s.match(new RegExp('(?:'+label+')\\s*:?\\s*([\\d,]+)'));
+    let m = s.match(new RegExp('(?:'+label+')'+B+'\\s*:?\\s*([\\d,]+)'));
     // 숫자가 라벨보다 먼저 오는 경우 ("3,530원 할인", "3530 할인")
-    if(!m) m = s.match(new RegExp('([\\d,]+)\\s*원?\\s*(?:'+label+')'));
+    if(!m) m = s.match(new RegExp('([\\d,]+)\\s*원?\\s*(?:'+label+')'+B));
     return m ? Number(m[1].replace(/,/g,'')) || 0 : 0;
   };
   return { discount: pick('할인'), refund: pick('환불'), fee: pick('해외수수료|수수료') };
+}
+// ── 거래의 실적 조정값 ──
+// 할인·수수료는 거래 입력 화면의 전용 필드(t.disc / t.fee)에서 읽는다.
+// 필드가 비어 있으면 예전 방식대로 비고 메모를 파싱한다 (기존 데이터 호환).
+//
+// [환불은 필드로 두지 않는다]
+// 환불은 돈이 실제로 돌아온 사건이라, 실적뿐 아니라 잔고·월 지출·카테고리 합계까지 바뀐다.
+// 여기서 숫자만 깎으면 "실적만 맞고 나머지는 부풀어 있는" 상태가 된다.
+// 환불은 마이너스 거래를 따로 넣거나 원거래 금액을 고치는 게 맞다.
+// 다만 예전에 비고에 '환불:3000'으로 적어둔 건이 있으므로 읽기만 계속 지원한다.
+function txAdj(t){
+  const memo = parseCardMemoAdj(t && t.memo);
+  const has = v => v!=='' && v!=null && !isNaN(Number(v)) && Number(v)!==0;
+  return {
+    discount: has(t && t.disc) ? Math.abs(Number(t.disc)) : memo.discount,
+    fee:      has(t && t.fee)  ? Math.abs(Number(t.fee))  : memo.fee,
+    refund:   memo.refund
+  };
+}
+// 이 거래에 실적 조정이 걸려 있는지 (내역 목록 배지용)
+function txHasAdj(t){
+  const a = txAdj(t);
+  return (a.discount>0 || a.fee>0 || a.refund>0) ? a : null;
 }
 // 카드 실적 산정용 금액: 원 결제액 + 할인(정가 복원) − 환불(현금 환불분 제외) − 해외결제수수료(실적 불인정분 제외)
 // 카테고리 단위 '실적 제외' 판정 — 설정 › 카테고리에서 체크한 항목
@@ -1203,11 +1259,45 @@ function txNoPerf(t){
     return cfgIsNoPerf(c, String(t.category||t.sub||'').trim());
   }catch(e){ return false; }
 }
+// ── 카드사별 실적 산정 규칙 ──
+// 카드사마다 실적으로 인정하는 범위가 다르다. 예:
+//   신한  — 할인받은 금액도 실적에 포함 → 결제액에 할인을 더해 정가로 되돌린다
+//   국민  — 환불분은 실적에서 빠진다 → 결제액에서 환불을 뺀다
+//   공통  — 수수료(해외결제수수료 등)는 실적 미인정 → 뺀다
+// 설정 › 카드에서 카드사별로 켜고 끌 수 있고, 따로 지정하지 않은 카드사는 셋 다 적용(기존 동작 그대로).
+const CARD_PERF_RULE_DEFAULT = { disc:true, ref:true, fee:true };
+function cardPerfRule(issuer){
+  let r = null;
+  try{ r = ((CFG.cardPerfRule)||{})[issuer]; }catch(e){}
+  if(!r) return CARD_PERF_RULE_DEFAULT;
+  // 저장된 값이 없는 항목은 '적용'으로 본다 (기존 데이터 호환)
+  return { disc: r.disc !== false, ref: r.ref !== false, fee: r.fee !== false };
+}
+// 설정 › 카드의 '실적 합산' 체크를 끈 카드는 실적에서 통째로 제외
+// [버그] 예전엔 이 체크를 저장만 하고 실제 계산에는 반영하지 않아, 꺼도 실적에 계속 잡혔다.
+function cardPerfOff(acctKey){
+  try{ return !!(((CFG.cards||{})[String(acctKey||'').trim()])||{}).perfOff; }catch(e){ return false; }
+}
 function cardPerfAmount(t){
   if(txNoPerf(t)) return 0;   // 세금·상품권 등 실적 미인정 항목
+  if(cardPerfOff(t.account)) return 0;   // 실적 합산에서 뺀 카드
   const base = Number(t.amount)||0;
-  const adj = parseCardMemoAdj(t.memo);
-  return Math.max(0, base + adj.discount - adj.refund - adj.fee);
+  const adj = txAdj(t);
+  const rule = cardPerfRule(cardIssuer(t.account));
+  let v = base;
+  if(rule.disc) v += adj.discount;
+  if(rule.ref)  v -= adj.refund;
+  if(rule.fee)  v -= adj.fee;
+  return Math.max(0, v);
+}
+// 규칙을 한 줄로 설명 (설정·리포트 각주용)
+function cardPerfRuleLabel(issuer){
+  const r = cardPerfRule(issuer);
+  const p = [];
+  if(r.disc) p.push('할인 +');
+  if(r.ref)  p.push('환불 −');
+  if(r.fee)  p.push('수수료 −');
+  return p.length ? p.join(' · ') : '결제액 그대로';
 }
 // 카드명 배열을 발급사별로 묶고, 발급사 순서 + 카드명 가나다 정렬
 function groupCardsByIssuer(cardNames){
@@ -1737,6 +1827,27 @@ function setAnalysisSub(subName, el) {
 }
 
 // ── 카테고리 동적 (대분류 → 소분류 2단계) ──
+// 할인·수수료 입력칸 접기/펼치기 (prefix: 'tx' 입력폼 / 'edit' 수정모달)
+function toggleAdjBox(prefix, force){
+  const body = document.getElementById(prefix+'-adj-body');
+  const car  = document.getElementById(prefix+'-adj-car');
+  if(!body) return;
+  const open = (force==null) ? (body.style.display==='none') : !!force;
+  body.style.display = open ? '' : 'none';
+  if(car) car.textContent = open ? '▾' : '▸';
+}
+// 할인·수수료는 지출에만 의미가 있다 (카드 실적 계산용)
+function syncAdjVisibility(prefix, type){
+  const wrap = document.getElementById(prefix+'-adj-wrap');
+  if(!wrap) return;
+  const on = (type === '지출');
+  wrap.style.display = on ? '' : 'none';
+  if(!on){
+    const d=document.getElementById(prefix+'-disc'); if(d) d.value='';
+    const f=document.getElementById(prefix+'-fee');  if(f) f.value='';
+    toggleAdjBox(prefix, false);
+  }
+}
 function updateCategoryOptions() {
   const type = document.getElementById('tx-type').value;
   const majorSelect = document.getElementById('tx-major');
@@ -1749,6 +1860,7 @@ function updateCategoryOptions() {
   const moveEl   = document.getElementById('tx-acct-move');
   if(singleEl) singleEl.style.display = isMove ? 'none' : '';
   if(moveEl)   moveEl.style.display   = isMove ? '' : 'none';
+  syncAdjVisibility('tx', type);
   updateSubOptions();
 }
 function updateSubOptions() {
@@ -1782,8 +1894,18 @@ function resetLedgerFormKeepDate(){
   if(ce && ct && [...ce.options].some(o=>o.value===ct)){ ce.value = ct; }
   const oa = document.getElementById('tx-out-acct'); if(oa) oa.value='';
   const ia = document.getElementById('tx-in-acct');  if(ia) ia.value='';
+  const dd = document.getElementById('tx-disc'); if(dd) dd.value='';
+  const ff = document.getElementById('tx-fee');  if(ff) ff.value='';
+  toggleAdjBox('tx', false);
+  syncAdjVisibility('tx', document.getElementById('tx-type')?.value || '지출');
 }
 function submitTransaction() {
+  const numOrBlank = id => {
+    const v = (document.getElementById(id)?.value || '').trim();
+    const n = Math.abs(parseInt(v,10));
+    return (v==='' || isNaN(n) || n===0) ? '' : n;
+  };
+  const isOut = document.getElementById('tx-type').value === '지출';
   const data = {
     date: document.getElementById('tx-date').value,
     type: document.getElementById('tx-type').value,
@@ -1793,7 +1915,10 @@ function submitTransaction() {
     amount: parseInt(document.getElementById('tx-amount').value),
     account: document.getElementById('tx-account').value,
     memo: document.getElementById('tx-memo').value,
-    // 비고: 순수 기록용. 카드 실적 조정(할인:/환불:)이나 카테고리 매칭 등
+    // 할인·수수료: 카드 실적 계산에만 쓰이는 전용 필드. 지출이 아니면 항상 비운다.
+    disc: isOut ? numOrBlank('tx-disc') : '',
+    fee:  isOut ? numOrBlank('tx-fee')  : '',
+    // 비고: 순수 기록용. 카드 실적 조정이나 카테고리 매칭 등
     // 어떤 계산에도 쓰이지 않는다.
     note: (document.getElementById('tx-note')?.value || '').trim(),
     id: Date.now()
@@ -1828,7 +1953,7 @@ function submitTransaction() {
     body: JSON.stringify({
       action:'addEntry', id:String(data.id), date:data.date, type:data.type,
       major:data.major, sub:data.category, memo:data.memo, amount:data.amount,
-      inAcct, outAcct, note:data.note||''
+      inAcct, outAcct, note:data.note||'', disc:data.disc, fee:data.fee
     })
   })
   .then(() => {
@@ -2095,7 +2220,9 @@ function fetchFromSheet(silent) {
             inAcct,
             outAcct,
             memo: e.memo||'',
-            note: e.note||''
+            note: e.note||'',
+            disc: (e.disc===''||e.disc==null) ? '' : (parseFloat(e.disc)||''),
+            fee:  (e.fee ===''||e.fee ==null) ? '' : (parseFloat(e.fee) ||'')
           };
         }).filter(e => e.date.match(/^20\d\d-\d\d-\d\d/) && ['지출','수입','이동'].indexOf(e.type)>=0);
         // 주의: 숨김 처리한 이동도 계좌 잔고에는 영향을 주므로 데이터에서는 유지하고,
@@ -2679,8 +2806,16 @@ function renderHistoryList() {
     const rest = [acct, t.memo].filter(Boolean).join(' · ');
     // 비고는 분석에 안 쓰이는 기록이라, 메모와 섞이지 않게 아래 줄에 흐리게 둔다
     const noteTxt = String(t.note||'').trim();
+    // 할인·수수료가 걸린 건은 눈에 보이게 한다 — 실적 숫자가 어디서 왔는지 추적 가능하도록
+    const _a = (t.type==='지출' && typeof txHasAdj==='function') ? txHasAdj(t) : null;
+    const adjTxt = _a ? [
+      _a.discount ? `할인 ${_a.discount.toLocaleString()}` : '',
+      _a.fee      ? `수수료 ${_a.fee.toLocaleString()}`   : '',
+      _a.refund   ? `환불 ${_a.refund.toLocaleString()}`  : ''
+    ].filter(Boolean).join(' · ') : '';
     const line = `<span style="flex:1;min-width:0;font-size:13px;overflow:hidden">
       <span style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span style="color:${leadColor};font-weight:${leadWeight}">${lead}</span>${rest?`<span style="color:var(--txt3)"> · ${rest}</span>`:''}</span>
+      ${adjTxt?`<span style="display:block;font-size:11px;color:var(--blue);opacity:.9" title="카드 실적 계산에 반영됩니다">🏷 ${adjTxt}</span>`:''}
       ${noteTxt?`<span style="display:block;font-size:11px;color:var(--txt3);opacity:.85;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${noteTxt.replace(/"/g,'&quot;')}">🗒 ${noteTxt}</span>`:''}
     </span>`;
     if(BULK_MODE){
@@ -2906,8 +3041,13 @@ function computeCategoryTrend(key, isSub, months){
 function subCadence(sub){ return (STATE.catCadence||{})[sub] || 'monthly'; }
 // ── 주기 설정 근거 표시용: 최근 N개월 카테고리별 실제 지출 이력 ──
 // key: 대분류명(정규화 전) 또는 소분류명 / isSub: true면 소분류 기준 매칭
-function catMonthlyHistory(key, isSub, months){
+// type: '지출'(기본) · '이동' · '수입' — 어느 거래 유형을 집계할지.
+// [버그 수정] 예전엔 t.type!=='지출'로 못박혀 있어서, 설정 › 카테고리의 '이동'·'수입' 섹션에서
+// 12개월 스파크라인을 불러도 항상 데이터 없음(–)으로만 떴다. 실제 이동/수입 거래가 있어도
+// 이 함수가 애초에 지출만 훑고 있었던 것.
+function catMonthlyHistory(key, isSub, months, type){
   months = months || 12;
+  type = type || '지출';
   const refYm = currentMonthStr();
   let y = parseInt(refYm.slice(0,4)), m = parseInt(refYm.slice(5,7));
   const list = [];
@@ -2915,7 +3055,12 @@ function catMonthlyHistory(key, isSub, months){
   const sums = {}; list.forEach(ym=>sums[ym]=0);
   const nkey = isSub ? null : normBudgetKey(key);
   (STATE.transactions.length ? STATE.transactions : DEMO).forEach(t=>{
-    if(isRemovedTx(t) || t.type!=='지출') return;
+    if(isRemovedTx(t)) return;
+    // [주의] 실거래 데이터에 이동 타입이 '이동'과 '저축' 두 값으로 섞여 있다(다른 집계 로직도 동일하게 처리 중,
+    // 예: totalSave 계산, 카드납부 판정, computeCategoryTrend 등). UI에서 새로 입력하면 항상 '이동'이지만,
+    // 이전에 들어온 데이터 중 '저축'으로 저장된 것도 있어 여기서 안 받아주면 그 항목만 12개월 그래프가 계속 '–'로 보인다.
+    const typeMatch = type==='이동' ? (t.type==='이동'||t.type==='저축') : (t.type===type);
+    if(!typeMatch) return;
     const ym = String(t.date).slice(0,7);
     if(!(ym in sums)) return;
     const hit = isSub ? (stripSp(t.category||t.sub)===stripSp(key)) : (txCatKey(t)===nkey);
@@ -3334,6 +3479,27 @@ function editTx(id) {
   if(ei) ei.value = t.inAcct || '';
   document.getElementById('edit-memo').value = t.memo || '';
   const _en=document.getElementById('edit-note'); if(_en) _en.value = t.note || '';
+  // 할인·수수료 필드 채우기
+  syncAdjVisibility('edit', t.type);
+  const _ed=document.getElementById('edit-disc'); if(_ed) _ed.value = (t.disc==null||t.disc==='') ? '' : t.disc;
+  const _ef=document.getElementById('edit-fee');  if(_ef) _ef.value = (t.fee ==null||t.fee ==='') ? '' : t.fee;
+  // 예전에 비고 메모로 적어둔 값이 있으면 알려준다 (필드로 옮기면 메모가 지저분해지지 않는다)
+  const _leg = parseCardMemoAdj(t.memo);
+  const _elg = document.getElementById('edit-adj-legacy');
+  if(_elg){
+    const parts = [];
+    if(_leg.discount) parts.push(`할인 ${_leg.discount.toLocaleString()}`);
+    if(_leg.fee)      parts.push(`수수료 ${_leg.fee.toLocaleString()}`);
+    if(_leg.refund)   parts.push(`환불 ${_leg.refund.toLocaleString()}`);
+    if(parts.length){
+      _elg.style.display = '';
+      _elg.innerHTML = `메모에서 읽는 중: ${parts.join(' · ')}` +
+        (_leg.refund ? '<br>환불은 마이너스 거래를 따로 넣거나 금액을 고치는 게 정확합니다.' : '') +
+        '<br>위 칸에 옮겨 적으면 메모와 무관하게 정확히 계산됩니다.';
+    } else { _elg.style.display='none'; _elg.innerHTML=''; }
+  }
+  const _hasAdj = (t.disc||t.fee||_leg.discount||_leg.fee||_leg.refund);
+  toggleAdjBox('edit', !!_hasAdj);
   // 모달 열기
   document.getElementById('edit-modal').style.display = 'flex';
 }
@@ -3367,6 +3533,7 @@ function editUpdateCats() {
   const moveEl   = document.getElementById('edit-acct-move');
   if(singleEl) singleEl.style.display = isMove ? 'none' : '';
   if(moveEl)   moveEl.style.display   = isMove ? '' : 'none';
+  syncAdjVisibility('edit', type);
   editUpdateSubs();
 }
 function editUpdateSubs() {
@@ -3401,6 +3568,14 @@ function saveEdit() {
   t.amount = parseInt(document.getElementById('edit-amount').value) || 0;
   t.memo = document.getElementById('edit-memo').value;
   t.note = (document.getElementById('edit-note')?.value || '').trim();
+  // 할인·수수료 — 지출이 아니면 비운다
+  const _n = id => {
+    const v = (document.getElementById(id)?.value || '').trim();
+    const n = Math.abs(parseInt(v,10));
+    return (v==='' || isNaN(n) || n===0) ? '' : n;
+  };
+  t.disc = (t.type==='지출') ? _n('edit-disc') : '';
+  t.fee  = (t.type==='지출') ? _n('edit-fee')  : '';
   // 계좌 / inAcct / outAcct 갱신
   if(t.type==='이동') {
     const outA = (document.getElementById('edit-out-acct')?.value || '').trim();
@@ -3424,7 +3599,7 @@ function saveEdit() {
       body: JSON.stringify({
         action:'updateEntry', id:String(t.id), date:t.date, type:t.type,
         major:t.major, sub:t.category, memo:t.memo, amount:t.amount,
-        inAcct: t.inAcct, outAcct: t.outAcct, note: t.note||''
+        inAcct: t.inAcct, outAcct: t.outAcct, note: t.note||'', disc: t.disc, fee: t.fee
       })
     }).catch(()=>{});
     showToast('✏️ 수정 완료');
@@ -3815,6 +3990,15 @@ const CFG_LS = 'asset_cfg_v1';
 let CFG = { categories:{ '수입':[], '지출':[], '이동':[] }, accounts:[], budget:{}, settings:{} };
 try{ const raw = JSON.parse(LS.get(CFG_LS)||'null'); if(raw) CFG = Object.assign(CFG, raw); }catch(e){}
 function cfgSave(){ try{ LS.set(CFG_LS, JSON.stringify(CFG)); }catch(e){} }
+// 카드사별 실적 산정 규칙 초기값 — 한 번만 심고, 이후엔 설정 › 카드에서 바꾼 값을 그대로 쓴다.
+// 신한: 할인받은 금액도 실적 인정 / 국민: 환불분은 실적 차감 / 둘 다 수수료는 미인정
+if(!CFG.cardPerfRule){
+  CFG.cardPerfRule = {
+    '신한': { disc:true,  ref:false, fee:true },
+    '국민': { disc:false, ref:true,  fee:true }
+  };
+  cfgSave();
+}
 // 시트/코드 기본값에서 CFG 초안 만들기 (설정이 비어 있을 때만)
 function cfgSeedIfEmpty(){
   const c = CFG.categories;
@@ -4010,11 +4194,14 @@ function cfgIsNoPerf(c, sub){
 
 // 표 안에 들어가는 미니 스파크라인 — 12개월 지출이 고른지, 특정 달에 몰리는지 바로 보인다.
 // (예전엔 별도 카드에 있었는데, 정작 주기를 바꾸는 자리에서는 안 보였다)
-function cfgMiniSpark(key, isSub){
+function cfgMiniSpark(key, isSub, type){
   let hist = [];
-  try{ hist = catMonthlyHistory(key, isSub, 12) || []; }catch(e){ return '<span></span>'; }
+  try{ hist = catMonthlyHistory(key, isSub, 12, type) || []; }catch(e){ return '<span></span>'; }
   const nonZero = hist.filter(h=>h.amt>0);
-  if(!nonZero.length) return `<span style="font-size:9px;color:var(--txt3);text-align:center">–</span>`;
+  // [수정] 예전엔 그냥 '–'만 떠서 "왜 비었는지"를 알 수 없었다. 이름이 안 맞아서 0인 건지,
+  //        정말 안 쓴 건지 툴팁으로 구분할 수 있게 한다.
+  if(!nonZero.length) return `<span title="최근 12개월 ${type==='이동'?'이체':type==='수입'?'입금':'지출'} 내역 없음 (설정의 카테고리 이름과 거래의 카테고리 이름이 정확히 같아야 잡힙니다)"
+    style="font-size:9px;color:var(--txt3);text-align:center;cursor:default">–</span>`;
   const max = Math.max(1, ...hist.map(h=>h.amt));
   const rate = nonZero.length / hist.length;
   // 몰리는 정도: 최대달이 평균의 2배를 넘으면 '튄다'고 본다
@@ -4025,9 +4212,10 @@ function cfgMiniSpark(key, isSub){
     const hpx = h.amt>0 ? Math.max(2, Math.round(h.amt/max*14)) : 1;
     return `<i style="flex:1;height:${hpx}px;background:${h.amt>0?col:'#EEF1F4'};border-radius:1px;align-self:flex-end;display:block"></i>`;
   }).join('');
-  const tip = `최근 12개월 중 ${nonZero.length}개월 지출 · 최대 ${won(max)} · 평균 ${won(Math.round(avg))}` +
+  const verb = type==='이동' ? '이체' : type==='수입' ? '입금' : '지출';
+  const tip = `최근 12개월 중 ${nonZero.length}개월 ${verb} · 최대 ${won(max)} · 평균 ${won(Math.round(avg))}` +
               (spiky ? ' → 몇 달에 몰리는 패턴이라 분기/반기가 맞을 수 있어요' : ' → 매달 고른 편');
-  return `<span title="${tip}" style="display:flex;gap:1px;height:16px;align-items:flex-end;cursor:help">${bars}</span>`;
+  return `<span title="${tip}" style="display:flex;gap:1px;height:16px;align-items:flex-end;cursor:default">${bars}</span>`;
 }
 
 // ── 예산 판정 주기 ──
@@ -4178,7 +4366,7 @@ function renderCfgCategories(){
           ${kind==='지출' ? `<label title="카드 실적에서 제외" style="display:flex;justify-content:center;cursor:pointer">
             <input type="checkbox" ${cfgIsNoPerf(c,sn)?'checked':''} ${c.noPerf?'disabled':''}
               onchange="cfgTogglePerf('${kind}',${i},'${jq(sn)}',this.checked)"></label>` : '<span></span>'}
-          ${cfgMiniSpark(sn, true)}
+          ${cfgMiniSpark(sn, true, kind)}
           ${kind!=='수입' ? cfgCadenceSelect(kind,i,sn,cfgCadenceOf(c,sn)) : '<span></span>'}
           <button onclick="cfgDelSub('${kind}',${i},${j})" style="${CT.del}">✕</button>
         </div>`;}).join('') + `
@@ -4215,7 +4403,7 @@ function renderCfgCategories(){
             oninput="cfgSetPay('${kind}',${i},null,'day',this.value)" style="${CT.num}padding:6px 4px">
           ${kind==='지출' ? `<label title="이 대분류 전체를 카드 실적에서 제외" style="display:flex;justify-content:center;cursor:pointer">
             <input type="checkbox" ${c.noPerf?'checked':''} onchange="cfgTogglePerf('${kind}',${i},null,this.checked)"></label>` : '<span></span>'}
-          ${cfgMiniSpark(c.major, false)}
+          ${cfgMiniSpark(c.major, false, kind)}
           ${kind!=='수입' ? cfgCadenceSelect(kind,i,null,cfgCadenceOf(c,null)) : '<span></span>'}
           <button onclick="if(confirm('${jq(c.major)} 를 지울까요?')){CFG.categories['${kind}'].splice(${i},1); cfgSave(); renderCfgCategories(); cfgApply();}"
             style="${CT.del}">✕</button>
@@ -4240,7 +4428,7 @@ function renderCfgCategories(){
         <span style="text-align:center">${flagLabel||''}</span>
         <span style="text-align:right">${kind==='지출'?'월 예산':kind==='이동'?'월 목표':'월 수입'}</span>
         <span>결제수단</span><span style="text-align:right">결제일</span>
-        <span style="text-align:center">${kind==='지출'?'실적제외':''}</span>
+        <span style="text-align:center">${kind==='지출'?'카드실적제외':''}</span>
         <span style="text-align:center">12개월</span>
         <span style="text-align:center">${kind!=='수입'?'주기':''}</span><span></span>
       </div>
@@ -4422,11 +4610,21 @@ function cfgCardGroups(){
   });
   return map;
 }
-function cfgPerfTarget(issuer, cards){
+// 실적 목표 — 구간을 적어뒀으면 거기서 뽑고, 없을 때만 직접 입력한 목표를 쓴다.
+// [정리] 예전엔 '실적 목표'와 '실적 구간'이 따로 있어 같은 걸 두 번 적어야 했다.
+//        구간이 하나라도 있으면 그게 곧 목표다 (아직 못 넘은 다음 구간 · 다 넘었으면 최상단).
+function cfgPerfTarget(issuer, cards, perf){
+  const tiers = (typeof cfgTiers==='function' ? cfgTiers(issuer) : [])
+    .filter(t=>Number(t.amount)>0).map(t=>Number(t.amount)).sort((a,b)=>a-b);
+  if(tiers.length){
+    if(perf == null) return tiers[0];
+    const next = tiers.find(a => perf < a);
+    return next != null ? next : tiers[tiers.length-1];
+  }
   CFG.cardPerf = CFG.cardPerf || {};
   if(CFG.cardPerf[issuer] != null && CFG.cardPerf[issuer] !== '') return Number(CFG.cardPerf[issuer])||0;
   // 예전 방식(카드별 목표)이 남아 있으면 그중 최댓값을 쓴다
-  const legacy = cards.map(a=>Number(((CFG.cards||{})[a.key]||{}).target)||0).filter(v=>v>0);
+  const legacy = (cards||[]).map(a=>Number(((CFG.cards||{})[a.key]||{}).target)||0).filter(v=>v>0);
   if(legacy.length) return Math.max(...legacy);
   return Number(CFG.settings['카드실적목표'])||300000;
 }
@@ -4473,6 +4671,19 @@ function cfgSetCardMemo(issuer, val){
   CFG.cardMemo[issuer] = String(val||'');
   cfgSave();
 }
+// 카드사별 실적 산정 규칙 on/off (disc=할인 더하기 · ref=환불 빼기 · fee=수수료 빼기)
+function cfgSetPerfRule(issuer, field, on){
+  CFG.cardPerfRule = CFG.cardPerfRule || {};
+  const cur = CFG.cardPerfRule[issuer] || {};
+  CFG.cardPerfRule[issuer] = {
+    disc: field==='disc' ? !!on : (cur.disc !== false),
+    ref:  field==='ref'  ? !!on : (cur.ref  !== false),
+    fee:  field==='fee'  ? !!on : (cur.fee  !== false)
+  };
+  cfgSave();
+  renderCfgCards();
+  if(typeof renderCardPerf==='function') try{ renderCardPerf(); }catch(e){}
+}
 // 지금 실적이 어느 구간까지 왔는지
 function cfgTierStatus(issuer, perf){
   const tiers = cfgTiers(issuer).filter(t=>Number(t.amount)>0).sort((x,y)=>x.amount-y.amount);
@@ -4516,9 +4727,19 @@ function renderCfgCards(){
     const open = !!CFG_CARD_OPEN[issuer];
     const tiers = cfgTiers(issuer);
 
+    const rule = cardPerfRule(issuer);
+    const ruleBox = (field, label, tip) => `<label title="${tip}" style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:11.5px;color:var(--txt2)">
+        <input type="checkbox" ${rule[field]?'checked':''} onchange="cfgSetPerfRule('${jq(issuer)}','${field}',this.checked)">${label}</label>`;
+
     const tierPanel = open ? `
       <div style="padding:8px 0 10px 12px;border-top:1px dashed #E5E8EB;margin-top:6px">
-        <div style="font-size:10.5px;color:var(--txt3);margin-bottom:6px">실적 구간 — 금액과 그 구간의 혜택을 적어두세요</div>
+        <div style="font-size:10.5px;color:var(--txt3);margin-bottom:5px">실적 산정 방식 — 이 카드사가 실적으로 인정하는 범위에 맞춰 켜고 끄세요</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px 16px;padding:6px 9px;background:var(--card2);border-radius:8px;margin-bottom:10px">
+          ${ruleBox('disc','할인 더하기 (+)','신한처럼 할인받은 금액도 실적에 포함되는 카드사 → 켜기')}
+          ${ruleBox('ref','환불 빼기 (−)','국민(KB)처럼 환불분이 실적에서 빠지는 카드사 → 켜기')}
+          ${ruleBox('fee','수수료 빼기 (−)','해외결제수수료 등 실적 미인정 → 보통 켜둡니다')}
+        </div>
+        <div style="font-size:10.5px;color:var(--txt3);margin-bottom:6px">혜택 구간 — 금액과 그 구간의 혜택을 적어두세요. 구간을 적으면 목표는 자동으로 잡힙니다.</div>
         ${tiers.map((t,ti)=>`<div style="display:grid;grid-template-columns:92px 1fr 26px;gap:5px;align-items:center;padding:3px 0">
             <input value="${Number(t.amount)||''}" placeholder="금액" inputmode="numeric"
               onchange="cfgSetTier('${jq(issuer)}',${ti},'amount',this.value)" style="${CT.num}padding:6px 8px">
@@ -4527,20 +4748,23 @@ function renderCfgCards(){
             <button onclick="cfgDelTier('${jq(issuer)}',${ti})" style="${CT.del}">✕</button>
           </div>`).join('')}
         <button onclick="cfgAddTier('${jq(issuer)}')" style="${CT.add}margin-top:5px;padding:6px;font-size:12px">+ 구간 추가</button>
-        <input value="${esc((CFG.cardMemo||{})[issuer])}" placeholder="실적 조건 메모 (예: 핸드폰은 실적 포함, 자동결제 건수엔 미포함)"
+        ${tiers.filter(t=>Number(t.amount)>0).length ? '' : `
+        <div style="display:grid;grid-template-columns:1fr 100px;gap:6px;align-items:center;margin-top:8px">
+          <span style="font-size:11.5px;color:var(--txt2)">구간이 없을 때 쓸 실적 목표</span>
+          <input value="${(CFG.cardPerf||{})[issuer] ?? ''}" placeholder="${won(Number(CFG.settings['카드실적목표'])||300000)}" inputmode="numeric"
+            onchange="cfgSetPerfTarget('${jq(issuer)}',this.value)" style="${CT.num}">
+        </div>`}
+        <input value="${esc((CFG.cardMemo||{})[issuer])}" placeholder="참고 메모 (예: 핸드폰은 실적 포함, 자동결제 건수엔 미포함)"
           oninput="cfgSetCardMemo('${jq(issuer)}',this.value)"
-          style="${CT.inp}font-size:12px;margin-top:7px;padding:7px 9px">
+          style="${CT.inp}font-size:12px;margin-top:9px;padding:7px 9px">
       </div>` : '';
 
     return `<div style="margin-bottom:14px;padding-bottom:2px">
       <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:4px">
         <span onclick="cfgCardToggle('${jq(issuer)}')" style="cursor:pointer;font-size:13.5px;font-weight:800;color:var(--txt)">
           <span style="color:var(--blue);font-size:11px">${open?'▾':'▸'}</span> 💳 ${issuer}</span>
-        <span style="font-size:10.5px;color:var(--txt3)">${cards.filter(a=>!((CFG.cards||{})[a.key]||{}).perfOff).length}/${cards.length}장 합산${tiers.length?` · ${tiers.length}구간`:''}</span>
         <span style="flex:1"></span>
-        <span style="font-size:10.5px;color:var(--txt3)">실적 목표</span>
-        <input value="${(CFG.cardPerf||{})[issuer] ?? ''}" placeholder="금액" inputmode="numeric" title="실적 목표"
-          onchange="cfgSetPerfTarget('${jq(issuer)}',this.value)" style="${CT.num}width:92px;flex:none">
+        <span style="font-size:10.5px;color:var(--txt3);text-align:right">${cards.filter(a=>!((CFG.cards||{})[a.key]||{}).perfOff).length}/${cards.length}장 합산 · ${tiers.filter(t=>Number(t.amount)>0).length?`${tiers.filter(t=>Number(t.amount)>0).length}구간 · 1차 ${won(cfgPerfTarget(issuer, cards))}`:`목표 ${won(cfgPerfTarget(issuer, cards))}`}<br>${cardPerfRuleLabel(issuer)}</span>
       </div>
       ${(CFG.cardMemo||{})[issuer] ? `<div style="font-size:10.5px;color:var(--txt2);background:var(--card2);border-radius:7px;padding:5px 8px;margin-bottom:6px">${(CFG.cardMemo||{})[issuer]}</div>` : ''}
       <div style="display:grid;grid-template-columns:${KT_COLS};gap:5px;font-size:10px;color:var(--txt3);padding-bottom:2px;padding-left:12px">
@@ -5009,7 +5233,7 @@ function cfgSaveToSheet(){
       cardPerf: CFG.cardPerf || {},
       cardTiers: CFG.cardTiers || {},
       cardMemo: CFG.cardMemo || {},
-      cardPerf: CFG.cardPerf || {},
+      cardPerfRule: CFG.cardPerfRule || {},
       saveGoals: goals.map(g=>({ n:g.name, g:g.monthly, mk:g.keyword||g.name })),
       initBalRaw: CFG.accounts.map(a=>({ key:a.key, bal:a.bal||0, group:a.group||'cash',
                                           label:a.label||a.key, sub:a.sub||'', hidden:!!a.hidden,
@@ -5099,6 +5323,7 @@ function cfgMergeFromSheet(config){
   if(config.cardPerf)  CFG.cardPerf  = Object.assign({}, config.cardPerf);
   if(config.cardTiers) CFG.cardTiers = Object.assign({}, config.cardTiers);
   if(config.cardMemo)  CFG.cardMemo  = Object.assign({}, config.cardMemo);
+  if(config.cardPerfRule) CFG.cardPerfRule = Object.assign({}, config.cardPerfRule);
   if(config.cardPerf && Object.keys(config.cardPerf).length) CFG.cardPerf = Object.assign({}, config.cardPerf);
   if(config.settings && Object.keys(config.settings).length) CFG.settings = Object.assign({}, CFG.settings, config.settings);
   cfgSave();
@@ -5298,7 +5523,7 @@ function computeTransitReal(ym){
     if(t.type!=='지출' || txYm!==ym) return;
     if(stripSp(t.category||t.sub) !== '대중교통') return;
     pay += (Number(t.amount)||0);
-    memoDiscount += (parseCardMemoAdj(t.memo).discount || 0);
+    memoDiscount += (txAdj(t).discount || 0);
   });
   // 기록된 결제액(pay)은 카드 할인이 이미 빠진 금액이므로, 정가를 복원해 "원래 얼마였는지"부터 보여준다.
   // 정가 → 카드 할인 → K-패스 환급 → 실질 순서라야 두 단계 할인이 각각 얼마인지 읽힌다.
@@ -5986,7 +6211,7 @@ function cardPerfGroups(){
   return Object.keys(groups).map(issuer=>({
     label: issuer,
     cards: groups[issuer].map(a=>a.key),
-    target: cfgPerfTarget(issuer, groups[issuer])
+    accts: groups[issuer]
   }));
 }
 function renderCardPerf(){
@@ -5998,18 +6223,27 @@ function renderCardPerf(){
   if(!groups.length){ el.innerHTML = '<div style="font-size:12.5px;color:var(--txt3);padding:10px 0">설정 탭에서 성격이 \'카드\'인 계좌를 등록하면 실적이 표시돼요.</div>'; return; }
   el.innerHTML = groups.map(g=>{
     const perf = tx.filter(t=>g.cards.indexOf(t.account)>=0).reduce((s,t)=>s+cardPerfAmount(t),0);
-    const over = perf >= g.target;
-    const pct = g.target>0 ? Math.round(perf/g.target*100) : 0;
+    const target = cfgPerfTarget(g.label, g.accts, perf);
+    const st = (typeof cfgTierStatus==='function') ? cfgTierStatus(g.label, perf) : null;
+    const over = perf >= target;
+    const pct = target>0 ? Math.round(perf/target*100) : 0;
     const barC = over ? 'var(--green)' : pct>=70 ? 'var(--warning)' : 'var(--blue)';
+    // 구간을 쓰는 카드사면 "지금 받고 있는 혜택 / 다음 구간까지"를 보여준다
+    const reachedTxt = st && st.reached ? `현재 ${won(st.reached.amount)} 구간${st.reached.benefit?` · ${st.reached.benefit}`:''}` : '';
+    const nextTxt = st && st.next
+      ? `${won(st.next.amount - perf)} 더 쓰면 ${won(st.next.amount)} 구간${st.next.benefit?` · ${st.next.benefit}`:''}`
+      : (over ? '✅ 실적 달성' : `${won(target-perf)} 더 쓰면 달성`);
     return `<div style="margin-bottom:12px">
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
         <span style="font-weight:600;color:var(--txt)">${g.label}</span>
-        <span style="font-weight:700;color:${over?'var(--green)':'var(--txt2)'}">${won(perf)} <span style="font-size:11px;color:var(--txt3);font-weight:400">/ ${won(g.target)}</span></span>
+        <span style="font-weight:700;color:${over?'var(--green)':'var(--txt2)'}">${won(perf)} <span style="font-size:11px;color:var(--txt3);font-weight:400">/ ${won(target)}</span></span>
       </div>
       <div class="progress-track" style="height:6px"><div class="progress-fill" style="width:${Math.min(100,pct)}%;background:${barC}"></div></div>
-      <div style="font-size:10.5px;color:${over?'var(--green)':'var(--txt3)'};margin-top:2px">${over?'✅ 실적 달성':`${won(g.target-perf)} 더 쓰면 달성`}</div>
+      <div style="font-size:10.5px;color:${over?'var(--green)':'var(--txt3)'};margin-top:2px">${nextTxt}
+        <span style="color:var(--txt3)">· ${typeof cardPerfRuleLabel==='function'?cardPerfRuleLabel(g.label):''}</span></div>
+      ${reachedTxt?`<div style="font-size:10.5px;color:var(--green);margin-top:1px">${reachedTxt}</div>`:''}
     </div>`;
-  }).join('') + `<div style="font-size:10.5px;color:var(--txt3);margin-top:2px;line-height:1.5">* 위 카드결제현황과는 다른 숫자예요 — 여긴 혜택 실적 기준(메모의 할인은 더하고 환불·해외수수료는 뺀 금액)</div>`;
+  }).join('') + `<div style="font-size:10.5px;color:var(--txt3);margin-top:2px;line-height:1.5">* 위 카드결제현황과는 다른 숫자예요 — 여긴 혜택 실적 기준. 거래의 <b>할인·수수료</b> 필드를 카드사별 실적 산정 방식(설정 › 카드)대로 가감한 금액입니다.</div>`;
 }
 
 // ══════════════════════════════════════════════
@@ -6210,20 +6444,39 @@ function renderMonthHeroGauge(elId, ym){
   const prevSpend = (STATE.transactions.length?STATE.transactions:DEMO).filter(t=>t.type==='지출' && !isRemovedTx(t) && String(t.date).slice(0,7)===prevYm).reduce((s,t)=>s+(Number(t.amount)||0),0);
   const momPct = prevSpend>0 ? Math.round((grandSpend-prevSpend)/prevSpend*100) : null;
 
-  // 총평 한 줄: 기존 computeMonthlyInsight(저축부족 원인 역산)을 그대로 재사용해 문장으로 풀어씀
-  // [수정] 이미 끝난 달까지 "부족할 것 같아요"라고 예측형으로 말하던 문제 —
-  //        진행 중인 달만 예측형, 지나간 달은 확정형(과거형)으로 갈라 쓴다.
+  // 총평 한 줄
+  // [수정 전 문제] 이 문장이 항상 computeMonthlyInsight(저축 하나만 보는 함수)에서만 나와서,
+  //   점수가 낮은 이유가 고정비 초과든 수입 감소든 상관없이 "저축 목표까지 OO 남았어요"만
+  //   반복해서 떴다. 점수(신호등 평균)의 근거와 총평 문장의 근거가 서로 다른 게 진짜 문제였다.
+  // [수정] 총평은 이제 점수를 깎은 항목(🔴 있으면 🔴부터, 없으면 🟡)을 직접 지목해서 말한다.
+  //   전부 🟢이면 그때만 저축 관련 문장(원래 문장)을 보여준다 — 좋은 소식은 저축으로 대표해도 되니까.
   const isCurM  = ym === currentMonthStr();
   const mTitle  = isCurM ? '이번 달' : `${parseInt(ym.slice(5,7))}월`;
   const ins = (typeof computeMonthlyInsight==='function') ? computeMonthlyInsight(ym) : null;
+  function heroReasonPhrase(c){
+    const v = c.val;
+    if(c.label==='수입') return v.indexOf('-')===0 ? `수입이 평균보다 ${v.slice(1)} 줄었어요` : `수입은 평균 대비 ${v}`;
+    if(c.label==='고정비') return `고정비가 예산의 ${v}${c.d==='red'?'까지 초과했어요':'예요'}`;
+    if(c.label==='변동비') return `변동비가 예산의 ${v}${c.d==='red'?'까지 초과했어요':'예요'}`;
+    if(c.label==='저축')   return `저축이 목표의 ${v}${c.d==='red'?'에 그쳤어요':'예요'}`;
+    if(c.label==='저축률') return `저축률이 ${v}${c.d==='red'?'로 낮았어요':'예요'}`;
+    return `${c.label} ${v}`;
+  }
+  const heroItems = heroScore.items||[];
+  const heroReds = heroItems.filter(c=>c.d==='red');
+  const heroYellows = heroItems.filter(c=>c.d==='yellow');
+  const heroPicks = heroReds.length ? heroReds : heroYellows;
   let heroLine = `${mTitle} 데이터를 아직 판단하기엔 일러요.`;
-  if(ins){
+  if(heroPicks.length){
+    // 점수를 깎은 항목이 있다 → 그걸 이유로 말한다 (최대 2개, 나머진 "등")
+    heroLine = heroPicks.slice(0,2).map(heroReasonPhrase).join(' · ') + (heroPicks.length>2 ? ' 등' : '');
+  } else if(ins){
     if(ins.ok===null) heroLine = ins.note;
     else if(ins.ok===true){
       const over = ins.saveActual - ins.target;
       heroLine = over > 0
-        ? `목표 ${won(ins.target)} 달성 · 이번 달은 <b>${won(over)} 더</b> 넣었어요.`
-        : `목표 ${won(ins.target)}을 정확히 채웠어요.`;
+        ? `전 항목 양호 · 저축 목표 ${won(ins.target)} 달성 · <b>${won(over)} 더</b> 넣었어요.`
+        : `전 항목 양호 · 저축 목표 ${won(ins.target)}을 정확히 채웠어요.`;
     }
     else {
       // [단순화] 달마다 왜 차이 났는지까지 파고들 필요는 없다 — 목표 달성 여부만.
@@ -6741,12 +6994,14 @@ function exportHistoryCSV(){
   const ym = document.getElementById('hist-month')?.value || currentMonthStr();
   const data = (STATE.transactions.length?STATE.transactions:DEMO).filter(t=>String(t.date).slice(0,7)===ym && !isRemovedTx(t));
   if(!data.length){ showToast('내역이 없어요'); return; }
-  const header = ['날짜','구분','대분류','소분류','내용','금액','계좌'];
+  const header = ['날짜','구분','대분류','소분류','내용','금액','계좌','할인','수수료'];
   const esc = v => '"' + String(v==null?'':v).replace(/"/g,'""') + '"';
   const lines = [header.map(esc).join(',')];
   data.slice().sort((a,b)=>String(a.date).localeCompare(String(b.date))).forEach(t => {
     const amt = t.type==='지출' ? -(Number(t.amount)||0) : (Number(t.amount)||0);
-    lines.push([t.date, t.type, t.major, t.category, t.memo, amt, t.account].map(esc).join(','));
+    const a = (t.type==='지출' && typeof txAdj==='function') ? txAdj(t) : {discount:0,fee:0};
+    lines.push([t.date, t.type, t.major, t.category, t.memo, amt, t.account,
+                a.discount||'', a.fee||''].map(esc).join(','));
   });
   const blob = new Blob(['\uFEFF' + lines.join('\r\n')], {type:'text/csv;charset=utf-8'});
   const a = document.createElement('a');
