@@ -271,10 +271,11 @@ body { padding-bottom:88px; }
       "hist    hist"
       "hero    hero"
       "kpi     kpi"
-      "budget  budget"
-      "spike   spike"
+      "spike   budget"
+      "income  budget"
+      "save    budget"
       "cal     card"
-      "income  save";
+      "pivot   pivot";
   }
   #mo-history-card{ grid-area:hist; margin-bottom:0; }
   #mo-hero-gauge{ grid-area:hero; margin-bottom:0; }
@@ -374,7 +375,7 @@ body { padding-bottom:88px; }
       "hist    hist"
       "hero    hero"
       "kpi     kpi"
-      "health  spike"
+      "spike   budget"
       "income  budget"
       "save    budget"
       "cal     card"
@@ -784,10 +785,6 @@ body { padding-bottom:88px; }
       <div id="mo-overspend-rank"></div>
     </section>
 
-    <section class="card" id="mo-income-card" style="padding:16px 18px"><div class="card-title" onclick="budToggleSection('bud-income','sec-in')" style="cursor:pointer"><span>💰 수입 내역 <span id="sec-in" style="color:var(--blue);font-size:13px">▾</span></span><span id="bud-h-in" style="font-size:12px;font-weight:600;color:var(--txt3)"></span></div><div id="bud-income"></div></section>
-
-    <section class="card" id="mo-save-card" style="padding:16px 18px"><div class="card-title" onclick="budToggleSection('bud-save','sec-save')" style="cursor:pointer"><span>🏦 저축 · 이동 내역 <span id="sec-save" style="color:var(--blue);font-size:13px">▾</span></span><span id="bud-h-save" style="font-size:12px;font-weight:600;color:var(--txt3)"></span></div><div id="bud-save"></div></section>
-
     <!-- ③ 예산 진행 (카테고리별 소진 목록 통합) -->
 
     <section class="card" id="mo-budget-card" style="padding:16px 18px">
@@ -803,6 +800,10 @@ body { padding-bottom:88px; }
       </div>
       <div id="bud-cat-spend"></div>
     </section>
+
+    <section class="card" id="mo-income-card" style="padding:16px 18px"><div class="card-title" onclick="budToggleSection('bud-income','sec-in')" style="cursor:pointer"><span>💰 수입 내역 <span id="sec-in" style="color:var(--blue);font-size:13px">▾</span></span><span id="bud-h-in" style="font-size:12px;font-weight:600;color:var(--txt3)"></span></div><div id="bud-income"></div></section>
+
+    <section class="card" id="mo-save-card" style="padding:16px 18px"><div class="card-title" onclick="budToggleSection('bud-save','sec-save')" style="cursor:pointer"><span>🏦 저축 · 이동 내역 <span id="sec-save" style="color:var(--blue);font-size:13px">▾</span></span><span id="bud-h-save" style="font-size:12px;font-weight:600;color:var(--txt3)"></span></div><div id="bud-save"></div></section>
 
     <!-- ③-b 카테고리 × 월 한눈에 보기 (가로=월, 세로=카테고리) -->
 
@@ -2778,7 +2779,35 @@ function renderBalanceList() {
 // ── 소비 분석 렌더 (월/년, 예산 비교 + 차액) ──
 let FIXED_MAJORS = ['주거비','보험','통신비'];   // 설정 탭의 '고정비' 체크로 갱신됨
 // 이모지 라벨('🏠 주거비')도 고정비로 인식하도록 정규화 매칭
-function isFixedMajor(major){ return FIXED_MAJORS.indexOf(normBudgetKey(major)) >= 0; }
+// ── [수정] 예전엔 FIXED_MAJORS 쪽은 설정에 적힌 원문 그대로 담고 인자만 정규화해서 비교했다.
+//    설정 대분류에 이모지를 붙이거나("🏠 주거비") 공백이 하나 끼면("주거 비") 그 즉시
+//    모든 지출이 변동비로 떨어졌다. 이제 양쪽 다 같은 규칙으로 눌러서 비교한다.
+function fixedKey(s){ return stripSp(normBudgetKey(s)); }
+function isFixedMajor(major){
+  const k = fixedKey(major);
+  if(!k) return false;
+  return FIXED_MAJORS.some(m => fixedKey(m) === k);
+}
+// 소분류 이름으로 대분류를 되찾는다 — 시트에 대분류가 비어 있거나 설정에 없는 이름으로
+// 적힌 거래("보험료"만 있고 대분류 공란)도 고정비로 잡히게 하려는 보정 경로.
+let _SUB2MAJOR_CACHE = null;
+function invalidateSubMajorMap(){ _SUB2MAJOR_CACHE = null; }
+function subToMajorMap(){
+  if(_SUB2MAJOR_CACHE) return _SUB2MAJOR_CACHE;
+  const m = {};
+  const put = (sub, major) => { const k = stripSp(sub); if(k && !m[k]) m[k] = major; };
+  try{
+    ((CFG.categories||{})['지출']||[]).forEach(c => (c.subs||[]).forEach(s => put(s, c.major)));
+  }catch(e){}
+  try{
+    Object.keys(CAT_OUT_SUBS||{}).forEach(mj => (CAT_OUT_SUBS[mj]||[]).forEach(s => put(s, mj)));
+  }catch(e){}
+  _SUB2MAJOR_CACHE = m;
+  return m;
+}
+function majorOfSub(sub){ return subToMajorMap()[stripSp(sub)] || ''; }
+// 설정에서 고정비로 체크된 대분류가 하나도 없으면 화면에서 안내하기 위한 플래그
+function hasFixedSetting(){ return FIXED_MAJORS.filter(Boolean).length > 0; }
 // 카테고리별 예산 주기: 'monthly'(기본, 매달 판정) | 'quarterly'(3개월 누적 판정) | 'biannual'(6개월 누적 판정) | 'event'(신호등 없이 누적만)
 // 대분류·소분류 상관없이 STATE.catCadence 하나만 보고 판정 (설정 탭에서 사용자가 직접 편집)
 const CADENCE_PERIOD_LEN = { quarterly: 3, biannual: 6 };
@@ -2878,9 +2907,14 @@ function isQuarterEndMonth(ym){ return isPeriodEndMonth(ym, 3); } // 하위호�
 function stripSp(s){ return String(s||'').replace(/\s+/g,''); }
 // 거래 단위 고정/변동 판정: STATE.fixedExceptions에 등록된 소분류명이면 대분류가 고정비여도 변동으로 취급
 function isFixedTx(t){
+  if(!t) return false;
   const sub = stripSp(t.category||t.sub);
-  if((STATE.fixedExceptions||[]).map(stripSp).indexOf(sub) >= 0) return false;
-  return isFixedMajor(t.major);
+  if(sub && (STATE.fixedExceptions||[]).map(stripSp).indexOf(sub) >= 0) return false;
+  if(isFixedMajor(t.major)) return true;
+  // 대분류가 비었거나 설정에 없는 이름이면 소분류로 대분류를 되찾아 한 번 더 본다.
+  // (카드로 긁은 보험료처럼 대분류가 누락된 거래를 변동비로 흘려보내지 않기 위함)
+  const mj = majorOfSub(t.category || t.sub);
+  return mj ? isFixedMajor(mj) : false;
 }
 // 집계용 카테고리 키
 function txCatKey(t){
@@ -4095,9 +4129,12 @@ function renderCfgCategories(){
             style="border:none;background:none;cursor:pointer;color:var(--blue);font-size:12px;padding:0;width:20px">
             ${open?'▾':'▸'}<span style="font-size:9px;color:var(--txt3)">${subs.length||''}</span>
           </button>
-          <input value="${esc(c.major)}" placeholder="대분류"
-            onchange="CFG.categories['${kind}'][${i}].major=this.value; cfgSave(); cfgApply();"
-            style="${CT.inp}font-weight:600">
+          <span style="display:flex;align-items:center;gap:6px;min-width:0">
+            <span title="설정 › 이모지는 CFG_EMOJI에서 관리합니다" style="flex:none;font-size:14px;width:18px;text-align:center">${CFG_EMOJI[normBudgetKey(c.major)]||'·'}</span>
+            <input value="${esc(c.major)}" placeholder="대분류"
+              onchange="CFG.categories['${kind}'][${i}].major=this.value; cfgSave(); cfgApply(); renderCfgCategories();"
+              style="${CT.inp}font-weight:600">
+          </span>
           ${flag ? `<label style="display:flex;align-items:center;justify-content:center;gap:3px;font-size:11px;color:var(--txt2);cursor:pointer">
               <input type="checkbox" ${flagOn?'checked':''}
                 onchange="CFG.categories['${kind}'][${i}].flags=this.checked?'${flag}':''; cfgSave(); cfgApply();">
@@ -4757,10 +4794,15 @@ function cfgApply(){
     build('이동', CAT_MV_LABELS,  CAT_MV_SUBS);
 
     // ── 2) 고정비 / 저축 판정 ──
-    const fixedList = (C['지출']||[]).filter(c=>(c.flags||'').indexOf('fixed')>=0).map(c=>c.major).filter(Boolean);
+    // 이름은 정규화해서 담는다 — 설정 대분류에 이모지를 붙여도 판정이 깨지지 않도록
+    const fixedList = (C['지출']||[]).filter(c=>(c.flags||'').indexOf('fixed')>=0).map(c=>normBudgetKey(c.major)).filter(Boolean);
     if(has('지출')){ FIXED_MAJORS.length=0; fixedList.forEach(m=>FIXED_MAJORS.push(m)); }
-    const saveList = (C['이동']||[]).filter(c=>(c.flags||'').indexOf('save')>=0).map(c=>c.major).filter(Boolean);
+    const saveList = (C['이동']||[]).filter(c=>(c.flags||'').indexOf('save')>=0).map(c=>normBudgetKey(c.major)).filter(Boolean);
     if(has('이동')){ SAVE_MAJORS.length=0; saveList.forEach(m=>SAVE_MAJORS.push(m)); }
+    if(typeof invalidateSubMajorMap==='function') invalidateSubMajorMap();
+    if(has('지출') && !fixedList.length){
+      console.warn('[고정비] 설정 › 카테고리에서 고정비로 체크된 대분류가 없습니다 — 모든 지출이 변동비로 잡힙니다.');
+    }
 
     // ── 3) 계좌: 그룹 목록 · 자동완성 · 초기잔고 ──
     const accts = (CFG.accounts||[]).filter(a=>a && a.key);
@@ -4951,8 +4993,16 @@ function cfgMergeFromSheet(config){
   if(config.categories && (config.categories['지출']||[]).length){
     ['수입','지출','이동'].forEach(k=>{
       if(!config.categories[k]) return;
+      // ── [수정] 예전엔 시트 카테고리로 통째로 갈아끼웠다. 설정에서 '고정비'를 체크만 하고
+      //    [시트에 저장]을 누르지 않은 상태에서 동기화하면 체크가 조용히 날아가서
+      //    모든 지출이 변동비로 잡히는 사고가 났다. 시트 쪽 플래그가 비어 있을 때만
+      //    로컬에 있던 fixed/save/noperf 를 살려둔다.
+      const prev = {};
+      (CFG.categories[k]||[]).forEach(pc=>{ if(pc && pc.major) prev[normBudgetKey(pc.major)] = pc; });
       CFG.categories[k] = config.categories[k].map(c=>{
-        const fl = String(c.flags||'');
+        const p = prev[normBudgetKey(c.major)];
+        let fl = String(c.flags||'');
+        if(!fl && p && (p.flags || p.noPerf)) fl = [p.flags||'', p.noPerf?'noperf':''].filter(Boolean).join(',');
         return {
           major:c.major, subs:c.subs||[],
           flags: fl.replace(/,?noperf/,'').replace(/^,/,''),
@@ -6201,7 +6251,14 @@ function renderCardDueSummary(){
   const cardRows = Object.entries(byCard).sort((a,b)=>b[1]-a[1]).map(([n,v])=>
     `<div style="display:flex;justify-content:space-between;font-size:11.5px;padding:3px 0;color:var(--txt2)"><span>${n}</span><b style="color:var(--txt);font-variant-numeric:tabular-nums">${won(v)}</b></div>`).join('');
 
+  const noFixWarn = hasFixedSetting() ? '' :
+    `<div style="margin-bottom:8px;padding:8px 10px;border-radius:8px;background:var(--blue-bg);font-size:11.5px;line-height:1.5;color:var(--txt2)">
+      설정 › 카테고리에서 <b>고정비</b>로 체크된 대분류가 없어요. 그래서 주거비·보험 같은 항목도 전부 변동비로 잡힙니다.
+      <span onclick="goToSettingsTab()" style="color:var(--blue);font-weight:600;cursor:pointer">설정으로 →</span>
+    </div>`;
+
   el.innerHTML = `
+    ${noFixWarn}
     <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">
       <span style="font-size:20px;font-weight:800;color:var(--txt);letter-spacing:-.3px">${won(cardFix+cardVar)}</span>
       <span style="font-size:11.5px;color:var(--txt3)">카드로 쓴 돈 · 이 달 지출의 ${Math.round((cardFix+cardVar)/Math.max(1,allFix+allVar)*100)}%</span>
@@ -8461,7 +8518,9 @@ function renderRptStructure(dIn){
     fEl.innerHTML = rptStructureCardHtml({
       cats: d.fixedCats, total: d.fixedTotal, grandTotal: d.totalExpense,
       vals: d.fixedVals, cv: d.fixedCV, color: 'var(--c-fix)',
-      emptyMsg: '고정비로 잡힌 지출이 없어요', extraLine: hint
+      emptyMsg: hasFixedSetting() ? '고정비로 잡힌 지출이 없어요'
+        : '설정 › 카테고리에서 고정비로 체크된 대분류가 없어요 — 체크한 뒤 [시트에 저장]까지 눌러 주세요',
+      extraLine: hint
     });
   }
   if(vEl){
@@ -8985,7 +9044,8 @@ function isEventTx(t){
 const SAVE_MAJORS = ['예적금','연금','주식','목적'];
 function isSaveTx(t){
   if(!t || (t.type!=='이동' && t.type!=='저축')) return false;
-  return SAVE_MAJORS.indexOf(normBudgetKey(t.major||'')) >= 0;
+  const k = stripSp(normBudgetKey(t.major||''));
+  return !!k && SAVE_MAJORS.some(m => stripSp(normBudgetKey(m)) === k);
 }
 // 총평(저축 부족 판정)도 같은 정의를 쓴다 — 목표와 실적의 범위를 어긋나게 두지 않기 위함
 const SAVE_INSIGHT_MAJORS = SAVE_MAJORS;
