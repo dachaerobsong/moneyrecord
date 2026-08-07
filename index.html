@@ -851,11 +851,7 @@ body { padding-bottom:88px; }
       <div id="mo-budget-progress"></div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin:14px 0 2px;padding-top:12px;border-top:1px solid #F2F4F6">
         <span style="font-size:12px;font-weight:600;color:var(--txt2)">카테고리별 지출 <span style="font-weight:400;color:var(--txt3)">· 위험한 순서</span></span>
-        <div style="display:flex;gap:10px;font-size:11px;color:var(--txt3)">
-          <span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--green);margin-right:4px"></span>여유</span>
-          <span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--warning);margin-right:4px"></span>임박</span>
-          <span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--red);margin-right:4px"></span>초과</span>
-        </div>
+        <div style="font-size:11px;color:var(--txt3)">예산 초과만 <b style="color:var(--red)">빨강</b>으로 표시</div>
       </div>
       <div id="bud-cat-spend"></div>
     </section>
@@ -1982,6 +1978,7 @@ function submitTransaction() {
   const url = getUrl();
   if (!url) {
     STATE.transactions.unshift(data);
+    if(typeof invalidateMonthsWithData==='function') invalidateMonthsWithData();
     showToast('⚠️ URL 미등록: 앱에만 임시 반영');
     resetLedgerFormKeepDate();
     return;
@@ -2267,6 +2264,7 @@ function fetchFromSheet(silent) {
         // 주의: 숨김 처리한 이동도 계좌 잔고에는 영향을 주므로 데이터에서는 유지하고,
         // 가계부/내역 화면에서만 isRemovedTx로 숨긴다 (제거하면 잔고가 시트와 어긋남)
         STATE.transactions.sort((a,b) => b.date.localeCompare(a.date));
+        if(typeof invalidateMonthsWithData==='function') invalidateMonthsWithData();
       }
 
       // ③ 자산
@@ -3107,23 +3105,91 @@ function catMonthlyHistory(key, isSub, months, type){
   });
   return list.map(ym=>({ym, amt:sums[ym]}));
 }
+// ── 거래 데이터가 실제로 존재하는 달 ──
+// [버그] 12개월 스파크라인이 "12개월 중 몇 달 썼나"를 항상 12로 나눠서 판정했다.
+//   앱을 쓴 지 6개월밖에 안 됐으면, 매달 꼬박꼬박 나가는 보험료도 6/12 = 50%가 되어
+//   "몇 달에 몰리는 패턴"으로 오판(주황)했다. 데이터가 아예 없는 달은 '안 쓴 달'이 아니다.
+//   → 거래가 하나라도 있는 달만 분모로 센다.
+let _MONTHS_WITH_DATA = null;
+function invalidateMonthsWithData(){ _MONTHS_WITH_DATA = null; }
+function monthsWithData(){
+  if(_MONTHS_WITH_DATA) return _MONTHS_WITH_DATA;
+  const set = new Set();
+  (STATE.transactions.length ? STATE.transactions : DEMO).forEach(t=>{
+    if(isRemovedTx(t)) return;
+    const ym = String(t.date||'').slice(0,7);
+    if(/^20\d\d-\d\d$/.test(ym)) set.add(ym);
+  });
+  _MONTHS_WITH_DATA = set;
+  return set;
+}
+// ── 지출 리듬 판정 ──
+// "빈 달"을 곧바로 '안 쓴 달'로 세면 안 된다. 전기세처럼 한 달 걸렀다가 다음 달에 두 달치를
+// 몰아 내는 항목이 흔한데, 그건 여전히 매달 나가는 돈이지 분기 항목이 아니다.
+// 그래서 단순히 "몇 달 썼나"를 세는 대신, 각 결제를 **직전 결제로부터 몇 개월 만인지(gap)**로
+// 나눠 월 환산액을 만든 뒤 판단한다.
+//   · 걸렀다가 2배로 냈다  → gap 2, 월 환산액은 그대로 → '매달'로 본다 (납부만 밀림)
+//   · 진짜 분기 항목        → gap이 꾸준히 3 → '분기'
+//   · 월 환산해도 금액이 튄다 → 이벤트성
+function cadencePattern(hist){
+  const ds = (typeof monthsWithData==='function') ? monthsWithData() : null;
+  const covered = ds ? hist.filter(h=>ds.has(h.ym)) : [];
+  const series = covered.length >= 4 ? covered : hist;
+  const denom = series.length;
+  const nz = series.map((h,i)=>({i, amt:h.amt})).filter(x=>x.amt>0);
+  if(!nz.length) return { kind:'none', denom, n:0 };
+  if(denom < 4)  return { kind:'few',  denom, n:nz.length };
+
+  // gap = 직전 결제로부터의 개월 수. 첫 결제의 gap은 창 시작 위치에 좌우돼
+  // 과대평가되므로 결제가 2건 이상이면 평균에서 제외한다.
+  const gaps = [], perMonth = [];
+  for(let k=0;k<nz.length;k++){
+    const g = k===0 ? Math.max(1, nz[0].i+1) : (nz[k].i - nz[k-1].i);
+    gaps.push(g); perMonth.push(nz[k].amt / g);
+  }
+  const useGaps = gaps.length>1 ? gaps.slice(1) : gaps;
+  const avgGap = useGaps.reduce((a,b)=>a+b,0)/useGaps.length;
+  const pmAvg = perMonth.reduce((a,b)=>a+b,0)/perMonth.length;
+  const pmMax = Math.max(...perMonth);
+  const lumpy = pmMax > pmAvg*2;          // 개월수로 나눠도 튄다 = 금액 자체가 불규칙
+  const slipped = gaps.some(g=>g>1);      // 거른 달이 있었다
+
+  let kind;
+  if(lumpy)            kind = 'event';
+  else if(avgGap <= 1.6) kind = 'monthly';
+  else if(avgGap <= 4.5) kind = 'quarterly';
+  else                   kind = 'biannual';
+  return { kind, denom, n:nz.length, avgGap, pmAvg, slipped: kind==='monthly' && slipped };
+}
+// 판정 → 색 · 문구. 색은 셋뿐이다: 회색(그대로 둬도 됨) · 청회색(밀림) · 주황(주기 검토)
+function cadenceVerdict(pat, verb){
+  verb = verb || '지출';
+  if(!pat || pat.kind==='none') return { col:'#C9D2DB', text:'내역 없음' };
+  if(pat.kind==='few')  return { col:'#C9D2DB', text:`내역이 있는 ${pat.denom}개월뿐 — 판단 보류` };
+  const head = `${pat.denom}개월 중 ${pat.n}번 ${verb} · 월 환산 ${won(Math.round(pat.pmAvg))}`;
+  if(pat.kind==='monthly'){
+    return pat.slipped
+      ? { col:'#7FA8C9', text:`${head} → 거른 달이 있지만 다음 달에 몰아 낸 형태예요. 실질 매달이라 '월' 그대로 두면 됩니다` }
+      : { col:'#B8C4D0', text:`${head} → 매달 고른 편` };
+  }
+  if(pat.kind==='quarterly') return { col:'var(--warning)', text:`${head} · 평균 ${pat.avgGap.toFixed(1)}개월 간격 → '분기'가 맞을 수 있어요` };
+  if(pat.kind==='biannual')  return { col:'var(--warning)', text:`${head} · 평균 ${pat.avgGap.toFixed(1)}개월 간격 → '반기'가 맞을 수 있어요` };
+  return { col:'var(--warning)', text:`${head} → 금액 편차가 커요. '이벤트'가 맞을 수 있어요` };
+}
 // 위 이력을 바탕으로 "이 항목, 매달 나가는지 vs 가끔 크게 나가는지"를 한눈에 보여주는 미니 막대그래프 + 요약 문구
 function cadenceSparklineHtml(key, isSub){
   const hist = catMonthlyHistory(key, isSub, 12);
   const max = Math.max(1, ...hist.map(h=>h.amt));
   const nonZero = hist.filter(h=>h.amt>0);
-  const occurRate = nonZero.length / hist.length;
+  const pat = cadencePattern(hist);
+  const v = cadenceVerdict(pat, '지출');
   const bars = hist.map(h=>{
     const hpx = h.amt>0 ? Math.max(3, Math.round(h.amt/max*22)) : 1;
     const isCur = h.ym===currentMonthStr();
-    const color = h.amt>0 ? (isCur ? 'var(--blue,#3182F6)' : '#B0C4DE') : '#EEF1F4';
+    const color = h.amt>0 ? (isCur ? 'var(--blue,#3182F6)' : v.col) : '#EEF1F4';
     return `<div title="${h.ym}: ${won(h.amt)}" style="flex:1;height:${hpx}px;background:${color};border-radius:2px;align-self:flex-end"></div>`;
   }).join('');
-  let hint = '';
-  if(nonZero.length===0){ hint = '최근 12개월 내역 없음'; }
-  else if(occurRate >= 0.75){ hint = `12개월 중 ${nonZero.length}개월 지출 → 매달에 가까움`; }
-  else if(occurRate <= 0.4){ hint = `12개월 중 ${nonZero.length}개월만 지출 → 가끔 몰아서 나가는 패턴`; }
-  else { hint = `12개월 중 ${nonZero.length}개월 지출`; }
+  const hint = v.text;
   return `<div style="margin:4px 0 2px">
     <div style="display:flex;gap:2px;height:24px;align-items:flex-end">${bars}</div>
     <div style="font-size:10px;color:var(--txt3);margin-top:3px">${hint} · 최대 ${won(max)}</div>
@@ -3818,10 +3884,16 @@ function pctBadgeHtml(pct, dotC, opts){
   const bg = c==='var(--red)' ? 'var(--red-bg)' : c==='var(--warning)' ? 'var(--warn-bg)'
            : c==='var(--green)' ? 'var(--green-bg)' : 'var(--card2)';
   const fg = c==='var(--txt3)' ? 'var(--txt3)' : c;
+  // [정리] 예전엔 색 배지 + 색 점을 나란히 찍어 같은 말을 두 번 했다. 화면이 알록달록해서
+  //   정작 금액이 안 보였다. 이제 색은 % 숫자에만 싣고, 배경 배지는 '초과(빨강)'일 때만 남긴다.
+  //   점은 초과일 때만 찍는다 — 초록 점이 스무 개 늘어서 있어봐야 읽을 정보가 없다.
+  const isOver = (c==='var(--red)');
   const badge = (pct===null || pct===undefined) ? ''
-    : `<span style="font-size:10px;padding:1px 6px;border-radius:5px;background:${bg};color:${fg};font-weight:600;font-variant-numeric:tabular-nums">${typeof pct==='number'?pct+'%':pct}</span>`;
-  const dot = opts.noDot ? '' : `<span title="${opts.title||'예산 대비'}" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${c};flex-shrink:0"></span>`;
-  return `<span style="display:inline-flex;align-items:center;gap:6px">${badge}${dot}</span>`;
+    : isOver
+      ? `<span style="font-size:10px;padding:1px 6px;border-radius:5px;background:${bg};color:${fg};font-weight:700;font-variant-numeric:tabular-nums">${typeof pct==='number'?pct+'%':pct}</span>`
+      : `<span style="font-size:10.5px;color:${c==='var(--warning)'?'var(--warning)':'var(--txt3)'};font-weight:600;font-variant-numeric:tabular-nums">${typeof pct==='number'?pct+'%':pct}</span>`;
+  const dot = (opts.noDot || !isOver) ? '' : `<span title="${opts.title||'예산 초과'}" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${c};flex-shrink:0"></span>`;
+  return `<span style="display:inline-flex;align-items:center;gap:5px">${badge}${dot}</span>`;
 }
 function pctRowHtml(label, budTxt, valTxt, pct, dotC, opts){
   opts = opts || {};
@@ -4179,6 +4251,50 @@ function cfgDelSub(kind, i, j){
   if(c.subBudget) delete c.subBudget[nm];
   cfgSaveLocal(); renderCfgCategories();
 }
+// ── 카테고리 복구 ──
+// 거래내역에는 모든 대분류·소분류가 그대로 남아 있으므로, 설정에서 사라진 카테고리는
+// 거래에서 되짚어 되살릴 수 있다. 예산은 거래에 없으니 복구되지 않는다(0으로 들어감).
+// 절대 삭제하지 않는다 — 없는 것만 채워 넣는다.
+function cfgRebuildFromTx(silent){
+  const src = (STATE.transactions.length ? STATE.transactions : []);
+  if(!src.length){ if(!silent) showToast('거래내역이 없어 복구할 게 없어요'); return {added:0, addedSub:0}; }
+  const KINDS = {'지출':'지출','수입':'수입','이동':'이동','저축':'이동'};
+  let added = 0, addedSub = 0;
+  src.forEach(t=>{
+    const kind = KINDS[t.type]; if(!kind) return;
+    const mj = String(t.major||'').trim(); if(!mj) return;
+    const sb = String(t.category||t.sub||'').trim();
+    CFG.categories[kind] = CFG.categories[kind] || [];
+    const nk = normBudgetKey(mj);
+    let c = CFG.categories[kind].find(x=>normBudgetKey(x.major)===nk);
+    if(!c){
+      c = { major: mj, subs: [], flags:'', budget:0, subBudget:{}, acct:'', day:0, cadence:'', subMeta:{} };
+      CFG.categories[kind].push(c); added++;
+    }
+    if(sb && normBudgetKey(sb)!==nk){
+      c.subs = c.subs || [];
+      if(!c.subs.some(x=>stripSp(x)===stripSp(sb))){ c.subs.push(sb); addedSub++; }
+    }
+  });
+  if(added || addedSub){
+    cfgSaveLocal();
+    if(typeof cfgApply==='function') cfgApply();
+    if(typeof renderCfgCategories==='function') renderCfgCategories();
+  }
+  if(!silent){
+    showToast(added||addedSub
+      ? `✅ 대분류 ${added}개 · 소분류 ${addedSub}개 되살렸어요`
+      : '빠진 카테고리가 없어요 — 모두 그대로예요');
+  }
+  return {added, addedSub};
+}
+// 복구 버튼이 뭘 되살릴지 미리 보여준다 (누르기 전에 확인)
+function cfgRebuildPreview(){
+  const before = JSON.parse(JSON.stringify(CFG.categories));
+  const r = cfgRebuildFromTx(true);
+  if(!r.added && !r.addedSub){ CFG.categories = before; showToast('빠진 카테고리가 없어요'); return; }
+  showToast(`✅ 거래내역에서 대분류 ${r.added}개 · 소분류 ${r.addedSub}개 되살렸어요`);
+}
 function cfgSetSubBudget(kind, i, j, val){
   const c = CFG.categories[kind][i];
   const nm = c.subs[j]; if(!nm) return;
@@ -4261,19 +4377,17 @@ function cfgMiniSpark(key, isSub, type){
   if(!nonZero.length) return `<span title="최근 12개월 ${type==='이동'?'이체':type==='수입'?'입금':'지출'} 내역 없음 (설정의 카테고리 이름과 거래의 카테고리 이름이 정확히 같아야 잡힙니다)"
     style="font-size:9px;color:var(--txt3);text-align:center;cursor:default">–</span>`;
   const max = Math.max(1, ...hist.map(h=>h.amt));
-  const rate = nonZero.length / hist.length;
-  // 몰리는 정도: 최대달이 평균의 2배를 넘으면 '튄다'고 본다
-  const avg = nonZero.reduce((a,h)=>a+h.amt,0)/nonZero.length;
-  const spiky = max > avg*2 || rate <= 0.5;
-  const col = spiky ? 'var(--warning)' : '#B8C4D0';
+  const verb = type==='이동' ? '이체' : type==='수입' ? '입금' : '지출';
+  const pat = cadencePattern(hist);
+  const v = cadenceVerdict(pat, verb);
+  // 두 달치를 몰아 낸 달은 위쪽에 옅은 가로선을 그어 "이 막대는 2개월분"임을 보이게 한다
+  const dbl = h => pat.pmAvg>0 && h.amt > pat.pmAvg*1.6;
   const bars = hist.map(h=>{
     const hpx = h.amt>0 ? Math.max(2, Math.round(h.amt/max*14)) : 1;
-    return `<i style="flex:1;height:${hpx}px;background:${h.amt>0?col:'#EEF1F4'};border-radius:1px;align-self:flex-end;display:block"></i>`;
+    const mark = (h.amt>0 && pat.slipped && dbl(h)) ? 'border-top:1px solid rgba(255,255,255,.85);' : '';
+    return `<i style="flex:1;height:${hpx}px;background:${h.amt>0?v.col:'#EEF1F4'};border-radius:1px;align-self:flex-end;display:block;${mark}"></i>`;
   }).join('');
-  const verb = type==='이동' ? '이체' : type==='수입' ? '입금' : '지출';
-  const tip = `최근 12개월 중 ${nonZero.length}개월 ${verb} · 최대 ${won(max)} · 평균 ${won(Math.round(avg))}` +
-              (spiky ? ' → 몇 달에 몰리는 패턴이라 분기/반기가 맞을 수 있어요' : ' → 매달 고른 편');
-  return `<span title="${tip}" style="display:flex;gap:1px;height:16px;align-items:flex-end;cursor:default">${bars}</span>`;
+  return `<span title="${v.text}" style="display:flex;gap:1px;height:16px;align-items:flex-end;cursor:default">${bars}</span>`;
 }
 
 // ── 예산 판정 주기 ──
@@ -4506,7 +4620,15 @@ function renderCfgCategories(){
       <b>▸</b> 를 누르면 소분류가 펼쳐집니다. 소분류에 예산을 넣으면 대분류 예산은 <b>자동으로 그 합</b>이 됩니다.
       지출의 <b>고정비</b>와 이동의 <b>저축</b> 체크가 리포트 판정 기준입니다.<br>
       <b>결제수단·결제일</b>을 정하면 <b>현금흐름</b>(언제 얼마 빠지는지)과 <b>카드 예산</b>에 자동으로 반영됩니다.
-      <b>⠿</b> 를 끌면 순서가 바뀝니다. <b>12개월</b> 막대가 <b style="color:var(--warning)">주황색</b>이면 몇 달에 몰리는 패턴이라 주기를 분기·반기로 바꿔볼 만해요.
+      <b>⠿</b> 를 끌면 순서가 바뀝니다. <b>12개월</b> 막대 색이 판정입니다 —
+      <b style="color:#8A97A3">회색</b> 매달 고름 ·
+      <b style="color:#5E8FB8">청회색</b> 거른 달이 있지만 다음 달에 몰아 낸 형태(실질 매달, 그대로 두세요) ·
+      <b style="color:var(--warning)">주황</b> 주기를 분기·반기·이벤트로 바꿔볼 만함. 막대에 커서를 올리면 월 환산액이 나옵니다.
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:8px">
+      <button onclick="if(confirm('거래내역에 있는데 설정에서 빠진 카테고리를 되살립니다.\n기존 항목·예산은 지우지 않아요. 진행할까요?')) cfgRebuildPreview()"
+        style="flex:1;padding:8px;border:1px solid var(--blue);border-radius:9px;background:var(--blue-bg);color:var(--blue);font-size:12px;font-weight:700;cursor:pointer">
+        ♻️ 거래내역에서 카테고리 복구</button>
     </div>
     <div style="display:flex;gap:6px;margin-bottom:10px">
       <button onclick="cfgFoldAll(false)" style="flex:1;padding:7px;border:1px solid #E5E8EB;border-radius:9px;background:var(--card);color:var(--txt2);font-size:12px;font-weight:600;cursor:pointer">▸ 전체 접기</button>
@@ -5352,10 +5474,44 @@ function cfgSaveToSheet(){
 // ── 시트에서 읽어온 설정을 CFG에 병합 ──
 function cfgMergeFromSheet(config){
   if(!config) return;
-  // 아직 시트로 안 보낸 로컬 변경이 있으면 카테고리·예산은 덮어쓰지 않는다.
-  // (사용자가 [설정 저장]을 누르면 CFG_DIRTY가 풀리고 그때부터 다시 병합된다)
-  if(typeof CFG_DIRTY!=='undefined' && CFG_DIRTY){
+  // ── 로컬 변경이 있을 때의 병합 규칙 ──
+  // [사고] 예전 버전은 로컬 변경이 있으면 병합을 통째로 건너뛰었다. 그런데 로컬 CFG가
+  //   불완전한 상태(다른 기기·오래된 localStorage)면 시트에서 다시 채워지지 못하고,
+  //   그 상태로 [시트에 저장]을 누르면 시트의 카테고리가 로컬의 빈약한 목록으로 덮여 사라졌다.
+  //   → 이제 '건너뛰기'가 아니라 '추가만' 한다. 시트에만 있는 카테고리는 되살리고,
+  //     내가 방금 고친 항목은 건드리지 않는다. 어떤 경우에도 삭제는 하지 않는다.
+  const dirty = (typeof CFG_DIRTY!=='undefined' && CFG_DIRTY);
+  if(dirty){
     if(typeof cfgRenderDirtyBar==='function') cfgRenderDirtyBar();
+    if(config.categories){
+      ['수입','지출','이동'].forEach(k=>{
+        const from = config.categories[k]; if(!from || !from.length) return;
+        CFG.categories[k] = CFG.categories[k] || [];
+        const have = new Set(CFG.categories[k].map(c=>normBudgetKey(c.major)));
+        from.forEach(c=>{
+          const nk = normBudgetKey(c.major);
+          if(!nk || have.has(nk)) return;      // 이미 있으면 로컬 값 우선 (내 편집 보존)
+          const fl = String(c.flags||'');
+          CFG.categories[k].push({
+            major:c.major, subs:c.subs||[],
+            flags: fl.replace(/,?noperf/,'').replace(/^,/,''),
+            noPerf: fl.indexOf('noperf')>=0,
+            budget: Number(c.budget)||0, subBudget: c.subBudget||{},
+            acct: c.acct||'', day: Number(c.day)||0, cadence: c.cadence||'', subMeta: c.subMeta||{}
+          });
+          have.add(nk);
+        });
+        // 같은 대분류 안에서 시트에만 있는 소분류도 되살린다
+        from.forEach(c=>{
+          const nk = normBudgetKey(c.major);
+          const mine = CFG.categories[k].find(x=>normBudgetKey(x.major)===nk);
+          if(!mine) return;
+          mine.subs = mine.subs || [];
+          (c.subs||[]).forEach(sn=>{ if(sn && mine.subs.indexOf(sn)<0) mine.subs.push(sn); });
+        });
+      });
+      if(typeof cfgSave==='function') cfgSave();
+    }
     return;
   }
   if(config.categories && (config.categories['지출']||[]).length){
@@ -5825,11 +5981,9 @@ function budCatRowHtml(c){
       settleNote = `<div style="font-size:10.5px;color:var(--txt3);margin:0 0 6px 20px;line-height:1.5">이 카테고리는 다음 달 정산이 붙는 편이에요 (과거 ${Math.round(st.crossRate*100)}%) · 반영 시 예상 ${won(est)}${budRef}</div>`;
     }
   }catch(e){}
-  // 소진율 막대 — 숫자만으론 카테고리 간 상대 비교가 안 돼서 가는 트랙을 한 줄 덧붙임
-  const barPct = (pct!==null && pct!==undefined) ? Math.max(0, Math.min(100, pct)) : null;
-  const barHtml = barPct===null ? '' : `<div style="height:5px;background:var(--c-dim);border-radius:99px;overflow:hidden;margin:0 0 6px 20px">
-      <div style="height:100%;width:${barPct}%;background:${dotC};border-radius:99px"></div>
-    </div>`;
+  // 소진율 막대는 뺐다 — 오른쪽의 신호등 + %가 이미 같은 정보를 말하고 있어,
+  // 카테고리마다 한 줄씩 더 차지하면서 목록만 길어졌다.
+  const barHtml = '';
   const tag = c.fixed ? `<span style="font-size:9px;font-weight:700;color:var(--blue);background:var(--blue-bg);padding:1px 6px;border-radius:5px;flex:none">고정</span>` : '';
 
   return `<div id="${rid}_wrap" style="border-top:1px solid #F2F4F6">
