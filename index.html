@@ -430,7 +430,7 @@ body { padding-bottom:88px; }
     </div>
     <div class="form-group">
       <label>금액 (원)</label>
-      <input type="number" id="edit-amount">
+      <input type="number" id="edit-amount" oninput="adjPreview('edit')">
     </div>
     <!-- 수입/지출용 단일 계좌 -->
     <div class="form-group" id="edit-acct-single">
@@ -455,9 +455,14 @@ body { padding-bottom:88px; }
       </label>
       <div id="edit-adj-body" style="display:none">
         <div style="display:flex;gap:8px">
-          <input type="number" id="edit-disc" placeholder="할인 (원)" inputmode="numeric">
+          <input type="number" id="edit-disc" placeholder="할인 (원)" inputmode="numeric" oninput="adjPreview('edit')">
           <input type="number" id="edit-fee" placeholder="수수료 (원)" inputmode="numeric">
         </div>
+        <label style="display:flex;align-items:center;gap:6px;margin-top:8px;cursor:pointer;font-size:12px;color:var(--txt2);font-weight:400">
+          <input type="checkbox" id="edit-gross" onchange="adjPreview('edit')">
+          위 <b>금액</b>은 할인 전 정가예요 (할인을 빼서 기록)
+        </label>
+        <div id="edit-adj-preview" style="font-size:11.5px;color:var(--blue);margin-top:6px;line-height:1.5"></div>
         <div id="edit-adj-legacy" style="font-size:11px;color:var(--warning);margin-top:6px;display:none"></div>
       </div>
     </div>
@@ -651,7 +656,7 @@ body { padding-bottom:88px; }
         </div>
         <div class="form-group">
           <label>금액 (원)</label>
-          <input type="number" id="tx-amount" placeholder="0" required>
+          <input type="number" id="tx-amount" placeholder="0" required oninput="adjPreview('tx')">
         </div>
         <!-- 수입/지출용 단일 계좌 -->
         <div class="form-group" id="tx-acct-single">
@@ -680,11 +685,16 @@ body { padding-bottom:88px; }
           </label>
           <div id="tx-adj-body" style="display:none">
             <div style="display:flex;gap:8px">
-              <input type="number" id="tx-disc" placeholder="할인 (원)" inputmode="numeric">
+              <input type="number" id="tx-disc" placeholder="할인 (원)" inputmode="numeric" oninput="adjPreview('tx')">
               <input type="number" id="tx-fee" placeholder="수수료 (원)" inputmode="numeric">
             </div>
+            <label style="display:flex;align-items:center;gap:6px;margin-top:8px;cursor:pointer;font-size:12px;color:var(--txt2);font-weight:400">
+              <input type="checkbox" id="tx-gross" onchange="adjPreview('tx')">
+              위 <b>금액</b>은 할인 전 정가예요 (할인을 빼서 기록)
+            </label>
+            <div id="tx-adj-preview" style="font-size:11.5px;color:var(--blue);margin-top:6px;line-height:1.5"></div>
             <div style="font-size:11px;color:var(--txt3);margin-top:6px;line-height:1.5">
-              할인 = 결제 시 이미 깎인 금액 · 수수료 = 해외결제수수료 등<br>
+              수수료는 결제액에 이미 포함돼 있으니 금액은 그대로 두세요.<br>
               반영 방식은 <b>설정 › 카드</b>의 카드사별 실적 산정 방식을 따릅니다.
             </div>
           </div>
@@ -1109,6 +1119,10 @@ body { padding-bottom:88px; }
     <div id="cfg-misc-body"></div>
   </div>
   <div class="card" style="position:sticky;bottom:12px;z-index:20">
+    <div id="cfg-dirty-bar" style="display:none;background:var(--warn-bg,#FFF6E5);border-radius:10px;padding:9px 12px;margin-bottom:10px;font-size:12px;color:#8A6A20;line-height:1.55">
+      ⚠️ <b>아직 시트에 저장되지 않은 설정 변경이 있어요.</b><br>
+      저장 전까지는 시트에서 설정을 다시 읽어오지 않습니다. 아래 버튼을 눌러 저장해 주세요.
+    </div>
     <div style="font-size:12px;color:var(--txt3);line-height:1.6;margin-bottom:10px">위 설정은 앱에 바로 반영됩니다. <b>시트에 저장</b>을 누르면 <b>카테고리 · 예산 · 계좌 · 카드 · 템플릿 · 기본값</b>이 모두 구글 시트에 기록돼, 다른 기기에서도 같은 설정으로 열립니다. (리포트 내보내기는 위 카드에서 따로 실행하세요)</div>
     <button onclick="cfgSaveToSheet()" style="width:100%;padding:14px;background:var(--blue);color:#fff;border:none;border-radius:14px;font-size:15px;font-weight:800;cursor:pointer">☁️ 시트에 저장</button>
     <div id="cfg-save-status" style="font-size:12px;color:var(--txt3);text-align:center;margin-top:8px"></div>
@@ -1827,6 +1841,25 @@ function setAnalysisSub(subName, el) {
 }
 
 // ── 카테고리 동적 (대분류 → 소분류 2단계) ──
+// ── 금액 · 할인 해석 ──
+// 앱이 저장하는 '금액'은 언제나 **실제로 계좌에서 빠져나간 결제액**이다.
+// 이게 흔들리면 잔고·월 지출·카테고리 합계가 전부 어긋나므로 데이터 모델은 건드리지 않는다.
+// 다만 영수증은 보통 "정가 50,000 / 할인 3,000 / 결제 47,000"으로 찍히므로,
+// 정가를 그대로 적고 싶으면 체크박스 하나로 입력 시점에 변환해 준다 (50,000 → 47,000 저장).
+// 실적 계산은 저장된 결제액에 할인을 다시 더해 정가를 복원하므로 결과는 같다.
+function resolveAmount(prefix){
+  const raw  = Math.abs(parseInt((document.getElementById(prefix+'-amount')?.value||'').replace(/[^0-9.\-]/g,''),10))||0;
+  const disc = Math.abs(parseInt((document.getElementById(prefix+'-disc')?.value||'').replace(/[^0-9.\-]/g,''),10))||0;
+  const gross = !!document.getElementById(prefix+'-gross')?.checked;
+  return { raw, disc, gross, paid: gross ? Math.max(0, raw - disc) : raw };
+}
+// 입력 중 "그래서 얼마가 기록되나"를 바로 보여준다 — 정가/결제액 헷갈림 방지
+function adjPreview(prefix){
+  const el = document.getElementById(prefix+'-adj-preview'); if(!el) return;
+  const r = resolveAmount(prefix);
+  if(!r.gross || !r.disc || !r.raw){ el.textContent = ''; return; }
+  el.innerHTML = `기록될 결제액 <b>${won(r.paid)}</b> = ${won(r.raw)} − 할인 ${won(r.disc)}`;
+}
 // 할인·수수료 입력칸 접기/펼치기 (prefix: 'tx' 입력폼 / 'edit' 수정모달)
 function toggleAdjBox(prefix, force){
   const body = document.getElementById(prefix+'-adj-body');
@@ -1845,6 +1878,8 @@ function syncAdjVisibility(prefix, type){
   if(!on){
     const d=document.getElementById(prefix+'-disc'); if(d) d.value='';
     const f=document.getElementById(prefix+'-fee');  if(f) f.value='';
+    const g=document.getElementById(prefix+'-gross'); if(g) g.checked=false;
+    const p=document.getElementById(prefix+'-adj-preview'); if(p) p.innerHTML='';
     toggleAdjBox(prefix, false);
   }
 }
@@ -1896,6 +1931,8 @@ function resetLedgerFormKeepDate(){
   const ia = document.getElementById('tx-in-acct');  if(ia) ia.value='';
   const dd = document.getElementById('tx-disc'); if(dd) dd.value='';
   const ff = document.getElementById('tx-fee');  if(ff) ff.value='';
+  const gg = document.getElementById('tx-gross'); if(gg) gg.checked=false;
+  const pv = document.getElementById('tx-adj-preview'); if(pv) pv.innerHTML='';
   toggleAdjBox('tx', false);
   syncAdjVisibility('tx', document.getElementById('tx-type')?.value || '지출');
 }
@@ -1906,13 +1943,15 @@ function submitTransaction() {
     return (v==='' || isNaN(n) || n===0) ? '' : n;
   };
   const isOut = document.getElementById('tx-type').value === '지출';
+  // '금액'은 항상 실제 결제액으로 저장한다 (정가 입력 체크 시 여기서 할인을 뺀다)
+  const _amt = isOut ? resolveAmount('tx').paid : (parseInt(document.getElementById('tx-amount').value)||0);
   const data = {
     date: document.getElementById('tx-date').value,
     type: document.getElementById('tx-type').value,
     major: document.getElementById('tx-major').value,
     category: document.getElementById('tx-category').value,
     sub: document.getElementById('tx-category').value,
-    amount: parseInt(document.getElementById('tx-amount').value),
+    amount: _amt,
     account: document.getElementById('tx-account').value,
     memo: document.getElementById('tx-memo').value,
     // 할인·수수료: 카드 실적 계산에만 쓰이는 전용 필드. 지출이 아니면 항상 비운다.
@@ -3246,9 +3285,8 @@ function renderAnalysis() {
         <div style="font-size:14px;font-weight:800;color:var(--blue)">${won(totalSave)}</div>
       </div>
     </div>
-    <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--txt2);margin-bottom:6px"><span>지출 비율</span><span style="font-weight:600;color:${expRatio>100?'var(--red)':'var(--txt)'}">${expRatio}%</span></div>
-    <div class="progress-track"><div class="progress-fill" style="width:${Math.min(100,expRatio)}%;background:${expRatio>100?'var(--red)':'var(--warning)'}"></div></div>
-    <div style="display:flex;justify-content:flex-end;align-items:center;margin-top:14px">
+    <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--txt2)"><span>지출 비율</span><span style="font-weight:700;color:${expRatio>100?'var(--red)':expRatio>=85?'var(--warning)':'var(--txt)'}">${expRatio>100?'🔴':expRatio>=85?'🟡':'🟢'} ${expRatio}%</span></div>
+    <div style="display:flex;justify-content:flex-end;align-items:center;margin-top:10px">
       <span style="font-size:12px;font-weight:700;padding:5px 13px;border-radius:99px;background:${rateBg};color:${rateFg}">저축률 ${saveRate}%</span>
     </div>`;
 
@@ -3278,33 +3316,30 @@ function renderAnalysis() {
     return { major: CAT_OUT_LABELS[major]||major, spend:sp, bud, diff: sp-bud };
   }).sort((a,b)=>b.spend-a.spend);
 
-  const scaleMax = Math.max(...cats.map(c=>Math.max(c.spend,c.bud)), 1);
+  // 막대 없이 신호등 + 숫자만. 예산 대비 위치는 %와 차액이 이미 말해주므로
+  // 막대는 같은 정보를 두 번 그리는 셈이었다 (월간 피벗표의 신호등과도 기준을 맞춤).
   const rows = cats.map(c => {
-    const isOver = c.bud>0 && c.spend>c.bud;
-    const fc = isOver?'var(--red)':(c.bud>0?'var(--green)':'var(--blue)');
-    const fillW = c.spend/scaleMax*100;
-    const markW = c.bud>0 ? c.bud/scaleMax*100 : null;
-    // 차액 뱃지: 예산보다 +초과 / -부족(남음)
+    const pct = c.bud>0 ? Math.round(c.spend/c.bud*100) : null;
+    const dot = pct==null ? '⚪' : pct<=100 ? '🟢' : pct<=110 ? '🟡' : '🔴';
+    const dc  = pct==null ? 'var(--txt3)' : pct<=100 ? 'var(--green)' : pct<=110 ? 'var(--warning)' : 'var(--red)';
     let diffBadge = '';
     if(c.bud>0){
-      if(c.diff>0) diffBadge = `<span style="font-size:11px;font-weight:600;color:var(--red)">+${won(c.diff)} 초과</span>`;
-      else diffBadge = `<span style="font-size:11px;font-weight:600;color:var(--green)">${won(c.diff)} 남음</span>`;
+      diffBadge = c.diff>0
+        ? `<span style="font-size:11px;font-weight:600;color:var(--red)">+${won(c.diff)} 초과</span>`
+        : `<span style="font-size:11px;font-weight:600;color:var(--green)">${won(c.diff)} 남음</span>`;
     }
-    return `<div style="margin-bottom:14px">
-      <div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:3px">
-        <span style="font-weight:600">${c.major}</span>
-        <span style="font-weight:700">${won(c.spend)}${c.bud>0?` <span style="font-size:12px;color:var(--txt3);font-weight:400">/ ${won(c.bud)}</span>`:''}</span>
-      </div>
-      ${diffBadge?`<div style="text-align:right;margin-bottom:5px">${diffBadge}</div>`:'<div style="height:4px"></div>'}
-      <div style="position:relative;height:9px;background:#EAE7DE;border-radius:99px;overflow:visible">
-        <div style="height:100%;width:${Math.min(100,fillW).toFixed(1)}%;background:${fc};border-radius:99px"></div>
-        ${markW!=null?`<div title="예산 ${won(c.bud)}" style="position:absolute;top:-3px;left:${Math.min(100,markW).toFixed(1)}%;width:2px;height:15px;background:var(--txt)"></div>`:''}
-      </div>
+    return `<div style="display:flex;align-items:baseline;gap:7px;padding:7px 0;border-top:1px solid #F2F4F6">
+      <span style="font-size:11px;flex:none">${dot}</span>
+      <span style="font-weight:600;font-size:14px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.major}</span>
+      <span style="text-align:right;flex:none">
+        <span style="font-weight:700;font-size:14px;color:${dc}">${won(c.spend)}</span>${c.bud>0?`<span style="font-size:12px;color:var(--txt3);font-weight:400"> / ${won(c.bud)}</span>`:''}
+        ${diffBadge?`<span style="display:block;font-size:11px;margin-top:1px">${diffBadge}${pct!=null?`<span style="color:var(--txt3);font-weight:400"> · ${pct}%</span>`:''}</span>`:''}
+      </span>
     </div>`;
   }).join('');
 
   H += `<div class="card">
-    <div class="card-title"><span>카테고리별 지출</span><span style="font-size:11px;font-weight:400;color:var(--txt3)">검정선=예산</span></div>
+    <div class="card-title"><span>카테고리별 지출</span><span style="font-size:11px;font-weight:400;color:var(--txt3)">🟢 ~100% · 🟡 ~110% · 🔴 초과</span></div>
     ${rows || '<div style="text-align:center;color:var(--txt3);padding:12px">지출 내역 없음</div>'}
   </div>`;
 
@@ -3498,6 +3533,8 @@ function editTx(id) {
         '<br>위 칸에 옮겨 적으면 메모와 무관하게 정확히 계산됩니다.';
     } else { _elg.style.display='none'; _elg.innerHTML=''; }
   }
+  const _eg=document.getElementById('edit-gross'); if(_eg) _eg.checked=false;  // 저장된 금액은 이미 결제액
+  const _epv=document.getElementById('edit-adj-preview'); if(_epv) _epv.innerHTML='';
   const _hasAdj = (t.disc||t.fee||_leg.discount||_leg.fee||_leg.refund);
   toggleAdjBox('edit', !!_hasAdj);
   // 모달 열기
@@ -3565,7 +3602,9 @@ function saveEdit() {
   t.type = document.getElementById('edit-type').value;
   t.major = majorLabel(t.type, document.getElementById('edit-major').value);
   t.category = document.getElementById('edit-category').value;
-  t.amount = parseInt(document.getElementById('edit-amount').value) || 0;
+  t.amount = (t.type==='지출')
+    ? resolveAmount('edit').paid
+    : (parseInt(document.getElementById('edit-amount').value) || 0);
   t.memo = document.getElementById('edit-memo').value;
   t.note = (document.getElementById('edit-note')?.value || '').trim();
   // 할인·수수료 — 지출이 아니면 비운다
@@ -3990,6 +4029,25 @@ const CFG_LS = 'asset_cfg_v1';
 let CFG = { categories:{ '수입':[], '지출':[], '이동':[] }, accounts:[], budget:{}, settings:{} };
 try{ const raw = JSON.parse(LS.get(CFG_LS)||'null'); if(raw) CFG = Object.assign(CFG, raw); }catch(e){}
 function cfgSave(){ try{ LS.set(CFG_LS, JSON.stringify(CFG)); }catch(e){} }
+// ── 저장하지 않은 설정 변경 보호 ──
+// [버그] 설정에서 예산을 적어도 계속 사라졌다. 원인은 백그라운드 동기화(fetchFromSheet)가
+//   시트의 config로 CFG.categories를 통째로 덮어썼기 때문. 거래 하나만 입력해도 동기화가 돌아서
+//   아직 [저장] 누르지 않은 예산·소분류가 그대로 날아갔다.
+//   → 로컬에 안 보낸 변경이 있으면 시트 쪽 카테고리·예산 병합을 건너뛴다.
+const CFG_DIRTY_LS = 'asset_cfg_dirty';
+let CFG_DIRTY = (function(){ try{ return LS.get(CFG_DIRTY_LS)==='1'; }catch(e){ return false; } })();
+function cfgMarkDirty(on){
+  CFG_DIRTY = !!on;
+  try{ LS.set(CFG_DIRTY_LS, CFG_DIRTY?'1':''); }catch(e){}
+  cfgRenderDirtyBar();
+}
+function cfgRenderDirtyBar(){
+  const el = document.getElementById('cfg-dirty-bar');
+  if(!el) return;
+  el.style.display = CFG_DIRTY ? '' : 'none';
+}
+// 설정을 바꾸는 모든 경로가 통과하는 저장 함수
+function cfgSaveLocal(){ cfgSave(); cfgMarkDirty(true); }
 // 카드사별 실적 산정 규칙 초기값 — 한 번만 심고, 이후엔 설정 › 카드에서 바꾼 값을 그대로 쓴다.
 // 신한: 할인받은 금액도 실적 인정 / 국민: 환불분은 실적 차감 / 둘 다 수수료는 미인정
 if(!CFG.cardPerfRule){
@@ -4103,7 +4161,7 @@ function cfgAddSub(kind, i){
   const c = CFG.categories[kind][i];
   c.subs = c.subs || []; c.subs.push('');
   CFG_OPEN[kind+'|'+i] = true;
-  cfgSave(); renderCfgCategories();
+  cfgSaveLocal(); renderCfgCategories();
 }
 function cfgRenameSub(kind, i, j, val){
   const c = CFG.categories[kind][i];
@@ -4112,25 +4170,25 @@ function cfgRenameSub(kind, i, j, val){
   if(c.subBudget && old && c.subBudget[old]!=null && old!==c.subs[j]){
     c.subBudget[c.subs[j]] = c.subBudget[old]; delete c.subBudget[old];
   }
-  cfgSave();
+  cfgSaveLocal();
 }
 function cfgDelSub(kind, i, j){
   const c = CFG.categories[kind][i];
   const nm = c.subs[j];
   c.subs.splice(j,1);
   if(c.subBudget) delete c.subBudget[nm];
-  cfgSave(); renderCfgCategories();
+  cfgSaveLocal(); renderCfgCategories();
 }
 function cfgSetSubBudget(kind, i, j, val){
   const c = CFG.categories[kind][i];
   const nm = c.subs[j]; if(!nm) return;
   c.subBudget = c.subBudget || {};
   c.subBudget[nm] = Number(String(val).replace(/[^0-9]/g,''))||0;
-  cfgSave(); cfgRefreshTotals(kind, i);
+  cfgSaveLocal(); cfgRefreshTotals(kind, i);
 }
 function cfgSetMajorBudget(kind, i, val){
   CFG.categories[kind][i].budget = Number(String(val).replace(/[^0-9]/g,''))||0;
-  cfgSave(); cfgRefreshTotals(kind, i);
+  cfgSaveLocal(); cfgRefreshTotals(kind, i);
 }
 // ── 결제수단 · 결제일 ──
 // 여기서 정한 값이 현금흐름(언제 얼마 빠지는지)과 카드 예산으로 그대로 흘러간다.
@@ -4155,7 +4213,7 @@ function cfgSetPay(kind, i, sub, field, val){
     c.subMeta[sub] = c.subMeta[sub] || {};
     c.subMeta[sub][field] = v;
   }
-  cfgSave(); cfgApply();
+  cfgSaveLocal(); cfgApply();
 }
 function cfgPayOf(c, sub){
   if(sub==null) return { acct:c.acct||'', day:c.day||0 };
@@ -4185,7 +4243,7 @@ function cfgTogglePerf(kind, i, sub, on){
   const c = CFG.categories[kind][i]; if(!c) return;
   if(sub==null) c.noPerf = !!on;
   else { c.subMeta = c.subMeta||{}; c.subMeta[sub] = c.subMeta[sub]||{}; c.subMeta[sub].noPerf = !!on; }
-  cfgSave(); cfgApply();
+  cfgSaveLocal(); cfgApply();
 }
 function cfgIsNoPerf(c, sub){
   if(c.noPerf) return true;
@@ -4227,7 +4285,7 @@ function cfgSetCadence(kind, i, sub, val){
   const v = val || 'monthly';
   if(sub==null) c.cadence = v;
   else { c.subMeta = c.subMeta||{}; c.subMeta[sub] = c.subMeta[sub]||{}; c.subMeta[sub].cadence = v; }
-  cfgSave(); cfgApply();
+  cfgSaveLocal(); cfgApply();
 }
 function cfgCadenceOf(c, sub){
   if(sub==null) return c.cadence || 'monthly';
@@ -4273,7 +4331,7 @@ function cfgDrop(ev, kind, i){
   const moved = list.splice(from, 1)[0];
   list.splice(i, 0, moved);
   CFG_OPEN = {}; FOLD.rows = CFG_OPEN; foldSave();   // 인덱스가 밀리므로 펼침 상태는 초기화
-  cfgSave(); renderCfgCategories(); cfgApply();
+  cfgSaveLocal(); renderCfgCategories(); cfgApply();
 }
 
 // ── 대분류 순서 바꾸기 ──
@@ -4285,7 +4343,7 @@ function cfgMoveCat(kind, i, dir){
   // 펼침 상태도 같이 따라가게
   const a = CFG_OPEN[kind+'|'+i], b = CFG_OPEN[kind+'|'+j];
   CFG_OPEN[kind+'|'+i] = b; CFG_OPEN[kind+'|'+j] = a;
-  cfgSave(); renderCfgCategories(); cfgApply();
+  cfgSaveLocal(); renderCfgCategories(); cfgApply();
 }
 // 소분류 예산이 있으면 대분류 예산은 그 합으로 본다
 function cfgMajorBudget(c){
@@ -4331,6 +4389,7 @@ function cfgRefreshTotals(kind, i){
 function renderCfgCategories(){
   const el = document.getElementById('cfg-cat-body'); if(!el) return;
   cfgSeedIfEmpty();
+  if(typeof cfgRenderDirtyBar==='function') cfgRenderDirtyBar();
 
   const kinds = [
     ['지출','🧾','fixed','고정비','한 달에 쓸 예산'],
@@ -4390,11 +4449,11 @@ function renderCfgCategories(){
             ${open?'▾':'▸'}<span style="font-size:9px;color:var(--txt3)">${subs.length||''}</span>
           </button>
           <input value="${esc(c.major)}" placeholder="대분류"
-            onchange="CFG.categories['${kind}'][${i}].major=this.value; cfgSave(); cfgApply();"
+            onchange="CFG.categories['${kind}'][${i}].major=this.value; cfgSaveLocal(); cfgApply();"
             style="${CT.inp}font-weight:600">
           ${flag ? `<label style="display:flex;align-items:center;justify-content:center;gap:3px;font-size:11px;color:var(--txt2);cursor:pointer">
               <input type="checkbox" ${flagOn?'checked':''}
-                onchange="CFG.categories['${kind}'][${i}].flags=this.checked?'${flag}':''; cfgSave(); cfgApply();">
+                onchange="CFG.categories['${kind}'][${i}].flags=this.checked?'${flag}':''; cfgSaveLocal(); cfgApply();">
               ${flagLabel}</label>` : '<span></span>'}
           <div id="mb_${kind}_${i}">${cfgMajorBudgetCell(kind,i)}</div>
           <select onchange="cfgSetPay('${kind}',${i},null,'acct',this.value)" title="결제수단"
@@ -4405,7 +4464,7 @@ function renderCfgCategories(){
             <input type="checkbox" ${c.noPerf?'checked':''} onchange="cfgTogglePerf('${kind}',${i},null,this.checked)"></label>` : '<span></span>'}
           ${cfgMiniSpark(c.major, false, kind)}
           ${kind!=='수입' ? cfgCadenceSelect(kind,i,null,cfgCadenceOf(c,null)) : '<span></span>'}
-          <button onclick="if(confirm('${jq(c.major)} 를 지울까요?')){CFG.categories['${kind}'].splice(${i},1); cfgSave(); renderCfgCategories(); cfgApply();}"
+          <button onclick="if(confirm('${jq(c.major)} 를 지울까요?')){CFG.categories['${kind}'].splice(${i},1); cfgSaveLocal(); renderCfgCategories(); cfgApply();}"
             style="${CT.del}">✕</button>
         </div>
         ${subRows}
@@ -4433,7 +4492,7 @@ function renderCfgCategories(){
         <span style="text-align:center">${kind!=='수입'?'주기':''}</span><span></span>
       </div>
       ${rows}
-      <button onclick="CFG.categories['${kind}'].push({major:'',subs:[],flags:'',budget:0,subBudget:{}}); cfgSave(); renderCfgCategories();"
+      <button onclick="CFG.categories['${kind}'].push({major:'',subs:[],flags:'',budget:0,subBudget:{}}); cfgSaveLocal(); renderCfgCategories();"
         style="${CT.add}margin-top:8px">+ ${kind} 대분류 추가</button>`}
     </div>`;
   };
@@ -5252,6 +5311,9 @@ function cfgSaveToSheet(){
         };
       })(),
       cadence: (typeof STATE!=='undefined' && STATE.catCadence) ? STATE.catCadence : {},
+      // 고정비 예외(소분류)도 시트에 남긴다 — 예전엔 이 기기 localStorage에만 있어서
+      // 다른 기기·다른 사람이 열면 고정/변동 판정이 달라졌다
+      fixedExceptions: (typeof STATE!=='undefined' && STATE.fixedExceptions) ? STATE.fixedExceptions : [],
       settings: CFG.settings
     }
   };
@@ -5273,11 +5335,11 @@ function cfgSaveToSheet(){
     .then(msg=>{
       // 템플릿은 저장 대상 시트가 달라(템플릿 탭) 따로 보내지만, 버튼은 하나로 둔다
       const tpls = (templates||[]).filter(t=>t && (t.major||t.sub||t.memo));
-      if(!tpls.length){ if(st) st.textContent = msg; cfgApply(); return; }
+      if(!tpls.length){ if(st) st.textContent = msg; cfgMarkDirty(false); cfgApply(); return; }
       if(st) st.textContent = msg + ' · 템플릿 저장 중…';
       return Promise.all(tpls.map(t=>sheetPost({ action:'saveTemplate', template:t })))
-        .then(()=>{ if(st) st.textContent = msg + ` · 템플릿 ${tpls.length}개 저장`; cfgApply(); })
-        .catch(()=>{ if(st) st.textContent = msg + ' · 템플릿 저장은 실패했어요'; cfgApply(); });
+        .then(()=>{ if(st) st.textContent = msg + ` · 템플릿 ${tpls.length}개 저장`; cfgMarkDirty(false); cfgApply(); })
+        .catch(()=>{ if(st) st.textContent = msg + ' · 템플릿 저장은 실패했어요'; cfgMarkDirty(false); cfgApply(); });
     })
     .catch(e=>{
       if(st) st.innerHTML = `저장 실패: ${e.message}<br>
@@ -5290,6 +5352,12 @@ function cfgSaveToSheet(){
 // ── 시트에서 읽어온 설정을 CFG에 병합 ──
 function cfgMergeFromSheet(config){
   if(!config) return;
+  // 아직 시트로 안 보낸 로컬 변경이 있으면 카테고리·예산은 덮어쓰지 않는다.
+  // (사용자가 [설정 저장]을 누르면 CFG_DIRTY가 풀리고 그때부터 다시 병합된다)
+  if(typeof CFG_DIRTY!=='undefined' && CFG_DIRTY){
+    if(typeof cfgRenderDirtyBar==='function') cfgRenderDirtyBar();
+    return;
+  }
   if(config.categories && (config.categories['지출']||[]).length){
     ['수입','지출','이동'].forEach(k=>{
       if(!config.categories[k]) return;
@@ -5323,6 +5391,10 @@ function cfgMergeFromSheet(config){
   if(config.cardPerf)  CFG.cardPerf  = Object.assign({}, config.cardPerf);
   if(config.cardTiers) CFG.cardTiers = Object.assign({}, config.cardTiers);
   if(config.cardMemo)  CFG.cardMemo  = Object.assign({}, config.cardMemo);
+  if(Array.isArray(config.fixedExceptions) && config.fixedExceptions.length){
+    STATE.fixedExceptions = config.fixedExceptions.slice();
+    if(typeof saveCatSettings==='function') try{ saveCatSettings(); }catch(e){}
+  }
   if(config.cardPerfRule) CFG.cardPerfRule = Object.assign({}, config.cardPerfRule);
   if(config.cardPerf && Object.keys(config.cardPerf).length) CFG.cardPerf = Object.assign({}, config.cardPerf);
   if(config.settings && Object.keys(config.settings).length) CFG.settings = Object.assign({}, CFG.settings, config.settings);
@@ -8167,7 +8239,7 @@ function rptUnifiedTable(year){
     }
   }
 
-  const COL1=112, COL2=58, COL3=58; // 카테고리/예산/월평균 sticky 3열 너비
+  const COL1=112, COL2=54, COL3=64; // 카테고리/예산/월평균 sticky 3열 너비 (월평균 칸엔 미니 막대가 함께 들어간다)
   function buildRow(label, vals, bud, dir, opts){
     opts = opts || {};
     const cadence = opts.cadence || 'monthly';
@@ -8207,10 +8279,27 @@ function rptUnifiedTable(year){
     const budTxt = bud>0 ? manW(bud) : '–';
     const avgTxt = avg>0 ? manW(avg) : '–';
     const overBad = bud>0 && (dir==='low' ? avg>bud : avg<bud);
+    // ── 월평균 아래 미니 막대 ──
+    // 가로로 스크롤해도 sticky 열에 남아, 한 해 흐름을 항상 볼 수 있다.
+    // 막대 색은 월 칸의 신호등과 같은 기준이라 "어느 달이 튀었는지"가 바로 보인다.
+    // 막대 자체는 클릭 대상이 아니다 — 폭이 3~4px라 모바일에서 정확히 누를 수 없어서,
+    // 상세는 옆의 월 칸을 눌러 여는 쪽으로 통일했다.
+    const sparkMax = Math.max(1, ...vals);
+    const sparkTip = months.map((ym,i)=>parseInt(ym.slice(5,7))+'월 '+(vals[i]>0?manW(vals[i]):'–')).join(' · ');
+    const SPARK_H = 17;   // 11px는 너무 낮아 안 보인다는 피드백 반영
+    const spark = vals.some(v=>v>0) ? `<div title="${sparkTip}" style="display:flex;gap:1px;height:${SPARK_H}px;align-items:flex-end;margin-top:3px">${
+      vals.map((v,i)=>{
+        const c = v>0 ? (noJudge ? 'var(--txt3)' : dotFor(dir, v, bud, avg).c) : '#EEF1F4';
+        const h = v>0 ? Math.max(2, Math.round(v/sparkMax*SPARK_H)) : 1;
+        // 이번 달 막대만 아래에 파란 밑줄 — 가로 스크롤로 월 칸이 안 보여도 위치를 잡을 수 있게
+        const cur = months[i]===nowYm ? 'border-bottom:2px solid var(--blue);' : '';
+        return `<i style="flex:1;height:${h}px;background:${c};border-radius:1px;align-self:flex-end;display:block;${cur}"></i>`;
+      }).join('')
+    }</div>` : '';
     return `<tr>
       <td style="padding:6px 8px;font-size:12px;font-weight:700;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:sticky;left:0;${stickyBottom?'bottom:0;':''}width:${COL1}px;min-width:${COL1}px;max-width:${COL1}px;background:var(--card);z-index:${stickyBottom?3:2};${botShadow}">${label}</td>
       <td style="text-align:center;padding:6px 4px;font-size:11px;color:var(--txt3);position:sticky;left:${COL1}px;${stickyBottom?'bottom:0;':''}width:${COL2}px;min-width:${COL2}px;background:var(--card);z-index:${stickyBottom?3:2};${botShadow}">${budTxt}</td>
-      <td style="text-align:center;padding:6px 4px;font-size:11px;font-weight:700;color:${overBad?'var(--red)':'var(--txt2)'};position:sticky;left:${COL1+COL2}px;${stickyBottom?'bottom:0;':''}width:${COL3}px;min-width:${COL3}px;background:var(--card);z-index:${stickyBottom?3:2};box-shadow:2px 0 4px -2px rgba(0,0,0,0.12)${stickyBottom?',0 -2px 4px -2px rgba(0,0,0,0.1)':''}">${avgTxt}</td>
+      <td style="text-align:center;padding:6px 4px;font-size:11px;font-weight:700;color:${overBad?'var(--red)':'var(--txt2)'};position:sticky;left:${COL1+COL2}px;${stickyBottom?'bottom:0;':''}width:${COL3}px;min-width:${COL3}px;background:var(--card);z-index:${stickyBottom?3:2};box-shadow:2px 0 4px -2px rgba(0,0,0,0.12)${stickyBottom?',0 -2px 4px -2px rgba(0,0,0,0.1)':''}">${avgTxt}${spark}</td>
       ${cells}
     </tr>`;
   }
@@ -8237,7 +8326,7 @@ function rptUnifiedTable(year){
   const head = `<tr>
     <th style="padding:6px 8px;font-size:10px;color:var(--txt3);text-align:left;position:sticky;top:0;left:0;width:${COL1}px;min-width:${COL1}px;background:var(--card);z-index:4">카테고리</th>
     <th style="padding:6px 4px;font-size:10px;color:var(--txt3);position:sticky;top:0;left:${COL1}px;width:${COL2}px;min-width:${COL2}px;background:var(--card);z-index:4">예산</th>
-    <th style="padding:6px 4px;font-size:10px;color:var(--txt3);position:sticky;top:0;left:${COL1+COL2}px;width:${COL3}px;min-width:${COL3}px;background:var(--card);z-index:4;box-shadow:2px 0 4px -2px rgba(0,0,0,0.12)">월평균</th>
+    <th style="padding:6px 4px;font-size:10px;color:var(--txt3);position:sticky;top:0;left:${COL1+COL2}px;width:${COL3}px;min-width:${COL3}px;background:var(--card);z-index:4;box-shadow:2px 0 4px -2px rgba(0,0,0,0.12)" title="아래 막대는 1월~현재월 흐름 · 색은 월 칸 신호등과 같은 기준">월평균</th>
     ${monthLabels.map(l=>`<th style="padding:6px 6px;font-size:10px;color:var(--txt3);position:sticky;top:0;background:var(--card);z-index:3;box-shadow:0 2px 4px -2px rgba(0,0,0,0.1)">${l}</th>`).join('')}
   </tr>`;
 
