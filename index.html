@@ -3853,9 +3853,21 @@ function majorSpend(type, major, subList){
   }).reduce((s,t)=>s+(Number(t.amount)||0),0);
 }
 function subSpendBud(type, major, sub){
-  return budTx().filter(t => t.type===type && t.category===sub &&
-    (t.major===major || (STATE.catMap[type]?.[major]||[]).indexOf(sub)>=0)
-  ).reduce((s,t)=>s+(Number(t.amount)||0),0);
+  // 원래는 t.category===sub 완전일치만 인정했는데, 거래엔 "엄마생활비"처럼 대분류명이
+  // 소분류 앞에 그대로 붙어 들어오는 경우가 있어(수기입력·은행 적요 그대로 옮겨적기 등)
+  // 실제로 낸 돈인데도 0원으로 잡히는 문제가 있었다. 공백 차이 무시 + "대분류+소분류"
+  // 접두어 결합 형태까지 같은 항목으로 인정하도록 넓힌다(subBudgetOf의 완화 매칭과 동일 정신).
+  const subZ = stripSp(sub);
+  const majorZ = stripSp(major);
+  return budTx().filter(t => {
+    if(t.type!==type) return false;
+    const inMajorOrMap = t.major===major || (STATE.catMap[type]?.[major]||[]).indexOf(sub)>=0;
+    if(t.category===sub && inMajorOrMap) return true;               // 기존: 완전 일치
+    const catZ = stripSp(t.category);
+    if(catZ===subZ && inMajorOrMap) return true;                    // 공백 차이만 있는 경우
+    if(t.major===major && catZ===(majorZ+subZ)) return true;        // "엄마"+"생활비" = "엄마생활비"
+    return false;
+  }).reduce((s,t)=>s+(Number(t.amount)||0),0);
 }
 
 // ── 신호등 색상 헬퍼 (예산 대비 %) ──
@@ -8367,10 +8379,15 @@ function rptUnifiedTable(year){
   months.forEach(ym=>{ txByMonth[ym] = allTx.filter(t=>String(t.date).slice(0,7)===ym && !isRemovedTx(t)); });
 
   function monthlyValsFixedOrVar(catKey){
-    return months.map(ym=> txByMonth[ym].filter(t=>t.type==='지출' && !isEventTx(t) && txCatKey(t)===catKey).reduce((s,t)=>s+(Number(t.amount)||0),0));
+    // txCatKey(t)는 항상 normBudgetKey()로 정규화된 값이라, catKey도 똑같이 정규화해서 비교해야
+    // 대분류명에 트레일링 공백 등이 섞여 있어도 매칭된다. buildOutCats()는 이미 이렇게 하고 있었는데
+    // 여기만 정규화를 빼먹어서, 시트 쪽 표기가 조금만 어긋나도 그 카테고리 전체가 통째로 0으로 보였다.
+    const nk = normBudgetKey(catKey);
+    return months.map(ym=> txByMonth[ym].filter(t=>t.type==='지출' && !isEventTx(t) && txCatKey(t)===nk).reduce((s,t)=>s+(Number(t.amount)||0),0));
   }
   function monthlyValsForCat(catKey){
-    return months.map(ym=> txByMonth[ym].filter(t=>t.type==='지출' && txCatKey(t)===catKey).reduce((s,t)=>s+(Number(t.amount)||0),0));
+    const nk = normBudgetKey(catKey);
+    return months.map(ym=> txByMonth[ym].filter(t=>t.type==='지출' && txCatKey(t)===nk).reduce((s,t)=>s+(Number(t.amount)||0),0));
   }
   function avgOfVals(vals){
     const isCurLast = months[months.length-1]===nowYm;
@@ -8500,13 +8517,15 @@ function rptUnifiedTable(year){
   body += sectionHeader('🏠 고정비', 'var(--card2)');
   fixedKeys.forEach(k=>{
     const vals = monthlyValsFixedOrVar(k);
-    if(vals.some(v=>v>0) || (budgetByKey[k]||0)>0) body += buildRow(CAT_OUT_LABELS[k], vals, budgetByKey[k]||0, 'low', {kind:'expense', catKey:k, cadence:catCadence(k), drillLabel:CAT_OUT_LABELS[k]});
+    const bud = budgetByKey[normBudgetKey(k)]||0;
+    if(vals.some(v=>v>0) || bud>0) body += buildRow(CAT_OUT_LABELS[k], vals, bud, 'low', {kind:'expense', catKey:k, cadence:catCadence(k), drillLabel:CAT_OUT_LABELS[k]});
   });
 
   body += sectionHeader('🛍️ 변동비', 'var(--card2)');
   varKeys.forEach(k=>{
     const vals = monthlyValsFixedOrVar(k);
-    if(vals.some(v=>v>0) || (budgetByKey[k]||0)>0) body += buildRow(CAT_OUT_LABELS[k], vals, budgetByKey[k]||0, 'low', {kind:'expense', catKey:k, cadence:catCadence(k), drillLabel:CAT_OUT_LABELS[k]});
+    const bud = budgetByKey[normBudgetKey(k)]||0;
+    if(vals.some(v=>v>0) || bud>0) body += buildRow(CAT_OUT_LABELS[k], vals, bud, 'low', {kind:'expense', catKey:k, cadence:catCadence(k), drillLabel:CAT_OUT_LABELS[k]});
   });
 
   // 4) 이벤트/누적형(변동비2) — 신호등 판단 없이 카테고리별로 각각 누적만 참고 표시
