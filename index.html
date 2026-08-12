@@ -3875,27 +3875,46 @@ function subBudgetOf(major, sub){
   }
   return 0;
 }
-function majorSpend(type, major, subList){
-  return budTx().filter(t => {
+// 대분류에 속하는지 판정 — majorSpend와 '그 대분류 거래 목록'이 같은 규칙을 쓰게 분리해둔다
+// 이 이름이 지금 카테고리 표에 실제로 있는 대분류인가 (이모지·괄호 주석 무시)
+function isRegisteredMajor(type, m){
+  const k = normBudgetKey(m);
+  if(!k) return false;
+  const mp = (STATE.catMap && STATE.catMap[type]) || {};
+  return Object.keys(mp).some(x => normBudgetKey(x) === k);
+}
+function majorTxPred(type, major, subList){
+  return function(t){
     if(t.type!==type) return false;
     if(t.major===major) return true;
-    if(subList && subList.indexOf(t.category)>=0) return true;
+    // 이모지·괄호 차이만 있는 같은 대분류도 인정 ('☀️ 엄마고정2' ↔ '엄마고정2')
+    if(normBudgetKey(t.major) === normBudgetKey(major)) return true;
+    // [버그] 소분류로 끌어오는 규칙에 조건이 없어서, 대분류가 '엄마고정'인 거래가
+    //        소분류만 '엄마고정2' 목록에 있으면 양쪽 대분류에 모두 더해졌다(이중 계상).
+    //        소분류 매칭은 '대분류를 못 읽는 거래'를 구제하는 장치이므로,
+    //        이미 등록된 다른 대분류에 속한 거래는 그쪽 것으로 남긴다.
+    if(subList && subList.indexOf(t.category)>=0 && !isRegisteredMajor(type, t.major)) return true;
     // 이동: '목적/목적2'처럼 카테고리가 비는 저축성 이동만 목적지 계좌로 매칭
     if(type==='이동' && subList){
       const nm = normMajor(t.major);
       if((nm==='목적' || nm==='목적2') && subList.indexOf(t.inAcct)>=0) return true;
     }
     return false;
-  }).reduce((s,t)=>s+(Number(t.amount)||0),0);
+  };
 }
-function subSpendBud(type, major, sub){
-  // 원래는 t.category===sub 완전일치만 인정했는데, 거래엔 "엄마생활비"처럼 대분류명이
-  // 소분류 앞에 그대로 붙어 들어오는 경우가 있어(수기입력·은행 적요 그대로 옮겨적기 등)
-  // 실제로 낸 돈인데도 0원으로 잡히는 문제가 있었다. 공백 차이 무시 + "대분류+소분류"
-  // 접두어 결합 형태까지 같은 항목으로 인정하도록 넓힌다(subBudgetOf의 완화 매칭과 동일 정신).
+function majorSpendTxs(type, major, subList){ return budTx().filter(majorTxPred(type, major, subList)); }
+function majorSpend(type, major, subList){
+  return majorSpendTxs(type, major, subList).reduce((s,t)=>s+(Number(t.amount)||0),0);
+}
+// 소분류에 속하는지 판정 — subSpendBud와 '미등록 거래 골라내기'가 같은 규칙을 쓰게 분리해둔다
+// 원래는 t.category===sub 완전일치만 인정했는데, 거래엔 "엄마생활비"처럼 대분류명이
+// 소분류 앞에 그대로 붙어 들어오는 경우가 있어(수기입력·은행 적요 그대로 옮겨적기 등)
+// 실제로 낸 돈인데도 0원으로 잡히는 문제가 있었다. 공백 차이 무시 + "대분류+소분류"
+// 접두어 결합 형태까지 같은 항목으로 인정하도록 넓힌다(subBudgetOf의 완화 매칭과 동일 정신).
+function subTxPred(type, major, sub){
   const subZ = stripSp(sub);
   const majorZ = stripSp(major);
-  return budTx().filter(t => {
+  return function(t){
     if(t.type!==type) return false;
     const inMajorOrMap = t.major===major || (STATE.catMap[type]?.[major]||[]).indexOf(sub)>=0;
     if(t.category===sub && inMajorOrMap) return true;               // 기존: 완전 일치
@@ -3903,7 +3922,10 @@ function subSpendBud(type, major, sub){
     if(catZ===subZ && inMajorOrMap) return true;                    // 공백 차이만 있는 경우
     if(t.major===major && catZ===(majorZ+subZ)) return true;        // "엄마"+"생활비" = "엄마생활비"
     return false;
-  }).reduce((s,t)=>s+(Number(t.amount)||0),0);
+  };
+}
+function subSpendBud(type, major, sub){
+  return budTx().filter(subTxPred(type, major, sub)).reduce((s,t)=>s+(Number(t.amount)||0),0);
 }
 
 // ── 신호등 색상 헬퍼 (예산 대비 %) ──
@@ -5652,8 +5674,10 @@ function budRowHtml(secType, major, subList){
     const cats = [sub];
     return budTx().filter(t => t.type===secType && (cats.indexOf(t.category)>=0 || (isMove && cats.indexOf(t.inAcct)>=0))).reduce((s,t)=>s+(Number(t.amount)||0),0);
   }
+  let subSum = 0;   // 소분류 행들의 합 — 대분류 합계와 안 맞으면 아래에서 차액을 따로 보여준다
   (subList||[]).forEach(sub => {
     const ss = isMove ? mvSubSpend(sub) : subSpendBud(secType, major, sub);
+    subSum += (Number(ss)||0);
     let sbud = subBudgetOf(major, sub);
     if(!sbud && !isExpense){ // 수입/이동: '예산' 행이 소분류명으로 바로 들어온 경우(평탄 키) 매칭
       const ns = normBudgetKey(sub); const bAll = STATE.budget||{};
@@ -5671,6 +5695,37 @@ function budRowHtml(secType, major, subList){
         ${sbud>0?`<span style="font-size:9px;color:${sover?'var(--red)':'var(--txt3)'};min-width:26px;text-align:right">${spct}%</span>`:''}
       </div>`;
   });
+  // ── 대분류 합계 − 소분류 합계 = 어디에도 안 잡힌 돈 ──
+  // [버그] 대분류 숫자는 '그 대분류 거래 전부'를 더하는데, 아래 소분류 행은
+  //        설정 › 카테고리에 등록된 소분류만 보여준다. 그래서 소분류가 등록 안 됐거나
+  //        비어 있는 거래는 표에 안 보이면서 대분류 합계·퍼센트만 밀어올렸다.
+  //        (소분류가 다 100% 이하인데 대분류만 157%로 뜨던 원인)
+  //        차액을 별도 행으로 드러내서 숫자가 맞아떨어지게 한다.
+  const leftover = Math.round(spend - subSum);
+  if(leftover > 0 && (subList||[]).length){
+    const lbud = Math.max(0, bud - (subList||[]).reduce((a,sub)=>a+(subBudgetOf(major,sub)||0),0));
+    // 어떤 거래가 남았는지 그 자리에서 보여준다 — 금액만 알려주면 결국 시트를 뒤져야 한다.
+    // (이동 계열은 소분류 합산 규칙이 달라 목록은 생략하고 금액만 표시)
+    let lines = '';
+    if(!isMove){
+      const preds = (subList||[]).map(sub => subTxPred(secType, major, sub));
+      const orphans = majorSpendTxs(secType, major, subList)
+        .filter(t => !preds.some(p => p(t)))
+        .sort((a,b)=>(Number(b.amount)||0)-(Number(a.amount)||0));
+      lines = orphans.slice(0,12).map(t=>`
+        <div style="display:flex;align-items:center;gap:6px;padding:3px 0 3px 26px;font-size:11.5px;color:var(--txt3)">
+          <span style="flex:none">${String(t.date||'').slice(5)}</span>
+          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.category||t.memo||'(소분류 없음)'}</span>
+          <span style="flex:none;font-variant-numeric:tabular-nums">${won(Number(t.amount)||0)}</span>
+        </div>`).join('')
+        + (orphans.length>12 ? `<div style="padding:2px 0 2px 26px;font-size:11px;color:var(--txt3)">… 외 ${orphans.length-12}건</div>` : '');
+    }
+    detail += `<div style="display:flex;align-items:center;gap:5px;padding:5px 0 5px 14px;border-top:1px solid #F2F4F6">
+        <span style="flex:1;min-width:0;font-size:13px;font-weight:400;color:var(--warning);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="이 대분류로 잡혔지만 위 소분류 어디에도 안 들어간 거래예요. 설정 › 카테고리에 소분류를 추가하거나, 거래의 소분류를 채워주세요.">⚠ 소분류 미등록·미입력</span>
+        ${lbud>0?`<span style="flex:none;font-size:9px;color:var(--txt3);font-weight:400">${won(lbud)}</span>`:''}
+        <span style="font-size:13px;font-weight:400;color:var(--warning);white-space:nowrap">${won(leftover)}</span>
+      </div>${lines}`;
+  }
   const rid = 'budr_' + secType + '_' + String(major).replace(/\s+/g,'_');
   const open = !!BUD_EXPAND[rid];
   // 카드납부는 달마다 사용 카드 수가 달라 펼친 높이가 흔들림 → 고정 높이 + 내부 스크롤
@@ -9464,13 +9519,18 @@ function rptSaveReconcileHtml(d){
 
   return `
   <div style="margin-top:14px;padding:13px 14px;background:var(--card2);border-radius:14px">
-    <div style="font-size:12px;font-weight:800;color:var(--txt);margin-bottom:2px">🏦 월평균 ${manW(avg)}은 이렇게 모였어요</div>
-    <div style="font-size:10.5px;color:var(--txt3);margin-bottom:8px">
-      ${goalMonthly>0
-        ? `월목표 ${won(goalMonthly)} · ${n}개월 중 <b style="color:var(--txt2)">${achieved}개월</b> 달성 <span style="color:var(--txt3)">(${res.src})</span>`
-        : `월목표 미설정 · 설정 › 저축 월목표에서 입력하면 달성 여부가 표시돼요`}
+    <div onclick="rptToggleSaveComp()" style="display:flex;align-items:center;gap:5px;cursor:pointer;margin-bottom:2px">
+      <span style="font-size:12px;font-weight:800;color:var(--txt)">🏦 월평균 ${manW(avg)}은 이렇게 모였어요</span>
+      <span id="rpt-save-comp-arrow" style="font-size:12px;color:var(--blue);font-weight:700">${RPT_SAVE_COMP_OPEN?'▾':'▸'}</span>
     </div>
-    ${compHtml || '<div style="font-size:11.5px;color:var(--txt3)">저축·이동 내역이 없어요</div>'}
+    <div id="rpt-save-comp" style="display:${RPT_SAVE_COMP_OPEN?'block':'none'}">
+      <div style="font-size:10.5px;color:var(--txt3);margin-bottom:8px">
+        ${goalMonthly>0
+          ? `월목표 ${won(goalMonthly)} · ${n}개월 중 <b style="color:var(--txt2)">${achieved}개월</b> 달성 <span style="color:var(--txt3)">(${res.src})</span>`
+          : `월목표 미설정 · 설정 › 저축 월목표에서 입력하면 달성 여부가 표시돼요`}
+      </div>
+      ${compHtml || '<div style="font-size:11.5px;color:var(--txt3)">저축·이동 내역이 없어요</div>'}
+    </div>
     <div style="margin-top:11px;padding-top:9px;border-top:1px solid #E5E8EB">
       <div style="font-size:11.5px;font-weight:700;color:var(--txt);margin-bottom:3px">월별 저축액</div>
       ${monthRows}
@@ -9483,6 +9543,19 @@ function rptSaveReconcileHtml(d){
       </div>
     </div>
   </div>`;
+}
+// 저축 구성 설명(🏦 월평균 …은 이렇게 모였어요)은 한 번 이해하면 매번 볼 필요가 없어서 접을 수 있게 둔다.
+// 아래 '월별 저축액'은 계속 보이는 게 맞아서 접힘 대상에서 빼둔다.
+let RPT_SAVE_COMP_OPEN = (function(){ try{ return LS.get('rptSaveCompOpen') !== '0'; }catch(e){ return true; } })();
+function rptToggleSaveComp(){
+  const el = document.getElementById('rpt-save-comp');
+  const ar = document.getElementById('rpt-save-comp-arrow');
+  if(!el) return;
+  const wasOpen = el.style.display !== 'none';
+  RPT_SAVE_COMP_OPEN = !wasOpen;
+  el.style.display = RPT_SAVE_COMP_OPEN ? 'block' : 'none';
+  if(ar) ar.textContent = RPT_SAVE_COMP_OPEN ? '▾' : '▸';
+  try{ LS.set('rptSaveCompOpen', RPT_SAVE_COMP_OPEN ? '1' : '0'); }catch(e){}
 }
 let RPT_YEAR = new Date().getFullYear();
 let RPT_SELECTED_MONTH = null; // 'YYYY-MM' 또는 null
