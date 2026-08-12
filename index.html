@@ -6075,10 +6075,12 @@ function budCatRowHtml(c){
 
   const subList = CAT_OUT_SUBS[c.major] || (STATE.catMap['지출']?.[c.major]) || [];
   let detail = '';
+  let subSum = 0;   // 소분류 행 합계 — 대분류 합계와 안 맞으면 아래에서 차액을 드러낸다
   if(c.fixed){
     // 고정비: 소분류 · 소분류예산 구조 유지 (0원이어도 항상 표시 → 레이아웃 안정)
     subList.forEach(sub => {
       const ss = subSpendBud('지출', c.major, sub);
+      subSum += (Number(ss)||0);
       const sbud = subBudgetOf(c.major, sub);
       const sCad = subCadence(sub);
       let sover, spct, cadNote = '';
@@ -6103,11 +6105,31 @@ function budCatRowHtml(c){
           ${spct!==null?`<span style="font-size:9px;color:${sover?'var(--red)':'var(--txt3)'};min-width:26px;text-align:right">${spct}%</span>`:''}
         </div>`;
     });
+    // ── 대분류 합계 − 소분류 합계 = 어느 소분류에도 안 잡힌 거래 ──
+    // 숫자를 숨기지 않고 어디서 새는지 그 자리에서 보이게 한다.
+    const leftover = Math.round((Number(c.spend)||0) - subSum);
+    if(leftover > 0){
+      const preds = subList.map(sub => subTxPred('지출', c.major, sub));
+      const orphans = budTx().filter(majorTxPred('지출', c.major, subList))
+        .filter(t => !preds.some(pr => pr(t)))
+        .sort((a,b)=>(Number(b.amount)||0)-(Number(a.amount)||0));
+      detail += `<div style="display:flex;align-items:center;gap:5px;padding:4px 0 4px 14px;border-top:1px solid #F2F4F6">
+          <span style="flex:1;min-width:0;font-size:12px;color:var(--warning);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="이 대분류로 잡혔지만 위 소분류 어디에도 안 들어간 거래예요.">⚠ 소분류 미등록·미입력</span>
+          <span style="font-size:12px;font-weight:400;color:var(--warning);white-space:nowrap">${won(leftover)}</span>
+        </div>`
+        + orphans.slice(0,12).map(t=>`<div style="display:flex;align-items:center;gap:6px;padding:3px 0 3px 26px;font-size:11px;color:var(--txt3)">
+            <span style="flex:none">${String(t.date||'').slice(5)}</span>
+            <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.category||t.memo||'(소분류 없음)'}</span>
+            <span style="flex:none;font-variant-numeric:tabular-nums">${won(Number(t.amount)||0)}</span>
+          </div>`).join('')
+        + (orphans.length>12 ? `<div style="padding:2px 0 2px 26px;font-size:11px;color:var(--txt3)">… 외 ${orphans.length-12}건</div>` : '');
+    }
   } else {
     // 변동비: 소분류 합산 대신 실제 거래 내역을 그대로 표시 (뭘 샀는지 바로 보임 → 메모 부담 감소)
     // 건수가 달마다 달라도 카드 높이가 흔들리지 않도록 고정 최대높이 + 내부 스크롤
-    const key2 = normBudgetKey(c.major);
-    const txs = budTx().filter(t => t.type==='지출' && (normBudgetKey(t.major)===key2 || subList.indexOf(t.category)>=0))
+    // 헤더의 대분류 금액과 아래 목록이 같은 규칙을 쓰게 맞춘다 (예전엔 목록이 남의 대분류
+    // 거래까지 끌어와서, 목록을 더한 값과 헤더 금액이 달랐다)
+    const txs = budTx().filter(majorTxPred('지출', c.major, subList))
       .slice().sort((a,b)=>String(b.date).localeCompare(String(a.date)));
     const rows = txs.map(t=>`<div style="display:flex;align-items:center;gap:6px;padding:4px 0 4px 14px;border-top:1px solid #F2F4F6">
         <span style="flex:none;font-size:10px;color:var(--txt3);width:26px">${parseInt(String(t.date).slice(8,10))}일</span>
@@ -6171,20 +6193,23 @@ function budCatRowHtml(c){
 // ym: 판정 대상 월(문자열) — 호출 시점에 BUD_MONTH가 이미 ym으로 맞춰져 있어야 함(budTx()/subSpendBud가 BUD_MONTH를 읽음)
 function buildOutCats(ym, tx, sortBy){
   const spend = tx.filter(t => t.type==='지출');
-  const byMajor = {};
-  spend.forEach(t => { const k = txCatKey(t); byMajor[k] = (byMajor[k]||0) + (Number(t.amount)||0); });
   const ALL_OUT_MAJORS = Object.keys(CAT_OUT_LABELS);
   const allTxAll = (STATE.transactions.length ? STATE.transactions : DEMO).filter(t=>!isRemovedTx(t));
   return ALL_OUT_MAJORS.map((major, idx) => {
-    const sp = byMajor[normBudgetKey(major)] || 0;
+    // [버그] 예전엔 거래에 적힌 대분류(txCatKey)만 보고 합산했다. 그래서 카테고리를
+    //        쪼갠 뒤(엄마 → 엄마/엄마2) 옛 대분류가 남은 거래가 계속 옛 쪽에 쌓여,
+    //        소분류는 전부 100% 이하인데 대분류만 157%로 뜨고 합계도 안 맞았다.
+    //        이제 리포트·예산 화면과 같은 귀속 규칙(majorTxPred)을 쓴다.
+    const subListM = CAT_OUT_SUBS[major] || (STATE.catMap['지출'] && STATE.catMap['지출'][major]) || [];
+    const predM = majorTxPred('지출', major, subListM);
+    const sp = spend.filter(predM).reduce((a,t)=>a+(Number(t.amount)||0),0);
     const budBase = budgetOf(major);
     const cadence = catCadence(major);
     const pN = CADENCE_PERIOD_LEN[cadence];
     let qSpend=0, qBud=0, qBudFull=0, pElapsed=1, isQuarterEnd=false;
     if(pN){
-      const mk = normBudgetKey(major);
       const pMonths = periodMonthsUpTo(ym, pN);
-      qSpend = allTxAll.filter(t=>t.type==='지출' && pMonths.indexOf(String(t.date).slice(0,7))>=0 && txCatKey(t)===mk).reduce((s,t)=>s+(Number(t.amount)||0),0);
+      qSpend = allTxAll.filter(t=>pMonths.indexOf(String(t.date).slice(0,7))>=0 && predM(t)).reduce((s,t)=>s+(Number(t.amount)||0),0);
       pElapsed = pMonths.length;      // 주기 시작~이번 달까지의 개월 수 (도래분 계산용)
       qBud = budBase * pElapsed;      // 이번 달까지 도래한 예산
       qBudFull = budBase * pN;        // 주기 전체 예산 — 판정 분모는 항상 이것
