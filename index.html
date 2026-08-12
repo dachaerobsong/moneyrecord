@@ -1087,6 +1087,11 @@ body { padding-bottom:88px; }
     <div style="font-size: 13px; color: var(--txt3); line-height: 1.5;">
       * 상기 URL이 연동되어 있으면 모든 가계부 입력값은 구글 시트에 실시간 반영(Source of Truth)되며 양방향 연동이 유지됩니다.
     </div>
+    <button onclick="backfillSheetIds()" style="width:100%;margin-top:12px;padding:11px;border:1px solid var(--blue);border-radius:12px;background:var(--blue-bg);color:var(--blue);font-size:13px;font-weight:700;cursor:pointer">🔑 시트에 복붙한 내역, 앱에서 수정 가능하게 만들기</button>
+    <div style="font-size:11.5px;color:var(--txt3);line-height:1.6;margin-top:6px">
+      시트에 직접 붙여넣은 줄은 ID가 없어서 앱에서 ✏️ 수정·삭제가 안 됩니다. 이 버튼이 빈 ID 칸만 채워줘요(금액·날짜는 그대로).
+      Apps Script에 <code>backfillIds</code> 함수가 추가돼 있어야 동작합니다.
+    </div>
   </div>
   <!-- ══ 앱 설정: 이 앱을 굴리는 값들을 한 곳에서 ══ -->
   <div class="card cfg-fold" id="cfg-cat-card">
@@ -2165,6 +2170,28 @@ function loadStateCache(){
     if(c.asset) STATE.asset = c.asset;
     return true;
   }catch(e){ return false; }
+}
+
+// ── 시트에 직접 복붙한 내역을 앱에서 수정 가능하게 ──
+// 앱에서 입력한 거래만 ID(입력 시각 타임스탬프)를 갖는다. 시트에 손으로 붙여넣은 줄은 ID 칸이 비어 있어
+// ① 목록에서 ✏️/✕ 버튼이 아예 안 뜨고 ② 수정 요청을 보내도 서버가 어느 줄인지 못 찾는다.
+// 이 버튼은 Apps Script의 backfillIds 액션을 호출해 빈 ID 칸만 채운 뒤 다시 불러온다.
+// (Apps Script 쪽에 backfillIds 함수가 추가돼 있어야 동작한다)
+function backfillSheetIds(){
+  const url = getUrl();
+  if(!url){ showToast('⚙️ 먼저 Apps Script URL을 넣어주세요'); return; }
+  if(!confirm('시트 [기록_일별]의 A열 ID가 비어 있는 줄에 ID를 채웁니다.\n앱에서 수정·삭제할 수 있게 하는 작업이고, 날짜·금액·카테고리·계좌는 건드리지 않아요.')) return;
+  showToast('⏳ ID 채우는 중...');
+  fetch(url, { method:'POST', headers:{'Content-Type':'text/plain'}, body: JSON.stringify({ action:'backfillIds' }) })
+    .then(r=>r.json()).catch(()=>null)
+    .then(res=>{
+      if(res && res.ok){
+        showToast('✅ ' + (res.filled!=null ? res.filled+'줄 ' : '') + 'ID 채움 · 다시 불러올게요');
+        fetchFromSheet(true);
+      } else {
+        showToast('⚠️ Apps Script에 backfillIds 액션이 없어요');
+      }
+    });
 }
 
 // ── 시트 전체 불러오기 (action=all, 실패 시 entries 폴백) ──
@@ -5350,10 +5377,16 @@ function cfgApply(){
       (CFG.accounts||[]).forEach(a=>{ if(a.key) acctGroup[a.key] = a.group||'cash'; });
       const items = [], cardBud = {};
 
+      // [수정] 예전엔 금액과 결제수단이 **둘 다** 있어야만 현금흐름 항목이 만들어졌다.
+      //        결제일만 적어둔 항목(금액 미정) · 계좌를 안 고른 항목이 타임라인에서 통째로
+      //        빠지던 원인. 이제 결제일이 있으면 0원으로라도 줄을 만들고(✎로 금액 수정 가능),
+      //        카드 예산에는 예전처럼 금액이 있을 때만 더한다.
       const push = (name, amount, acct, day) => {
-        if(!amount || amount<=0 || !acct) return;
-        const isCard = acctGroup[acct]==='debt';
-        if(isCard) cardBud[acct] = (cardBud[acct]||0) + amount;
+        amount = Number(amount)||0;
+        day = Number(day)||0;
+        acct = String(acct||'').trim();
+        const isCard = !!acct && acctGroup[acct]==='debt';
+        if(isCard && amount>0) cardBud[acct] = (cardBud[acct]||0) + amount;
         if(day>0) items.push({ name, amount, day, source: isCard?'card':'bank', acct, auto:true });
       };
 
@@ -5376,6 +5409,12 @@ function cfgApply(){
       if(Object.keys(cardBud).length) STATE.cardBudget = Object.assign({}, STATE.cardBudget, cardBud);
 
       // 현금흐름 일정: 설정에서 만든 항목(auto)만 갈아끼우고, 직접 추가한 항목은 남긴다
+      // [버그] CASH_PLAN은 현금흐름 화면을 처음 열 때 비로소 로드된다(그전엔 null).
+      //        그런데 cfgApply()는 페이지 로드 직후 DOMContentLoaded에서 먼저 돈다.
+      //        그때 이 블록이 null 가드에 걸려 통째로 건너뛰어졌고, 결과적으로
+      //        '설정 › 카테고리에 결제일을 넣은 항목'이 현금흐름에 하나도 안 나타났다.
+      //        (설정을 한 번 더 저장해야 겨우 반영되던 증상) → 여기서 먼저 로드한다.
+      if(!CASH_PLAN && typeof loadCashPlan==='function'){ try{ CASH_PLAN = loadCashPlan(); }catch(err){} }
       if(typeof CASH_PLAN==='object' && CASH_PLAN){
         const manual = (CASH_PLAN.items||[]).filter(it=>!it.auto);
         CASH_PLAN.items = manual.concat(items);
@@ -6452,14 +6491,48 @@ function cardPerfGroups(){
     accts: groups[issuer]
   }));
 }
+// ── 실적 화면에 띄울 카드사 고르기 ──
+// 카드는 다 등록해두더라도 실적을 챙기는 카드사는 몇 개뿐이다. 나머지는 목록에서 숨겨 화면을 비운다.
+// 처음 한 번만 신한·국민·롯데·삼성 계열을 켠 상태로 심고, 그다음부터는 사용자가 고른 값만 쓴다.
+const PERF_DEFAULT_ON = [/신한|신카/, /국민|국카|KB|국카k/i, /롯데|롯카/, /삼성|삼카/];
+function cardPerfHidden(label){ return !!((CFG.cardPerfHide||{})[label]); }
+function cardPerfSeedShow(labels){
+  CFG.cardPerfHide = CFG.cardPerfHide || {};
+  if(CFG.cardPerfSeeded) return;
+  labels.forEach(l=>{ if(!PERF_DEFAULT_ON.some(re=>re.test(String(l)))) CFG.cardPerfHide[l] = true; });
+  CFG.cardPerfSeeded = true;
+  try{ cfgSave(); }catch(e){}
+}
+function cardPerfToggleShow(label, on){
+  CFG.cardPerfHide = CFG.cardPerfHide || {};
+  if(on) delete CFG.cardPerfHide[label]; else CFG.cardPerfHide[label] = true;
+  try{ cfgSave(); }catch(e){}
+  renderCardPerf();
+}
+let PERF_PICK_OPEN = false;
+function cardPerfTogglePicker(){ PERF_PICK_OPEN = !PERF_PICK_OPEN; renderCardPerf(); }
 function renderCardPerf(){
   const el = document.getElementById('bud-card-perf');
   if(!el) return;
   const ym = CARD_MONTH;
   const tx = (STATE.transactions.length ? STATE.transactions : DEMO).filter(t => String(t.date).slice(0,7) === ym && !isRemovedTx(t) && t.type==='지출');
-  const groups = cardPerfGroups();
-  if(!groups.length){ el.innerHTML = '<div style="font-size:12.5px;color:var(--txt3);padding:10px 0">설정 탭에서 성격이 \'카드\'인 계좌를 등록하면 실적이 표시돼요.</div>'; return; }
-  el.innerHTML = groups.map(g=>{
+  const allGroups = cardPerfGroups();
+  if(!allGroups.length){ el.innerHTML = '<div style="font-size:12.5px;color:var(--txt3);padding:10px 0">설정 탭에서 성격이 \'카드\'인 계좌를 등록하면 실적이 표시돼요.</div>'; return; }
+  cardPerfSeedShow(allGroups.map(g=>g.label));
+  const groups = allGroups.filter(g=>!cardPerfHidden(g.label));
+  const hidden = allGroups.filter(g=>cardPerfHidden(g.label));
+  const picker = `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:2px 0 10px">
+      <span style="font-size:11px;color:var(--txt3)">${hidden.length?`${hidden.length}개 카드사 숨김`:'전체 표시 중'}</span>
+      <button onclick="cardPerfTogglePicker()" style="font-size:11px;padding:3px 9px;border:1px solid #E5E8EB;border-radius:99px;background:#FFF;color:var(--txt2);cursor:pointer">${PERF_PICK_OPEN?'닫기':'표시 카드사 고르기'}</button>
+    </div>
+    ${PERF_PICK_OPEN ? `<div style="background:var(--card2);border-radius:12px;padding:8px 12px;margin-bottom:12px">
+      ${allGroups.map(g=>`<label style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12.5px;cursor:pointer">
+        <input type="checkbox" ${cardPerfHidden(g.label)?'':'checked'} onchange="cardPerfToggleShow('${String(g.label).replace(/'/g,"\\'")}',this.checked)" style="width:16px;height:16px;accent-color:var(--blue)">
+        <span>${g.label}</span><span style="color:var(--txt3);font-size:11px">${g.cards.length}장</span></label>`).join('')}
+    </div>` : ''}`;
+  if(!groups.length){ el.innerHTML = picker + '<div style="font-size:12.5px;color:var(--txt3);padding:6px 0">표시할 카드사를 하나도 안 고르셨어요.</div>'; return; }
+  el.innerHTML = picker + groups.map(g=>{
     const perf = tx.filter(t=>g.cards.indexOf(t.account)>=0).reduce((s,t)=>s+cardPerfAmount(t),0);
     const target = cfgPerfTarget(g.label, g.accts, perf);
     const st = (typeof cfgTierStatus==='function') ? cfgTierStatus(g.label, perf) : null;
@@ -7592,47 +7665,71 @@ function cashImportConfirm(){
 // 사용자가 설정한 항목명을, 거래의 소분류 / 입금계좌 / 메모 중 하나와 대조한다.
 // (예전 버전은 항목별 매칭 규칙이 코드에 하드코딩돼 있었다)
 const CASH_ITEM_MATCH = {};
+// [버그] 예전 규칙은 항목명과 필드가 서로를 '조금이라도' 품으면 무조건 같은 건으로 봤다.
+//        그래서 '저축'·'이체' 같은 일반 대분류 한 단어가 '덕질저축'·'비상금저축' 같은 항목을
+//        전부 납부완료로 만들어버렸다(체크가 미리 켜지던 주요 원인).
+const CASH_GENERIC_FIELDS = ['저축','지출','수입','이동','이체','기타','현금','카드','투자','보험','대출',
+  '계좌이체','카드납부','예적금','연금','주식','목적','고정비','변동비'];
 function cashItemMatcher(name){
   if(CASH_ITEM_MATCH[name]) return CASH_ITEM_MATCH[name];
   const target = String(name||'').trim();
-  if(!target) return () => false;
+  if(target.length < 2) return () => false;   // 한 글자 항목명은 오매칭만 만든다
   return function(t){
     const fields = [t.category, t.sub, t.inAcct, t.memo].map(x=>String(x||'').trim());
-    return fields.some(f => f && (f===target || f.indexOf(target)>=0 || target.indexOf(f)>=0));
+    return fields.some(f=>{
+      if(!f) return false;
+      if(f === target) return true;
+      if(f.indexOf(target) >= 0) return true;          // 필드가 항목명을 품음 → 인정
+      // 반대 방향(항목명이 필드를 품음)은 3글자 이상 + 일반 분류명이 아닐 때만 인정.
+      // 예: '개인연금(자동)' ← '개인연금' 은 인정 / '덕질저축' ← '저축' 은 불인정
+      if(f.length >= 3 && CASH_GENERIC_FIELDS.indexOf(f) < 0 && target.indexOf(f) >= 0) return true;
+      return false;
+    });
   };
 }
 // 내역에 해당 작업이 기록되면 자동 납부로 간주 (날짜 무관, 같은 달 기준) — 매칭된 거래(들)의 합계 금액 반환
 // 발급사가 같은 카드가 여러 장이면 그 달 결제 이체가 여러 건일 수 있어 반드시 합산해야 함
 function findPaidInfo(e){
   const em = e.date.getFullYear()+'-'+String(e.date.getMonth()+1).padStart(2,'0');
+  // [수정] 예전엔 '같은 달에 비슷한 이름의 거래가 있으면' 무조건 납부완료 처리했다.
+  //        ① 미래 날짜로 적힌 거래도 완료로 셌고 ② 아직 결제일이 오지 않은 항목까지
+  //        같은 달 다른 거래에 걸려 체크가 미리 켜졌다.
+  //        → 오늘까지 기록된 거래만 보고, 결제일이 아직 안 온 항목은
+  //          '금액까지 거의 같을 때'만 완료로 인정한다(선결제한 경우는 살려두기 위해).
+  const _t0 = new Date(); _t0.setHours(0,0,0,0);
   const txs = STATE.transactions||[];
+  // 미래 날짜로 적어둔 거래는 '이미 낸 돈'이 아니다 (예약 입력분이 완료로 잡히던 문제)
+  const done = t => String(t.date).slice(0,10) <= _t0.getFullYear()+'-'+String(_t0.getMonth()+1).padStart(2,'0')+'-'+String(_t0.getDate()).padStart(2,'0');
+  const notYet = +e.date > +_t0;                       // 결제일이 아직 안 온 항목
+  const near = (a,b) => b>0 && Math.abs(a-b) <= Math.max(1000, b*0.02);
+  const gate = info => (!info ? null : (notYet && !near(info.amount, e.amount) ? null : info));
   if(e.isCard){
     // 발급사 카드에 대한 카드납부(이동)가 그 달에 있으면 결제된 것으로 간주
     const issuer = e.name.replace('카드 결제','').replace('(추정)','').trim();
     const matches = txs.filter(t=>{
       if(t.type!=='이동') return false;
-      if(String(t.date).slice(0,7)!==em) return false;
+      if(String(t.date).slice(0,7)!==em || !done(t)) return false;
       const acc = String(t.inAcct||t.category||t.account||'');
       return GRP_DEBT.some(c=>acc.indexOf(c)>=0) && cardIssuer(acc)===issuer;
     });
     if(!matches.length) return null;
-    return { amount: matches.reduce((s,t)=>s+Math.abs(Number(t.amount)||0),0), count: matches.length };
+    return gate({ amount: matches.reduce((s,t)=>s+Math.abs(Number(t.amount)||0),0), count: matches.length });
   }
   const matcher = cashItemMatcher(e.name);
   if(matcher){
-    const matches = txs.filter(t=> String(t.date).slice(0,7)===em && matcher(t));
+    const matches = txs.filter(t=> String(t.date).slice(0,7)===em && done(t) && matcher(t));
     if(!matches.length) return null;
-    return { amount: matches.reduce((s,t)=>s+Math.abs(Number(t.amount)||0),0), count: matches.length };
+    return gate({ amount: matches.reduce((s,t)=>s+Math.abs(Number(t.amount)||0),0), count: matches.length });
   }
   // 매칭 규칙이 없는 항목: 이름 일부 + 금액이 둘 다 맞아야 완료로 인정 (금액만으로는 오매칭 위험이 커서 보수적으로)
   const shortName = e.name.replace(/\(자동\)/,'').trim();
   const found = txs.find(t=>{
     if(t.type!=='지출' && t.type!=='이동' && t.type!=='저축') return false;
-    if(String(t.date).slice(0,7)!==em) return false;
+    if(String(t.date).slice(0,7)!==em || !done(t)) return false;
     const nameMatch = String(t.category||t.major||'').indexOf(shortName)>=0;
     return nameMatch && Math.abs(Number(t.amount)||0) === e.amount;
   });
-  return found ? { amount: Math.abs(Number(found.amount)||0), count:1 } : null;
+  return found ? gate({ amount: Math.abs(Number(found.amount)||0), count:1 }) : null;
 }
 function eventPaid(e){ return !!findPaidInfo(e); }
 
