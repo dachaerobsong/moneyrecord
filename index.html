@@ -7678,20 +7678,24 @@ const CASH_ITEM_MATCH = {};
 //        그래서 '저축'·'이체' 같은 일반 대분류 한 단어가 '덕질저축'·'비상금저축' 같은 항목을
 //        전부 납부완료로 만들어버렸다(체크가 미리 켜지던 주요 원인).
 const CASH_GENERIC_FIELDS = ['저축','지출','수입','이동','이체','기타','현금','카드','투자','보험','대출',
-  '계좌이체','카드납부','예적금','연금','주식','목적','고정비','변동비'];
+  '계좌이체','카드납부','예적금','연금','주식','목적','고정비','변동비',
+  '납부','입금','출금','정산','환급','월급','급여'];
+// 공백을 무시하고 비교한다. '엄마생활비' 항목이 메모에 '엄마 생활비'로 적혀 있어도 같은 건이다.
+// (가져오기 모달도 이미 공백을 지워 비교하고 있었는데 여기만 안 하고 있었다)
+const cashNorm = x => String(x||'').replace(/\s+/g,'');
 function cashItemMatcher(name){
   if(CASH_ITEM_MATCH[name]) return CASH_ITEM_MATCH[name];
-  const target = String(name||'').trim();
+  const target = cashNorm(name);
   if(target.length < 2) return () => false;   // 한 글자 항목명은 오매칭만 만든다
   return function(t){
-    const fields = [t.category, t.sub, t.inAcct, t.memo].map(x=>String(x||'').trim());
+    const fields = [t.category, t.sub, t.inAcct, t.memo].map(cashNorm);
     return fields.some(f=>{
       if(!f) return false;
       if(f === target) return true;
       if(f.indexOf(target) >= 0) return true;          // 필드가 항목명을 품음 → 인정
-      // 반대 방향(항목명이 필드를 품음)은 3글자 이상 + 일반 분류명이 아닐 때만 인정.
-      // 예: '개인연금(자동)' ← '개인연금' 은 인정 / '덕질저축' ← '저축' 은 불인정
-      if(f.length >= 3 && CASH_GENERIC_FIELDS.indexOf(f) < 0 && target.indexOf(f) >= 0) return true;
+      // 반대 방향(항목명이 필드를 품음)은 두 글자 이상 + 일반 분류명이 아닐 때만 인정.
+      // 예: '엄마생활비' ← 소분류 '엄마' 는 인정 / '덕질저축' ← 대분류 '저축' 은 불인정
+      if(f.length >= 2 && CASH_GENERIC_FIELDS.indexOf(f) < 0 && target.indexOf(f) >= 0) return true;
       return false;
     });
   };
@@ -7808,6 +7812,12 @@ function buildCashEvents(plan, offset){
   }
   return {events, payday:py, today:realToday, viewEnd, offset};
 }
+let CASH_HIDE_DONE = (function(){ try{ return LS.get('cashHideDoneV1')==='1'; }catch(e){ return false; } })();
+function cashToggleHideDone(){
+  CASH_HIDE_DONE = !CASH_HIDE_DONE;
+  try{ LS.set('cashHideDoneV1', CASH_HIDE_DONE?'1':''); }catch(e){}
+  renderCashPlan();
+}
 let CASH_CYCLE_OFFSET = 0;
 function cashCycleNav(delta){
   const next = CASH_CYCLE_OFFSET + delta;
@@ -7898,8 +7908,17 @@ function renderCashPlan(){
         running -= list.filter(e=>e.source==='bank' && !eventPaid(e)).reduce((s,e)=>s+e.amount,0);
         projected[k] = running;
       });
-      tEl.innerHTML = keys.map(k=>{
+      // ── 완료 항목 숨기기 ──
+      // 낸 항목은 지우지 않고 취소선 + '완료'로 남긴다(그 달 계획 전체와 실제 낸 금액을 같이 보려고).
+      // 다만 "낸 건 눈에서 치워달라"는 요구가 당연해서, 접는 토글을 둔다. 계산에는 영향 없음.
+      const doneCnt = events.filter(e=>e.source==='bank' && eventPaid(e)).length;
+      const hideBar = doneCnt
+        ? `<div style="display:flex;justify-content:flex-end;margin:-2px 0 8px">
+            <button onclick="cashToggleHideDone()" style="font-size:11px;padding:4px 10px;border:1px solid #E5E8EB;border-radius:99px;background:#FFF;color:var(--txt2);cursor:pointer">${CASH_HIDE_DONE?`✓ 낸 항목 ${doneCnt}개 숨김 · 보기`:`낸 항목 ${doneCnt}개 숨기기`}</button>
+          </div>` : '';
+      tEl.innerHTML = hideBar + keys.map(k=>{
         const list=byDate[k];
+        const shown = CASH_HIDE_DONE ? list.filter(e=>!eventPaid(e)) : list;
         const d=list[0].date;
         const isPay = +d === +payday;
         const isAfter = +d > +payday;   // 급여일 이후 = 참고용
@@ -7912,7 +7931,7 @@ function renderCashPlan(){
               <span style="flex:1;min-width:0;color:var(--green);font-weight:700">급여 입금</span>
               <span style="font-weight:700;flex:none;white-space:nowrap;color:var(--green)">+ ${won(salary)}</span>
               <span style="width:20px"></span></div>` : '';
-        const rows=list.map(e=>{
+        const rows=shown.map(e=>{
           const paidInfo = findPaidInfo(e);
           const paid = !!paidInfo;
           const actualAmt = paid ? paidInfo.amount : 0;
@@ -7936,6 +7955,7 @@ function renderCashPlan(){
             <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${nameStyle}">${e.name}${tag}${doneTag}${ovTag}</span>
             <span style="font-weight:600;flex:none;white-space:nowrap">${amtHtml}</span>${editIcon}</div>`;
         }).join('');
+        if(!shown.length && !payRow) return '';
         return `<div style="margin-bottom:14px;padding:12px 14px;border-radius:14px;background:${isPay?'var(--green-bg)':'var(--card2)'};${isAfter?'opacity:0.6':isPast?'opacity:0.75':''}">
           <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px">
             <span style="font-size:clamp(11.5px,3.4vw,13px);font-weight:700;color:${isPay?'var(--green)':'var(--txt2)'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">${cashFmtDate(d)}${isPay?' · 급여일 💰':''}${isAfter?' · 급여 후(참고)':''}${isPast?' · 지남':''}</span>
