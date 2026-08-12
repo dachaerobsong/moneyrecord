@@ -3843,6 +3843,26 @@ function budgetOf(major, subList){
   if(BUDGET_DEFAULTS[nmb]!=null) return BUDGET_DEFAULTS[nmb];
   return 0;
 }
+// ── 연간 리포트 계열의 예산 소스 통일 ──
+// [버그] 예전엔 STATE.budget(평탄 키)만 읽었다. 그래서 대분류 예산을 따로 안 넣고
+//        소분류 예산만 채운 카테고리는 연간 표·드릴다운에서 '예산 –'로 나왔고,
+//        월간 화면(budgetOf)은 소분류 합까지 폴백해 예산이 보였다 — 같은 항목의
+//        예산이 화면마다 달라 보이던 원인. 한 규칙(budgetOf)으로 맞춘다.
+function fillBudgetByKey(out, budget){
+  budget = budget || STATE.budget || {};
+  Object.keys(budget).forEach(k=>{
+    const nk = normBudgetKey(k);
+    out[nk] = (out[nk]||0) + (Number(budget[k])||0);
+  });
+  Object.keys(CAT_OUT_LABELS||{}).forEach(m=>{
+    const nk = normBudgetKey(m);
+    if(out[nk]) return;
+    const subs = (STATE.catMap && STATE.catMap['지출'] && STATE.catMap['지출'][m]) || CAT_OUT_SUBS[m] || [];
+    const v = budgetOf(m, subs);
+    if(v > 0) out[nk] = v;
+  });
+  return out;
+}
 function subBudgetOf(major, sub){
   const sb = STATE.subBudget || {};
   const subT = String(sub||'').trim();
@@ -3883,9 +3903,33 @@ function isRegisteredMajor(type, m){
   const mp = (STATE.catMap && STATE.catMap[type]) || {};
   return Object.keys(mp).some(x => normBudgetKey(x) === k);
 }
+// 소분류 이름 → 그 소분류가 등록된 대분류. 두 대분류에 같은 이름이 있으면 판단을 보류한다.
+function subOwnerMap(type){
+  const mp = (STATE.catMap||{})[type] || {};
+  const cnt = {}, own = {};
+  Object.keys(mp).forEach(m=>{
+    (mp[m]||[]).forEach(sub=>{
+      const z = stripSp(sub);
+      if(!z) return;
+      if(own[z] !== undefined && normBudgetKey(own[z]) !== normBudgetKey(m)) cnt[z] = 2;
+      else cnt[z] = cnt[z] || 1;
+      own[z] = m;
+    });
+  });
+  Object.keys(cnt).forEach(z=>{ if(cnt[z] > 1) delete own[z]; });
+  return own;
+}
 function majorTxPred(type, major, subList){
+  const owner = subOwnerMap(type);
   return function(t){
     if(t.type!==type) return false;
+    // [핵심] 소분류가 설정에 등록돼 있으면, 그 소분류가 속한 대분류로 귀속한다.
+    //   카테고리를 쪼갠 뒤(엄마 → 엄마 / 엄마2) 예전 거래에는 옛 대분류('엄마')가 그대로
+    //   남아 있다. 거래에 적힌 대분류를 그대로 믿으면 새 대분류는 0원이고 옛 대분류만
+    //   부풀어서, 소분류가 전부 100% 이하인데 대분류만 157%로 뜨는 일이 생긴다.
+    //   설정이 최신이므로 설정을 정본으로 본다.
+    const own = owner[stripSp(t.category)];
+    if(own) return normBudgetKey(own) === normBudgetKey(major);
     if(t.major===major) return true;
     // 이모지·괄호 차이만 있는 같은 대분류도 인정 ('☀️ 엄마고정2' ↔ '엄마고정2')
     if(normBudgetKey(t.major) === normBudgetKey(major)) return true;
@@ -3914,8 +3958,12 @@ function majorSpend(type, major, subList){
 function subTxPred(type, major, sub){
   const subZ = stripSp(sub);
   const majorZ = stripSp(major);
+  const owner = subOwnerMap(type);
   return function(t){
     if(t.type!==type) return false;
+    // 대분류 판정과 같은 규칙 — 등록된 소분류는 등록된 주인에게만 귀속
+    const own = owner[stripSp(t.category)];
+    if(own && normBudgetKey(own) !== normBudgetKey(major)) return false;
     const inMajorOrMap = t.major===major || (STATE.catMap[type]?.[major]||[]).indexOf(sub)>=0;
     if(t.category===sub && inMajorOrMap) return true;               // 기존: 완전 일치
     const catZ = stripSp(t.category);
@@ -8161,7 +8209,7 @@ function computeAnnualInsight(year){
 
   const budget = STATE.budget || {};
   const budgetByKey = {};
-  Object.keys(budget).forEach(k=>{ const nk=normBudgetKey(k); budgetByKey[nk]=(budgetByKey[nk]||0)+(Number(budget[k])||0); });
+  fillBudgetByKey(budgetByKey, budget);
 
   const txByMonth = {};
   months.forEach(ym=>{ txByMonth[ym] = allTx.filter(t=>String(t.date).slice(0,7)===ym && !isRemovedTx(t)); });
@@ -8834,7 +8882,7 @@ function rptShowDrill(kind, key, ym, label){  const tx = rptDrillTx(kind, key, y
   const total = tx.reduce((s,t)=>s+(Number(t.amount)||0),0);
   const budget = STATE.budget||{};
   const budgetByKey = {};
-  Object.keys(budget).forEach(k=>{ const nk=normBudgetKey(k); budgetByKey[nk]=(budgetByKey[nk]||0)+(Number(budget[k])||0); });
+  fillBudgetByKey(budgetByKey, budget);
   const saveMoveMajorsDrill = SAVE_MAJORS.slice();
   const bud = kind==='income' ? (budgetByKey['수입']||budgetByKey['월급']||0)
     : kind==='save' ? (budgetByKey['저축'] || saveMoveMajorsDrill.reduce((s,m)=> s + budgetOf(m, CAT_MV_SUBS[m]), 0))
@@ -8963,7 +9011,7 @@ function computeMonthlyInsight(ym){
   // 예산만큼 저축한 달도 항상 "부족"으로 나왔다. 목표도 실적과 같은 3개 대분류로 맞춘다.
   const budget = STATE.budget||{};
   const budgetByKey = {};
-  Object.keys(budget).forEach(k=>{ const nk=normBudgetKey(k); budgetByKey[nk]=(budgetByKey[nk]||0)+(Number(budget[k])||0); });
+  fillBudgetByKey(budgetByKey, budget);
   // 목표 출처 우선순위: ① 시트 [저축목표] 월목표 → ② 대분류 예산 → ③ '저축' 대분류 예산
   const _res = saveGoalsResolved();
   const goalList = _res.list;
@@ -9261,7 +9309,7 @@ function moToggleCatDrill(key, ym, label, rowEl){
   const total = tx.reduce((s,t)=>s+(Number(t.amount)||0),0);
   const budget = STATE.budget||{};
   const budgetByKey = {};
-  Object.keys(budget).forEach(k=>{ const nk=normBudgetKey(k); budgetByKey[nk]=(budgetByKey[nk]||0)+(Number(budget[k])||0); });
+  fillBudgetByKey(budgetByKey, budget);
   const bud = budgetByKey[key]||0;
   gbMemoLoad();
   const catMemo = GB_MEMO[ym+'|'+key]||'';
@@ -9530,7 +9578,6 @@ function rptSaveReconcileHtml(d){
           : `월목표 미설정 · 설정 › 저축 월목표에서 입력하면 달성 여부가 표시돼요`}
       </div>
       ${compHtml || '<div style="font-size:11.5px;color:var(--txt3)">저축·이동 내역이 없어요</div>'}
-    </div>
     <div style="margin-top:11px;padding-top:9px;border-top:1px solid #E5E8EB">
       <div style="font-size:11.5px;font-weight:700;color:var(--txt);margin-bottom:3px">월별 저축액</div>
       ${monthRows}
@@ -9541,6 +9588,7 @@ function rptSaveReconcileHtml(d){
       <div style="font-size:10px;color:var(--txt3);margin-top:6px;line-height:1.5">
         설정에서 '저축' 체크가 없는 이동은 제외 · 줄을 누르면 그 달 건별 내역
       </div>
+    </div>
     </div>
   </div>`;
 }
