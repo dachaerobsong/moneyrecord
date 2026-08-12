@@ -1460,6 +1460,17 @@ function renderCardList(container, useObj, budObj, prefix, catByCard){
 // ── 잔고 계산 (전역) ──
 // asOfYm(예: '2026-06')을 넘기면 해당 월 말까지의 거래만 반영한 "그 시점 잔액"을 계산.
 // 생략하면 지금까지 들어온 거래 전체를 반영한 현재 잔액.
+// 부채류(신용카드 미결제·장기부채) 계좌는 설정 화면·시트에 "얼마를 빚졌는지"를
+// 양수로 적더라도, 내부 계산에서는 항상 음수(마이너스 자산)로 통일해서 쓴다.
+//  ① 이렇게 해야 카드를 더 쓸수록(지출) 미결제가 늘어나는 방향이 맞고,
+//  ② 순자산 계산에서 total + longdebt / debt 를 더할 때 부채가 실제로 "빠지게" 된다.
+// (양수로 저장돼 있으면 반대로 순자산에 부채가 더해지고, 카드를 더 쓸수록 미결제가 줄어드는
+//  오류가 났었다 — 부호를 어느 쪽으로 입력해도 여기서 강제로 통일한다.)
+function isDebtGroup(g){ return g==='debt' || g==='longdebt'; }
+function signDebtBal(group, val){
+  const n = Number(val)||0;
+  return isDebtGroup(group) ? -Math.abs(n) : n;
+}
 function calcBalances(asOfYm) {
   const init = STATE.initBal || {};
   const allIn = {}, allOut = {};
@@ -2267,11 +2278,18 @@ function fetchFromSheet(silent) {
             return { key:r.key, label:r.label||r.key, group:g, goal:r.goal||0 };
           });
           STATE.initBal = {};
+          const acctGroupByKey = {};
+          STATE.acctsDef.forEach(a => { acctGroupByKey[a.key] = a.group; });
           data.config.initBalRaw.forEach(r => {
-            STATE.initBal[r.key] = Number(r.balance||r.init||r.amount||0);
+            const raw = Number(r.balance||r.init||r.amount||0);
+            STATE.initBal[r.key] = signDebtBal(acctGroupByKey[r.key], raw);
           });
+          // ⚠ data.config.initBal(플랫 맵)은 시트 원본 값을 부호 보정 없이 그대로 담고 있어서,
+          //   이걸로 덮어쓰면 위에서 맞춘 부채 부호가 다시 깨진다. initBalRaw가 있으면 그걸로 충분하니
+          //   플랫 맵으로는 덮어쓰지 않고, initBalRaw 자체가 없는 구버전 데이터일 때만 대체용으로 쓴다.
+        } else if(data.config.initBal){
+          STATE.initBal = data.config.initBal;
         }
-        if(data.config.initBal) STATE.initBal = data.config.initBal;
       }
 
       // ② entries 파싱 (acctsDef 로드 후)
@@ -4326,7 +4344,11 @@ function cfgSeedIfEmpty(){
     if(!Array.isArray(x.subs)) x.subs = [];
   }));
   if(!CFG.accounts.length){
-    CFG.accounts = (STATE.acctsDef||[]).map(a=>({ key:a.key, label:a.label||a.key, group:a.group||'cash', bal:(STATE.initBal&&STATE.initBal[a.key])||0 }));
+    CFG.accounts = (STATE.acctsDef||[]).map(a=>{
+      const raw = (STATE.initBal&&STATE.initBal[a.key])||0;
+      // 설정 화면의 "현재 잔액" 입력칸은 부채류도 항상 양수(빚진 금액)로 보여준다 — 내부 계산용 음수와는 별개.
+      return { key:a.key, label:a.label||a.key, group:a.group||'cash', bal: isDebtGroup(a.group) ? Math.abs(raw) : raw };
+    });
   }
   CFG.accounts.forEach(a=>{ if(a.asOf==null) a.asOf=''; });
   if(!CFG.cards) CFG.cards = {};
@@ -5515,7 +5537,7 @@ function cfgApply(){
       CARD_EMPHASIZE.length=0; pick('debt').forEach(k=>CARD_EMPHASIZE.push(k));
       STATE.acctsDef = accts.map(a=>({ key:a.key, label:a.label||a.key, group:a.group||'cash', goal:Number(a.goal)||0 }));
       STATE.initBal = STATE.initBal || {};
-      accts.forEach(a=>{ if(a.bal!=null) STATE.initBal[a.key] = Number(a.bal)||0; });
+      accts.forEach(a=>{ if(a.bal!=null) STATE.initBal[a.key] = signDebtBal(a.group, a.bal); });
     }
 
     // ── 4) 예산: 카테고리 표에 적은 값에서 만든다 (소분류 예산이 있으면 그 합이 대분류 예산) ──
