@@ -595,11 +595,13 @@ body { padding-bottom:88px; }
     <div id="h-goal-summary"></div>
   </section>
 
-  <!-- 이번 달 코치 헤드라인 (한 문장 진단 · 이번 달 탭 딥링크) -->
-  <section class="coach-card" id="h-month-summary-card" onclick="goToTab('analysis')" style="cursor:pointer;margin-bottom:16px">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+  <!-- 이번 달 진단은 분석 › 이번달의 히어로 판정이 본체다. 홈에는 한 줄 티저만 둔다.
+       (예전엔 홈에 같은 진단을 큰 히어로 카드로 한 번 더 그려서 완전히 중복이었고,
+        홈의 주인공인 순자산을 아래로 밀어냈다) -->
+  <section class="card" id="h-month-summary-card" onclick="goToTab('analysis')" style="cursor:pointer">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
       <div style="flex:1;min-width:0" id="h-month-summary"></div>
-      <span style="font-size:11px;font-weight:600;color:rgba(255,255,255,.75);white-space:nowrap;margin-left:8px">자세히 ›</span>
+      <span style="font-size:12px;font-weight:600;color:var(--blue);white-space:nowrap">분석 ›</span>
     </div>
   </section>
 
@@ -961,22 +963,9 @@ body { padding-bottom:88px; }
       </div>
     </div>
 
-    <!-- ④-c 저축 시뮬레이션 -->
-    <section class="card" id="rpt-savingsim-card" style="padding:16px 18px">
-      <div class="card-title" style="margin-bottom:8px">🧮 저축 시뮬레이션</div>
-      <div class="form-group">
-        <label>목표 선택</label>
-        <select id="sim-goal-select" onchange="simOnGoalChange()">
-          <option value="">직접 입력</option>
-        </select>
-      </div>
-      <div style="display:flex;gap:10px">
-        <div class="form-group" style="flex:1"><label>목표 금액 (원)</label><input type="number" id="sim-target" placeholder="0" oninput="renderSavingsSim()"></div>
-        <div class="form-group" style="flex:1"><label>현재 금액 (원)</label><input type="number" id="sim-current" placeholder="0" oninput="renderSavingsSim()"></div>
-      </div>
-      <div class="form-group"><label>월 저축액 (원)</label><input type="number" id="sim-monthly" placeholder="예: 500000" oninput="renderSavingsSim()"></div>
-      <div id="sim-result" style="margin-top:6px"></div>
-    </section>
+    <!-- ④-c 저축 시뮬레이션은 설정 탭으로 이동했다.
+         연간 리포트는 '지난 8개월이 어땠나'를 읽는 화면인데, 시뮬레이션은 값을 넣어보는 도구라
+         성격이 달랐다. 매달 보는 화면에 입력 폼이 섞여 있으면 읽는 흐름이 끊긴다. -->
 
     <!-- ⑤ 소비 구조 — 고정비 -->
     <section class="card" id="rpt-fixed-card" style="padding:16px 18px">
@@ -1105,6 +1094,25 @@ body { padding-bottom:88px; }
   <div class="card cfg-fold" id="cfg-card-card">
     <div class="card-title cfg-fold-head" onclick="cfgToggleFold('cfg-card-card')">💳 카드 <span class="cfg-fold-arrow">▾</span></div>
     <div id="cfg-card-body"></div>
+  </div>
+
+  <div class="card cfg-fold folded" id="cfg-sim-card">
+    <div class="card-title cfg-fold-head" onclick="cfgToggleFold('cfg-sim-card')">🧮 저축 시뮬레이션 <span class="cfg-fold-arrow">▾</span></div>
+    <div>
+      <div style="font-size:11.5px;color:var(--txt3);line-height:1.6;margin-bottom:10px">목표 금액과 월 저축액을 넣으면 언제 도달하는지 계산해요. 계좌에 목표금액을 넣어두면 목록에서 바로 고를 수 있습니다.</div>
+      <div class="form-group">
+        <label>목표 선택</label>
+        <select id="sim-goal-select" onchange="simOnGoalChange()">
+          <option value="">직접 입력</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:10px">
+        <div class="form-group" style="flex:1"><label>목표 금액 (원)</label><input type="number" id="sim-target" placeholder="0" oninput="renderSavingsSim()"></div>
+        <div class="form-group" style="flex:1"><label>현재 금액 (원)</label><input type="number" id="sim-current" placeholder="0" oninput="renderSavingsSim()"></div>
+      </div>
+      <div class="form-group"><label>월 저축액 (원)</label><input type="number" id="sim-monthly" placeholder="예: 500000" oninput="renderSavingsSim()"></div>
+      <div id="sim-result" style="margin-top:6px"></div>
+    </div>
   </div>
 
   <div class="card cfg-fold folded" id="cfg-tpl-card">
@@ -1551,7 +1559,17 @@ function changeTab(tabName, btnElement) {
   try{
     if(tabName==='home'){ renderAssetOverview(); if(typeof renderNetWorthTrend==='function') renderNetWorthTrend(); if(typeof renderMonthlyChart==='function') renderMonthlyChart(); }
     if(tabName==='invest') renderInvest();
-    if(tabName==='settings'){ if(typeof renderCatSettings==='function') renderCatSettings(); }
+    if(tabName==='settings'){
+      if(typeof renderCatSettings==='function') renderCatSettings();
+      // 저축 시뮬레이션이 연간 리포트에서 설정으로 옮겨왔다.
+      // 목표 목록은 renderGoals()가 채우는데, 목표 탭을 안 들렀으면 비어 있으므로 여기서도 채운다.
+      try{
+        if(typeof computeGoalAccts==='function' && typeof populateSimGoalSelect==='function'){
+          populateSimGoalSelect(computeGoalAccts());
+        }
+        if(typeof renderSavingsSim==='function') renderSavingsSim();
+      }catch(e){ console.error(e); }
+    }
     if(tabName==='analysis'){
       const activeBtn = document.querySelector('#p-analysis .sub-tab.on') || document.querySelector('#p-analysis .sub-tab');
       const subName = activeBtn ? activeBtn.dataset.sub : 'month';
@@ -2353,9 +2371,20 @@ function renderHome() {
   if(typeof renderHomeInvestSummary==='function') renderHomeInvestSummary();
 }
 
-// 홈 › 이번 달 코치 헤드라인: 저축 부족/원인을 한 문장으로 (상세는 이번 달 탭)
+// 홈 › 이번 달 진단 티저 — 한 줄만. 본체(히어로 판정·근거 칩)는 분석 › 이번달에 있다.
 function renderHomeMonthSummary(){
-  if(typeof renderCoachCard==='function') renderCoachCard('h-month-summary', currentMonthStr());
+  const el = document.getElementById('h-month-summary');
+  if(!el) return;
+  const h = (typeof computeCoachHeadline==='function') ? computeCoachHeadline(currentMonthStr()) : null;
+  if(!h){ el.innerHTML = ''; return; }
+  const c = h.tone==='red' ? 'var(--red)' : h.tone==='yellow' ? 'var(--warning)'
+          : h.tone==='green' ? 'var(--green)' : 'var(--txt3)';
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:6px">
+      <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${c};flex:none"></span>
+      <span style="font-size:12px;color:var(--txt3);font-weight:600">${h.mLabel} 진단</span>
+    </div>
+    <div style="font-size:14px;font-weight:700;color:var(--txt);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h.main}</div>`;
 }
 
 // 홈 › 투자 미니요약: 투자 원금 / 분배금·이자 누적 (평가금액·수익률은 추후 스냅샷 기능 후 추가)
@@ -3812,8 +3841,17 @@ function memoInputMajorInlineHtml(major){
 
 // ── 예산/지출 집계 헬퍼 ──
 function budTx(){ return (STATE.transactions.length ? STATE.transactions : DEMO).filter(t => String(t.date).slice(0,7) === BUD_MONTH && !isRemovedTx(t)); }
-function budgetOf(major, subList){
+function budgetOf(major, subList, ym){
   const b = STATE.budget || {};
+  // [신규] 적용기간이 걸린 소분류가 있는 대분류는, 설정에 저장된 고정 합계를 쓰면 안 된다.
+  //        (보람상조가 7월부터 빠지면 대분류 예산도 그 달부터 줄어야 하므로)
+  //        그 달에 살아있는 소분류 예산만 다시 더한다.
+  if(majorHasPeriodSub(major, subList)){
+    const m = ym || (typeof BUD_MONTH!=='undefined' ? BUD_MONTH : currentMonthStr());
+    const subs = subList || CAT_OUT_SUBS[major] || (STATE.catMap['지출'] && STATE.catMap['지출'][major]) || [];
+    let psum = 0; subs.forEach(sn => psum += subBudgetOf(major, sn, m));
+    if(psum > 0) return psum;
+  }
   if(b[major]!=null) return Number(b[major])||0;
   // 지출뿐 아니라 수입/이동 이모지 라벨("👷 근로소득", "💳 카드납부" 등)도 매칭
   const lbl = CAT_OUT_LABELS[major] || (typeof CAT_IN_LABELS!=='undefined'&&CAT_IN_LABELS[major]) || (typeof CAT_MV_LABELS!=='undefined'&&CAT_MV_LABELS[major]);
@@ -3863,7 +3901,25 @@ function fillBudgetByKey(out, budget){
   });
   return out;
 }
-function subBudgetOf(major, sub){
+// 이 소분류가 해당 월에 예산으로 살아있는지 — 적용기간 밖이면 예산에서 뺀다.
+// 과거 달을 볼 때는 그 달 기준으로 판정하므로, 예전 100% 판정이 나중 설정 때문에 흔들리지 않는다.
+function subActiveIn(sub, ym){
+  const p = (STATE.subPeriod||{})[stripSp(sub)];
+  if(!p) return true;
+  const m = String(ym||'').slice(0,7);
+  if(!m) return true;
+  if(p.from && m < p.from) return false;
+  if(p.to   && m > p.to)   return false;
+  return true;
+}
+function subPeriodOf(sub){ return (STATE.subPeriod||{})[stripSp(sub)] || null; }
+// 이 대분류에 적용기간이 걸린 소분류가 하나라도 있는가 (있으면 대분류 예산을 달마다 다시 계산)
+function majorHasPeriodSub(major, subList){
+  const subs = subList || CAT_OUT_SUBS[major] || (STATE.catMap['지출'] && STATE.catMap['지출'][major]) || [];
+  return subs.some(sn => !!subPeriodOf(sn));
+}
+function subBudgetOf(major, sub, ym){
+  if(!subActiveIn(sub, ym || (typeof BUD_MONTH!=='undefined' ? BUD_MONTH : currentMonthStr()))) return 0;
   const sb = STATE.subBudget || {};
   const subT = String(sub||'').trim();
   function findIn(bucket){
@@ -3945,6 +4001,14 @@ function majorTxPred(type, major, subList){
     }
     return false;
   };
+}
+// ── [공용] 지출 대분류 판정자 ──
+// 화면마다 제각각 txCatKey(t)===키 로 비교하던 걸 하나로 모은다. 그 방식은 거래에 적힌
+// 대분류만 믿기 때문에, 카테고리를 쪼갠 뒤(엄마 → 엄마/엄마2) 옛 대분류가 남은 거래를
+// 계속 옛 쪽에 쌓았다. 등록된 소분류가 있으면 소분류의 주인에게 귀속하는 규칙을 공유한다.
+function outCatPred(major){
+  const subs = CAT_OUT_SUBS[major] || (STATE.catMap && STATE.catMap['지출'] && STATE.catMap['지출'][major]) || [];
+  return majorTxPred('지출', major, subs);
 }
 function majorSpendTxs(type, major, subList){ return budTx().filter(majorTxPred(type, major, subList)); }
 function majorSpend(type, major, subList){
@@ -4454,6 +4518,50 @@ function cfgPayOf(c, sub){
   const m = (c.subMeta||{})[sub] || {};
   return { acct:m.acct||'', day:m.day||0 };
 }
+// ── 소분류 적용 기간 ('YYYY-MM' ~ 'YYYY-MM') ──
+// 목적: 보람상조처럼 특정 달부터 결제가 빠지는 항목을 예산에서 빼되,
+//       그 전 달들의 판정(100%)은 건드리지 않는 것. 항목을 지우면 과거가 같이 망가진다.
+function cfgSetSubPeriod(kind, i, sub, which, val){
+  const c = (CFG.categories[kind]||[])[i]; if(!c) return;
+  const v = String(val||'').trim().slice(0,7);
+  c.subMeta = c.subMeta || {};
+  c.subMeta[sub] = c.subMeta[sub] || {};
+  if(v) c.subMeta[sub][which] = v; else delete c.subMeta[sub][which];
+  cfgSaveLocal(); cfgApply(); renderCfgCategories();
+}
+function cfgPeriodOf(c, sub){
+  const m = ((c.subMeta||{})[sub]) || {};
+  return { from: m.from||'', to: m.to||'' };
+}
+// 소분류 바로 아래에 붙는 '적용기간' 줄 — 값이 있거나 편집 모드일 때만 보인다
+function cfgSubPeriodRow(kind, i, c, sn){
+  const p = cfgPeriodOf(c, sn);
+  const editing = !!CFG_PERIOD_OPEN[kind+'|'+i];
+  if(!editing && !p.from && !p.to) return '';
+  const inp = 'padding:4px 6px;border:1px solid #E5E8EB;border-radius:7px;font-size:11px;background:#FFF;width:104px;font-family:inherit;color:var(--txt2);';
+  const note = (p.from || p.to)
+    ? `<span style="color:var(--warning);font-weight:600">${p.from||'처음'} ~ ${p.to||'계속'}만 예산 반영</span>`
+    : `<span style="color:var(--txt3)">비우면 계속 반영</span>`;
+  return `
+    <div style="${CT.rowSub}padding:0 0 6px">
+      <span></span><span></span>
+      <div style="grid-column:3 / -1;margin-left:12px;display:flex;align-items:center;gap:5px;flex-wrap:wrap;font-size:10.5px;color:var(--txt3)">
+        <span>적용</span>
+        <input type="month" value="${esc(p.from)}" title="시작월 (비우면 처음부터)"
+          onchange="cfgSetSubPeriod('${kind}',${i},'${jq(sn)}','from',this.value)" style="${inp}">
+        <span>~</span>
+        <input type="month" value="${esc(p.to)}" title="종료월 (이 달까지 반영)"
+          onchange="cfgSetSubPeriod('${kind}',${i},'${jq(sn)}','to',this.value)" style="${inp}">
+        ${note}
+      </div>
+    </div>`;
+}
+let CFG_PERIOD_OPEN = {};
+function cfgTogglePeriodEdit(kind, i){
+  const k = kind+'|'+i;
+  CFG_PERIOD_OPEN[k] = !CFG_PERIOD_OPEN[k];
+  renderCfgCategories();
+}
 // ── 섹션(지출/이동/수입) 접기 · 전체 접기 ──
 let CFG_SEC_OPEN = Object.assign({ '지출':true, '이동':true, '수입':true }, FOLD.sec || {});
 function cfgToggleSec(kind){
@@ -4660,10 +4768,12 @@ function renderCfgCategories(){
           ${cfgMiniSpark(sn, true, kind)}
           ${kind!=='수입' ? cfgCadenceSelect(kind,i,sn,cfgCadenceOf(c,sn)) : '<span></span>'}
           <button onclick="cfgDelSub('${kind}',${i},${j})" style="${CT.del}">✕</button>
-        </div>`;}).join('') + `
+        </div>${cfgSubPeriodRow(kind, i, c, sn)}`;}).join('') + `
         <div style="${CT.rowSub}padding:4px 0 8px">
           <span></span><span></span>
           <button onclick="cfgAddSub('${kind}',${i})" style="${CT.add}margin-left:12px;width:calc(100% - 12px);padding:6px">+ 소분류</button>
+          <button onclick="cfgTogglePeriodEdit('${kind}',${i})" title="소분류마다 예산을 적용할 기간을 정합니다"
+            style="grid-column:5 / -1;padding:6px;border:1px solid #E5E8EB;border-radius:9px;background:${CFG_PERIOD_OPEN[kind+'|'+i]?'var(--blue-bg)':'var(--card)'};color:${CFG_PERIOD_OPEN[kind+'|'+i]?'var(--blue)':'var(--txt3)'};font-size:11.5px;font-weight:600;cursor:pointer">📅 적용기간 ${CFG_PERIOD_OPEN[kind+'|'+i]?'닫기':'설정'}</button>
           <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
         </div>` : '';
 
@@ -5448,6 +5558,21 @@ function cfgApply(){
       try{ LS.set('gb_cat_settings', JSON.stringify({ catCadence: cad })); }catch(e){}
     })();
 
+    // ── 4-e) 소분류 적용기간 ── '보람상조: ~2026-06' 같은 설정을 계산 쪽으로 넘긴다
+    (function buildSubPeriod(){
+      const per = {};
+      ['지출','이동','수입'].forEach(kind=>{
+        (C[kind]||[]).forEach(c=>{
+          const meta = c.subMeta||{};
+          (c.subs||[]).forEach(sn=>{
+            const m = meta[sn]||{};
+            if(m.from || m.to) per[stripSp(sn)] = { from:m.from||'', to:m.to||'' };
+          });
+        });
+      });
+      STATE.subPeriod = per;
+    })();
+
     // ── 4-c) 결제수단·결제일 → 현금흐름 일정 & 카드 예산 ──
     // 설정에서 "월세는 25일에 주거래통장에서" 라고 정해두면
     // 현금흐름의 고정지출 일정과 카드별 예산이 자동으로 만들어진다.
@@ -5477,6 +5602,13 @@ function cfgApply(){
           if(hasSub){
             subs.forEach(sn=>{
               const m = meta[sn]||{};
+              // 적용기간이 끝난 항목(예: 보람상조 ~2026-06)은 이번 달 현금흐름 일정에서 뺀다
+              const per = (m.from||m.to) ? { from:m.from||'', to:m.to||'' } : null;
+              if(per){
+                const cm = currentMonthStr();
+                if(per.from && cm < per.from) return;
+                if(per.to   && cm > per.to)   return;
+              }
               push(sn, Number(sb[sn])||0, m.acct||c.acct||'', Number(m.day||c.day)||0);
             });
           } else {
@@ -6081,7 +6213,12 @@ function budCatRowHtml(c){
     subList.forEach(sub => {
       const ss = subSpendBud('지출', c.major, sub);
       subSum += (Number(ss)||0);
-      const sbud = subBudgetOf(c.major, sub);
+      const sbud = subBudgetOf(c.major, sub, BUD_MONTH);
+      // 적용기간이 끝난 항목은 지출도 없으면 줄 자체를 감춘다 (예산도 0이라 판정할 게 없음)
+      const sPeriod = subPeriodOf(sub);
+      const sActive = subActiveIn(sub, BUD_MONTH);
+      if(!sActive && (Number(ss)||0) === 0) return;
+      const periodNote = sPeriod ? ` <span style="font-size:8.5px;color:var(--warning)">${sPeriod.from||'처음'}~${sPeriod.to||'계속'}${sActive?'':' 종료'}</span>` : '';
       const sCad = subCadence(sub);
       let sover, spct, cadNote = '';
       const sN = CADENCE_PERIOD_LEN[sCad];
@@ -6098,7 +6235,7 @@ function budCatRowHtml(c){
         spct = sbud>0 ? Math.round(ss/sbud*100) : null;
       }
       detail += `<div style="display:flex;align-items:center;gap:5px;padding:4px 0 4px 14px;border-top:1px solid #F2F4F6">
-          <span style="flex:none;font-size:12px;font-weight:400;color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:42%">${sub}${cadNote}</span>
+          <span style="flex:none;font-size:12px;font-weight:400;color:${sActive?'var(--txt)':'var(--txt3)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:52%">${sub}${cadNote}${periodNote}</span>
           ${sbud>0?`<span style="flex:none;font-size:9px;color:var(--txt3);font-weight:400">${won(sbud)}</span>`:''}
           ${memoInputInlineHtml(c.major, sub)}
           <span style="font-size:12px;font-weight:400;color:${ss<0?'var(--green)':(sover?'var(--red)':'var(--txt)')};white-space:nowrap">${wonP(ss)}</span>
@@ -6734,12 +6871,32 @@ function computeFinanceCheckItems(ym){
     const varC = judge.checks.find(c=>c.label==='변동비');
     const budgetBad = (fixedC && fixedC.d==='red') || (varC && varC.d==='red');
     const budgetWarn = (fixedC && fixedC.d==='yellow') || (varC && varC.d==='yellow');
-    items.push({ label:'예산', ok: !budgetBad, warn: !budgetBad && budgetWarn,
+    // 둘 다 판정 불가(예산 미설정 등)면 초록 'OK'가 아니라 회색이어야 한다
+    const budGray = (!fixedC || fixedC.d==='gray') && (!varC || varC.d==='gray');
+    if(budGray) items.push({ label:'예산', ok:true, gray:true, text:'예산 판정 불가' });
+    else items.push({ label:'예산', ok: !budgetBad, warn: !budgetBad && budgetWarn,
       text: budgetBad ? '예산 초과' : budgetWarn ? '예산 임박' : '예산 OK' });
 
-    const saveC = judge.checks.find(c=>c.label==='저축률');
-    items.push({ label:'저축', ok: saveC && saveC.d!=='red', warn: saveC && saveC.d==='yellow',
-      text: saveC && saveC.d==='red' ? '저축 목표 미달' : saveC && saveC.d==='yellow' ? '저축 아쉬움' : '저축 목표 달성' });
+    // [버그] 저축 칩을 rptJudgeMonth에서 따로 가져오면서 두 가지 문제가 있었다.
+    //   ① 헤드라인은 computeMonthlyInsight로 계산하는데 칩은 다른 계산을 써서,
+    //      "저축 ₩0 / 250만 · 부족"이라고 써놓고 바로 아래 칩은 "저축 목표 달성"이라고 했다.
+    //   ② d==='gray'(수입 기록이 없어 판정 불가)일 때 red도 yellow도 아니라서
+    //      그대로 초록 '달성'으로 표시됐다.
+    //   → 헤드라인과 같은 계산(computeMonthlyInsight)을 정본으로 쓰고, 판정 불가는 회색으로 둔다.
+    const saveC = judge.checks.find(c=>c.label==='저축' || c.label==='저축률');
+    const insS = (typeof computeMonthlyInsight==='function') ? computeMonthlyInsight(ym) : null;
+    if(insS && insS.ok===null){
+      items.push({ label:'저축', ok:true, gray:true, text:'저축 판정 불가' });
+    } else if(insS){
+      const bad = insS.ok===false && insS.target>0 && insS.gap > insS.target*0.3;
+      items.push({ label:'저축', ok: insS.ok===true, warn: insS.ok===false && !bad,
+        text: insS.ok===true ? '저축 목표 달성' : bad ? '저축 목표 미달' : '저축 아쉬움' });
+    } else if(saveC && saveC.d==='gray'){
+      items.push({ label:'저축', ok:true, gray:true, text:'저축 판정 불가' });
+    } else {
+      items.push({ label:'저축', ok: saveC && saveC.d!=='red', warn: saveC && saveC.d==='yellow',
+        text: saveC && saveC.d==='red' ? '저축 목표 미달' : saveC && saveC.d==='yellow' ? '저축 아쉬움' : '저축 목표 달성' });
+    }
   } else {
     items.push({ label:'예산', ok:true, text:'데이터 없음', gray:true });
     items.push({ label:'저축', ok:true, text:'데이터 없음', gray:true });
@@ -8243,10 +8400,17 @@ function computeAnnualInsight(year){
   const catKeys = Object.keys(CAT_OUT_LABELS).filter(k=>catCadence(k)!=='event');
   const catStats = catKeys.map(k=>{
     const nk = normBudgetKey(k);
-    const vals = months.map(ym=> txByMonth[ym].filter(t=>t.type==='지출' && txCatKey(t)===nk).reduce((s,t)=>s+(Number(t.amount)||0),0));
+    const _p = outCatPred(k);
+    const vals = months.map(ym=> txByMonth[ym].filter(_p).reduce((s,t)=>s+(Number(t.amount)||0),0));
     const total = vals.reduce((a,b)=>a+b,0);
+    // [수정] 예전엔 '지금 예산 × 개월수'였다. 그러면 중간에 없어진 항목(예: 보람상조 7월 종료)이
+    //        1~12월 내내 있었던 것처럼 계산돼 예산이 과대 집계된다.
+    //        각 달의 예산을 그 달 기준으로 구해 더한다. 적용기간이 없으면 결과는 예전과 동일하다.
     const budMonthly = budgetByKey[nk] || 0;
-    const budTotal = budMonthly * months.length;
+    const _subs = CAT_OUT_SUBS[k] || (STATE.catMap && STATE.catMap['지출'] && STATE.catMap['지출'][k]) || [];
+    const budTotal = (typeof majorHasPeriodSub==='function' && majorHasPeriodSub(k, _subs))
+      ? months.reduce((a,ym)=> a + (budgetOf(k, _subs, ym)||0), 0)
+      : budMonthly * months.length;
     const diff = total - budTotal;
     const nonZeroN = vals.filter(v=>v>0).length;
     const slope = nonZeroN>=4 ? linRegSlope(vals) : null;
@@ -8497,9 +8661,28 @@ function renderRptHero(d){
   // 대신 칩은 "아래 섹션으로 내려가 볼 이유"만 담는다.
   if(d.totalExpense>0) chips.push([d.fixedTotal/d.totalExpense>=0.6?'#FFE9C2':'#D6F5E3', `고정비 비중 ${Math.round(d.fixedTotal/d.totalExpense*100)}%`]);
   if(d.overRank.length) chips.push(['#FFC9C4', `예산 초과 ${d.overRank.length}개 카테고리`]);
+  // [수정] 예전엔 '8개월 경과'라고 써놓고 제일 크게 쓴 판정이 저축률 하나뿐이었다.
+  //        1년을 요약하는 자리인데 판정이 한 개면 아래 섹션을 볼 이유가 안 생긴다.
+  //        저축률 · 예산 소진 · 순자산 증가 세 개를 나란히 둔다(모두 이미 계산된 값).
+  const budTot = (d.catStats||[]).reduce((a,c)=>a+(Number(c.budTotal)||0),0);
+  const spentJudged = (d.catStats||[]).reduce((a,c)=>a+(c.budTotal>0?(Number(c.total)||0):0),0);
+  const budPct = budTot>0 ? Math.round(spentJudged/budTot*100) : null;
+  const metric = (label, val, sub, color) => `
+    <div style="flex:1;min-width:0">
+      <div style="font-size:10.5px;color:rgba(255,255,255,.7);white-space:nowrap">${label}</div>
+      <div style="font-size:19px;font-weight:800;color:${color};letter-spacing:-.3px;font-variant-numeric:tabular-nums;line-height:1.3">${val}</div>
+      <div style="font-size:10px;color:rgba(255,255,255,.6);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sub}</div>
+    </div>`;
+  const saveColor = d.saveRate==null ? '#fff' : d.saveRate>=30 ? '#8FE7B7' : d.saveRate>=20 ? '#FFD98A' : '#FFB4AE';
+  const budColor  = budPct==null ? '#fff' : budPct>100 ? '#FFB4AE' : budPct>=90 ? '#FFD98A' : '#8FE7B7';
+  const nwColor   = nwDiff==null ? '#fff' : nwDiff>=0 ? '#8FE7B7' : '#FFB4AE';
   el.innerHTML = `
     <div class="coach-eyebrow">🗓️ ${d.year}년 ${d.isCurYear?`· ${d.months.length}개월 경과`:'· 연간 확정'}</div>
-    <div class="coach-num">${d.saveRate!=null?`저축률 ${d.saveRate}%`:`저축 ${won(d.totalSave)}`}</div>
+    <div style="display:flex;gap:12px;margin:9px 0 7px">
+      ${metric('저축률', d.saveRate!=null?`${d.saveRate}%`:'—', d.saveRate!=null?`저축 ${manW(d.totalSave)}`:'수입 기록 없음', saveColor)}
+      ${metric('예산 소진', budPct!=null?`${budPct}%`:'—', budPct!=null?`${manW(spentJudged)} / ${manW(budTot)}`:'예산 미설정', budColor)}
+      ${metric('순자산 증가', nwDiff!=null?`${nwDiff>=0?'+':'−'}${manW(Math.abs(nwDiff))}`:'—', nwDiff!=null?`${d.months.length}개월간`:'잔고 데이터 없음', nwColor)}
+    </div>
     <div class="coach-sub">${rptHeadlineText(d)}</div>
     <div class="coach-chips">${chips.map(c=>`<span class="coach-chip" style="color:${c[0]}">${c[1]}</span>`).join('')}</div>`;
 }
@@ -8637,11 +8820,13 @@ function rptUnifiedTable(year){
     // 대분류명에 트레일링 공백 등이 섞여 있어도 매칭된다. buildOutCats()는 이미 이렇게 하고 있었는데
     // 여기만 정규화를 빼먹어서, 시트 쪽 표기가 조금만 어긋나도 그 카테고리 전체가 통째로 0으로 보였다.
     const nk = normBudgetKey(catKey);
-    return months.map(ym=> txByMonth[ym].filter(t=>t.type==='지출' && !isEventTx(t) && txCatKey(t)===nk).reduce((s,t)=>s+(Number(t.amount)||0),0));
+    const _p = outCatPred(catKey);
+    return months.map(ym=> txByMonth[ym].filter(t=>_p(t) && !isEventTx(t)).reduce((s,t)=>s+(Number(t.amount)||0),0));
   }
   function monthlyValsForCat(catKey){
     const nk = normBudgetKey(catKey);
-    return months.map(ym=> txByMonth[ym].filter(t=>t.type==='지출' && txCatKey(t)===nk).reduce((s,t)=>s+(Number(t.amount)||0),0));
+    const _p = outCatPred(catKey);
+    return months.map(ym=> txByMonth[ym].filter(_p).reduce((s,t)=>s+(Number(t.amount)||0),0));
   }
   function avgOfVals(vals){
     const isCurLast = months[months.length-1]===nowYm;
@@ -8823,7 +9008,9 @@ function rptDrillTx(kind, key, ym){
   if(kind==='income-all') return allTx.filter(t=>t.type==='수입');
   if(kind==='save') return allTx.filter(isSaveTx);
   if(kind==='expense-all') return allTx.filter(t=>t.type==='지출');
-  return allTx.filter(t=>t.type==='지출' && txCatKey(t)===key);
+  // [버그] 표 셀은 카테고리 귀속 규칙으로 합산하는데 드릴다운은 거래의 대분류만 비교해서,
+  //        셀에 금액이 있는데도 모달이 '내역 없음'으로 비는 경우가 있었다. 같은 규칙을 쓴다.
+  return allTx.filter(outCatPred(key));
 }
 // ── [신규] 연간 카테고리 드릴다운 ───────────────────────────────────
 // 고정비/변동비 막대, 연간 예산 페이스 막대를 누르면 그 카테고리의
@@ -8835,7 +9022,7 @@ function rptShowCatYear(catKey, label){
   const nowYm = currentMonthStr();
   const nk = normBudgetKey(catKey);
   const all = (STATE.transactions.length ? STATE.transactions : DEMO)
-    .filter(t=>!isRemovedTx(t) && t.type==='지출' && String(t.date).slice(0,4)===String(year) && txCatKey(t)===nk);
+    .filter(t=>!isRemovedTx(t) && String(t.date).slice(0,4)===String(year) && outCatPred(catKey)(t));
   const budget = STATE.budget||{};
   let budMonthly = 0;
   Object.keys(budget).forEach(k=>{ if(normBudgetKey(k)===nk) budMonthly += (Number(budget[k])||0); });
@@ -8847,7 +9034,11 @@ function rptShowCatYear(catKey, label){
     months.push(ym);
   }
   const total = all.reduce((s,t)=>s+(Number(t.amount)||0),0);
-  const budTotal = budMonthly * months.length;
+  // 연간 예산도 '각 달의 예산 합'으로 (적용기간이 없으면 곱셈과 결과 동일)
+  const _subsY = CAT_OUT_SUBS[catKey] || (STATE.catMap && STATE.catMap['지출'] && STATE.catMap['지출'][catKey]) || [];
+  const budTotal = (typeof majorHasPeriodSub==='function' && majorHasPeriodSub(catKey, _subsY))
+    ? months.reduce((a,ym)=> a + (budgetOf(catKey, _subsY, ym)||0), 0)
+    : budMonthly * months.length;
   const pct = budTotal>0 ? Math.round(total/budTotal*100) : null;
   const dotC = pct===null ? 'var(--txt3)' : pct<=100 ? 'var(--green)' : pct<=110 ? 'var(--warning)' : 'var(--red)';
 
@@ -9197,7 +9388,7 @@ function renderOverspendTeaser(){
 
   const rows = Object.keys(CAT_OUT_LABELS).map(major=>{
     const k = normBudgetKey(major);
-    const spend = mtx.filter(t=>txCatKey(t)===k).reduce((s,t)=>s+(Number(t.amount)||0),0);
+    const spend = mtx.filter(outCatPred(major)).reduce((s,t)=>s+(Number(t.amount)||0),0);
     const bud = budgetOf(major);
     const overBud = bud>0 ? spend-bud : 0;
     const pct = bud>0 ? Math.round(spend/bud*100) : null;
@@ -9224,7 +9415,7 @@ function renderOverspendTeaser(){
       if(r.spike>0)   tags.push(`<span style="font-size:10px;font-weight:700;color:var(--warning)">평소 +${manW(r.spike)}</span>`);
       let detail = '';
       if(open){
-        const txs = mtx.filter(t=>txCatKey(t)===r.key).sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+        const txs = mtx.filter(outCatPred(r.major)).sort((a,b)=>String(b.date).localeCompare(String(a.date)));
         detail = `<div style="max-height:150px;overflow-y:auto;-webkit-overflow-scrolling:touch;margin:2px 0 6px">
           ${txs.length ? txs.map(t=>`<div style="display:flex;align-items:center;gap:6px;padding:3px 0 3px 22px;font-size:11.5px">
               <span style="flex:none;color:var(--txt3);width:24px">${parseInt(String(t.date).slice(8,10))}일</span>
@@ -9790,7 +9981,8 @@ function rptJudgeMonth(ym){
       if(!pN) return;                       // 월별 카테고리는 보정 불필요
       const mk = normBudgetKey(major);
       const pMonths = periodMonthsUpTo(ym, pN);
-      const inCat = t => t.type==='지출' && txCatKey(t)===mk && !isEventTx(t);
+      const _p = outCatPred(major);
+      const inCat = t => _p(t) && !isEventTx(t);
       const monthFix = tx.filter(t=>inCat(t) &&  isFixedTx(t)).reduce((a,t)=>a+(Number(t.amount)||0),0);
       const monthVar = tx.filter(t=>inCat(t) && !isFixedTx(t)).reduce((a,t)=>a+(Number(t.amount)||0),0);
       const pTx = allTx.filter(t=>!isRemovedTx(t) && pMonths.indexOf(String(t.date).slice(0,7))>=0 && inCat(t));
@@ -10045,13 +10237,16 @@ function renderMonthlyChart(){
   const avgIn =Math.round(done.reduce((s,d)=>s+d.mIn,0)/nAvg);
   const avgOut=Math.round(done.reduce((s,d)=>s+d.mOut,0)/nAvg);
   const BH=132, COLGAP=6;
-  const mx=Math.max(...mdata.map(d=>Math.max(d.mIn,d.mOut)),1);
+  // [수정] 저축 막대를 추가했으므로 스케일 최대값에도 저축을 넣는다.
+  //        (안 넣으면 저축이 수입보다 큰 달에 막대가 차트 위로 삐져나간다)
+  const mx=Math.max(...mdata.map(d=>Math.max(d.mIn,d.mOut,d.mSave)),1);
   const avgOutY=BH-Math.round(avgOut/mx*BH), avgInY=BH-Math.round(avgIn/mx*BH);
 
   let H=`<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;font-size:10.5px;color:var(--txt3);margin-bottom:8px">
     <span style="display:flex;gap:10px">
       <span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--c-in);margin-right:3px"></span>수입</span>
       <span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--c-out);margin-right:3px"></span>지출</span>
+      <span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--blue);margin-right:3px"></span>저축</span>
       <span><span style="display:inline-block;width:12px;height:0;border-top:2px dashed var(--txt3);margin-right:3px;vertical-align:3px"></span>월평균</span>
     </span>
     <span>막대를 누르면 그 달 상세가 아래에 나와요</span>
@@ -10062,10 +10257,12 @@ function renderMonthlyChart(){
   H+=mdata.map(d=>{
     const hIn=d.has?Math.max(d.mIn>0?3:0,Math.round(d.mIn/mx*BH)):0;
     const hOut=d.has?Math.max(d.mOut>0?3:0,Math.round(d.mOut/mx*BH)):0;
+    const hSave=d.has?Math.max(d.mSave>0?3:0,Math.round(d.mSave/mx*BH)):0;
     const sel=CHART_SEL===d.ym;
-    return `<div onclick="chartSelectMonth('${d.ym}')" title="${d.m}월 수입 ${won(d.mIn)} · 지출 ${won(d.mOut)}" style="flex:1;min-width:0;display:flex;align-items:flex-end;gap:2px;height:${BH}px;cursor:pointer;opacity:${d.has?(CHART_SEL&&!sel?'0.55':'1'):'0.25'}">
+    return `<div onclick="chartSelectMonth('${d.ym}')" title="${d.m}월 수입 ${won(d.mIn)} · 지출 ${won(d.mOut)} · 저축 ${won(d.mSave)}" style="flex:1;min-width:0;display:flex;align-items:flex-end;gap:1px;height:${BH}px;cursor:pointer;opacity:${d.has?(CHART_SEL&&!sel?'0.55':'1'):'0.25'}">
       <div style="flex:1;min-width:0;height:${hIn}px;background:var(--c-in);border-radius:2px 2px 0 0"></div>
       <div style="flex:1;min-width:0;height:${hOut}px;background:var(--c-out);border-radius:2px 2px 0 0"></div>
+      <div style="flex:1;min-width:0;height:${hSave}px;background:var(--blue);border-radius:2px 2px 0 0"></div>
     </div>`;
   }).join('')+`</div>`;
   // x축 + 그 달 저축률: 막대 아래에 숫자로 붙여 별도 차트를 만들지 않음
