@@ -118,7 +118,11 @@ body { background: var(--bg); color: var(--txt); min-height: 100vh; max-width: 4
 #toast { position: fixed; bottom: 85px; left: 50%; transform: translateX(-50%); background: rgba(25, 31, 40, 0.9); color: #FFF; padding: 12px 24px; border-radius: 99px; font-size: 14px; font-weight: 500; z-index: 2000; display: none; }
 
 /* IA redesign: dashboard-first hierarchy, restrained surfaces */
-:root { --bg:#F7F8FA; --card:#FFFFFF; --card2:#F2F5F8; --txt:#191F28; --txt2:#4E5968; --txt3:#8B95A1; --blue:#3182F6; --blue-bg:#E8F3FF; --green:#18A957; --green-bg:#EAF8EF; --red:#F04452; --red-bg:#FFF0F1; --warning:#E08A00; --warn-bg:#FFF6E5; --radius:18px; }
+:root { --bg:#F7F8FA; --card:#FFFFFF; --card2:#F2F5F8; --txt:#191F28; --txt2:#4E5968; --txt3:#8B95A1; --blue:#3182F6; --blue-bg:#E8F3FF;
+  /* [색 정리] 예전엔 이 블록이 위쪽 :root의 차분한 파스텔 팔레트를 채도 높은 값으로 통째로 덮어쓰고 있었다.
+     그래서 초록/노랑/빨강이 죄다 진하게 뜨면서 화면이 알록달록해졌다. 원칙: 색은 "예산 초과(빨강)"에만 쓰고
+     나머지(정상/주의)는 거의 색이 안 보이는 회색 톤으로 낮춘다 — 빨강 하나만 눈에 띄어야 진짜 위험이 바로 보인다. */
+  --green:#7C8A80; --green-bg:#EEF1EE; --warning:#B98A4A; --warn-bg:#F5F0E5; --red:#E2564F; --red-bg:#FBEEEC; --radius:18px; }
 body { padding-bottom:88px; }
 .topnav { background:rgba(255,255,255,.92); padding:0 20px; }
 .topnav-logo { color:var(--txt); letter-spacing:-.8px; }
@@ -595,15 +599,7 @@ body { padding-bottom:88px; }
     <div id="h-goal-summary"></div>
   </section>
 
-  <!-- 이번 달 진단은 분석 › 이번달의 히어로 판정이 본체다. 홈에는 한 줄 티저만 둔다.
-       (예전엔 홈에 같은 진단을 큰 히어로 카드로 한 번 더 그려서 완전히 중복이었고,
-        홈의 주인공인 순자산을 아래로 밀어냈다) -->
-  <section class="card" id="h-month-summary-card" onclick="goToTab('analysis')" style="cursor:pointer">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-      <div style="flex:1;min-width:0" id="h-month-summary"></div>
-      <span style="font-size:12px;font-weight:600;color:var(--blue);white-space:nowrap">분석 ›</span>
-    </div>
-  </section>
+  <!-- [삭제] 이번 달 진단 티저 — 홈에서 필요없다는 요청으로 제거함 (본체는 여전히 분석 › 이번달에 있음) -->
 
   <!-- 투자 미니요약 (투자 탭 딥링크) -->
   <section class="card" id="h-invest-summary-card" onclick="goToTab('invest')" style="cursor:pointer">
@@ -2281,12 +2277,15 @@ function fetchFromSheet(silent) {
           const acctGroupByKey = {};
           STATE.acctsDef.forEach(a => { acctGroupByKey[a.key] = a.group; });
           data.config.initBalRaw.forEach(r => {
-            const raw = Number(r.balance||r.init||r.amount||0);
+            // initBalRaw 항목엔 실제 잔액 숫자가 없다(key/label/group/goal만 있음).
+            // 실제 잔액은 플랫 맵 data.config.initBal[key]에 들어있으니 거기서 가져온다.
+            const raw = Number((data.config.initBal && data.config.initBal[r.key]) || 0);
             STATE.initBal[r.key] = signDebtBal(acctGroupByKey[r.key], raw);
           });
-          // ⚠ data.config.initBal(플랫 맵)은 시트 원본 값을 부호 보정 없이 그대로 담고 있어서,
-          //   이걸로 덮어쓰면 위에서 맞춘 부채 부호가 다시 깨진다. initBalRaw가 있으면 그걸로 충분하니
-          //   플랫 맵으로는 덮어쓰지 않고, initBalRaw 자체가 없는 구버전 데이터일 때만 대체용으로 쓴다.
+          // ⚠ 위에서 이미 플랫 맵의 실제 값 + 부채 부호 보정까지 다 반영했으니, 아래에서
+          //   플랫 맵으로 통째로 덮어쓰면(부호 보정 전 원본으로) 방금 맞춘 부호가 다시 깨진다.
+          //   initBalRaw가 있으면 절대 통째로 덮어쓰지 않고, initBalRaw 자체가 없는
+          //   구버전 응답일 때만 대체용으로 쓴다.
         } else if(data.config.initBal){
           STATE.initBal = data.config.initBal;
         }
@@ -7230,12 +7229,19 @@ function renderCardDueSummary(){
     ${FIXED_MAJORS.length ? '' : `<div style="margin-top:8px;padding:8px 10px;border-radius:8px;background:#FFF6E5;font-size:11px;color:#8A6A20;line-height:1.5">
       ⚠️ 지금 <b>고정비로 체크된 대분류가 하나도 없어요</b>. 설정 › 카테고리 › 지출에서 <b>고정비</b> 칸을 켜주세요.</div>`}
     ${cardRows ? `<div style="margin-top:10px;padding-top:9px;border-top:1px solid #F2F4F6">
-      <div style="font-size:11px;color:var(--txt3);margin-bottom:3px">카드별 사용액</div>
-      ${cardRows}
+      <div onclick="moCardRowsToggle()" style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;font-size:11px;color:var(--txt3);margin-bottom:3px">
+        <span>카드별 사용액</span>
+        <span id="mo-cardrows-arrow" style="font-size:10px;color:var(--blue)">${window.MO_CARDROWS_OPEN?'▾':'▸'}</span>
+      </div>
+      <div id="mo-cardrows-body" style="display:${window.MO_CARDROWS_OPEN?'block':'none'}">${cardRows}</div>
     </div>` : ''}
     <div style="font-size:10.5px;color:var(--txt3);margin-top:9px;line-height:1.5">* 이 달에 <b>발생한</b> 지출 기준이에요. 카드값이 실제로 언제 빠져나가는지는 가계부 › 잔고 › 카드 결제 현황에서 봅니다.</div>`;
 }
 
+function moCardRowsToggle(){
+  window.MO_CARDROWS_OPEN = !window.MO_CARDROWS_OPEN;
+  if(typeof renderCardDueSummary==='function') renderCardDueSummary();
+}
 function goToLedgerBalance(){
   const btn = document.querySelector('.tab-btn[data-tab="ledger"]');
   if(btn) changeTab('ledger', btn);
@@ -10134,13 +10140,13 @@ function renderMonthHistoryStrip(){
     const isCur = ym === curYm;
     const j = future ? null : rptJudgeMonth(ym);
     const dot = j ? dotC[j.dot] : 'var(--txt3)';
-    cells.push(`<div ${future?'':`onclick="moHistoryJump('${ym}')"`} style="cursor:${future?'default':'pointer'};background:${isCur?'var(--blue)':'var(--card2)'};border-radius:10px;padding:9px 4px;text-align:center;opacity:${future?'0.35':'1'}">
-      <b style="display:block;font-size:11px;color:${isCur?'#fff':'var(--txt2)'};margin-bottom:4px">${m}월</b>
-      <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${isCur?'#fff':dot}"></span>
+    cells.push(`<div ${future?'':`onclick="moHistoryJump('${ym}')"`} style="cursor:${future?'default':'pointer'};background:var(--card2);border:2px solid ${isCur?'var(--blue)':'transparent'};border-radius:10px;padding:8px 4px;text-align:center;opacity:${future?'0.35':'1'}">
+      <b style="display:block;font-size:11px;color:var(--txt2);margin-bottom:4px">${m}월</b>
+      <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dot}"></span>
     </div>`);
   }
   el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(42px,1fr));gap:6px">${cells.join('')}</div>
-    <div style="font-size:10.5px;color:var(--txt3);margin-top:8px">파란 칸이 지금 보고 있는 달 · 점 색은 그 달 재무 건강검진 결과예요</div>`;
+    <div style="font-size:10.5px;color:var(--txt3);margin-top:8px">파란 테두리가 지금 보고 있는 달 · 점 색은 그 달 재무 건강검진 결과예요</div>`;
 }
 function moHistoryJump(ym){
   const anchor = (typeof budCaptureAnchor==='function') ? budCaptureAnchor() : null;
