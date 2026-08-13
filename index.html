@@ -968,6 +968,12 @@ body { padding-bottom:88px; }
       </div>
     </div>
 
+    <!-- ④-b2 목적통장 (🎯 목적자금 계좌 ↔ 연동 지출 카테고리) — 연동 계좌가 없으면 카드 자체를 숨김 -->
+    <div id="rpt-purpose-card" style="display:none">
+      <div class="card-title" style="margin-bottom:8px;padding-left:2px">🎯 목적통장 <small style="font-size:11px;color:var(--txt3);font-weight:500">덕질·비상금처럼 연동해둔 계좌 · 분기 적립 제안</small></div>
+      <div id="purpose-body"></div>
+    </div>
+
     <!-- ④-c 저축 시뮬레이션은 설정 탭으로 이동했다.
          연간 리포트는 '지난 8개월이 어땠나'를 읽는 화면인데, 시뮬레이션은 값을 넣어보는 도구라
          성격이 달랐다. 매달 보는 화면에 입력 폼이 섞여 있으면 읽는 흐름이 끊긴다. -->
@@ -1206,7 +1212,7 @@ const LS = {
 // ── 카테고리 기본값 ────────────────────────────────────────────────
 // 여기 값은 '처음 켰을 때의 초안'일 뿐이다. 설정 탭에서 고치면 CFG가 이 객체들을
 // 통째로 다시 채운다(cfgApplyCategories). 그래서 const 가 아니라 let 이다.
-let CAT_OUT_SUBS = {'주거비':['월세/이자','관리비','공과금'],'보험':['보험료'],'통신비':['휴대폰','인터넷'],'식비':['장보기','배달','외식','카페'],'생활용품':['생활소모품','가전/가구'],'꾸밈비':['의류/잡화','미용'],'자기계발':['수강료','도서','운동'],'건강':['병원/약국','건강보조'],'교통비':['대중교통','택시','주유'],'경조사':['경조사비'],'문화생활':['공연/전시','구독'],'기타':['기타']};
+let CAT_OUT_SUBS = {'주거비':['월세/이자','관리비','공과금'],'보험':['보험료'],'통신비':['휴대폰','인터넷'],'식비':['장보기','배달','외식','카페'],'생활용품':['생활소모품','가전/가구'],'꾸밈비':['의류/잡화','미용'],'자기계발':['수강료','도서','운동'],'건강':['병원/약국','건강보조'],'교통비':['대중교통','택시','주유'],'경조사':['경조사비'],'문화생활':['공연/전시','구독'],'덕질':['콘서트/팬미팅','앨범/굿즈','멤버십/구독','기타'],'기타':['기타']};
 let CAT_IN_SUBS = {'근로소득':['월급','상여'],'금융소득':['이자','배당'],'기타소득':['환급','부수입']};
 let CAT_MV_SUBS = {'카드납부':[],'예적금':['적금','청약','대출원금'],'연금':['개인연금'],'주식':['ISA','일반투자'],'목적':['목적자금'],'비상금':['비상금'],'계좌이체':['계좌이체']};
 
@@ -1882,6 +1888,7 @@ function setAnalysisSub(subName, el) {
       if(typeof renderMonthlyChart==='function') renderMonthlyChart();
       if(typeof renderAnnualReport==='function') renderAnnualReport();
       if(typeof renderGoals==='function') renderGoals();
+      if(typeof renderPurposeAccounts==='function') renderPurposeAccounts();
       if(typeof renderSavingsSim==='function') renderSavingsSim();
     }
   } catch(err) {
@@ -2750,6 +2757,94 @@ function renderNetWorthTrend(){
 }
 
 
+// ══════════════════════════════════════════════════════════════════
+//  목적통장 (🎯 목적자금 계좌 ↔ 연동 지출 카테고리)
+//  덕질통장·비상금통장처럼 "이 계좌로 저 카테고리 지출을 충당한다"고 연결해두면,
+//  분기당 얼마를 더 채워둬야 하는지 제안한다.
+//  기준: 목표금액이 있으면 (목표-현재잔액)을 남은 개월수로 나눔 (목표시점 없으면 올해 12월 기준),
+//        목표금액이 없으면 최근 12개월 그 카테고리 실제 지출 평균으로 폴백.
+//  주의: 이 카테고리들은 지출 집계에서 절대 빠지지 않는다 — 여기서는 계좌 잔액 관리용으로만 참고한다.
+// ══════════════════════════════════════════════════════════════════
+function purposeLinkedCats(a){
+  return String(a.linkedCat||'').split(',').map(s=>s.trim()).filter(Boolean);
+}
+function purposeCatSpend(cats, fromYm, toYm){
+  const all = (STATE.transactions.length ? STATE.transactions : DEMO);
+  return all.filter(t=>{
+    if(isRemovedTx(t) || t.type!=='지출') return false;
+    if(cats.indexOf(t.major)<0) return false;
+    const ym = String(t.date).slice(0,7);
+    return ym>=fromYm && ym<=toYm;
+  }).reduce((s,t)=>s+(Number(t.amount)||0),0);
+}
+function purposeAcctList(){
+  return (CFG.accounts||[]).filter(a=>a.group==='contract' && purposeLinkedCats(a).length);
+}
+function purposeSuggest(a){
+  const cb = calcBalances();
+  const cur = cb(a.key) || 0;
+  const cats = purposeLinkedCats(a);
+  const goal = Number(a.goal)||0;
+  let quarterly=0, monthly=0, basis='';
+  if(goal>0){
+    const now = new Date();
+    const curY = now.getFullYear(), curM = now.getMonth()+1;
+    let targetYm = (a.goalDate && /^\d{4}-\d{2}$/.test(a.goalDate)) ? a.goalDate : (curY+'-12');
+    let monthsLeft = (parseInt(targetYm.slice(0,4),10)-curY)*12 + (parseInt(targetYm.slice(5,7),10)-curM) + 1;
+    if(monthsLeft<1) monthsLeft = 12; // 목표시점이 이미 지났으면 1년 페이스로 대체 제안
+    const remain = Math.max(0, goal-cur);
+    monthly = Math.ceil(remain/monthsLeft);
+    quarterly = monthly*3;
+    basis = '목표금액 기준 (' + targetYm + '까지)';
+  } else {
+    const months = nwTrendMonths(12);
+    if(months.length){
+      const spend = purposeCatSpend(cats, months[0], months[months.length-1]);
+      const q = Math.max(1, Math.round(months.length/3));
+      quarterly = Math.round(spend/q);
+      monthly = Math.round(quarterly/3);
+    }
+    basis = '최근 ' + (nwTrendMonths(12).length) + '개월 ' + cats.join('·') + ' 지출 평균 기준';
+  }
+  return { cur, goal, quarterly, monthly, basis, cats };
+}
+function renderPurposeAccounts(){
+  const el = document.getElementById('purpose-body');
+  if(!el) return;
+  const wrap = document.getElementById('rpt-purpose-card');
+  const list = purposeAcctList();
+  if(!list.length){
+    if(wrap) wrap.style.display='none';
+    return;
+  }
+  if(wrap) wrap.style.display='';
+  const btnHtml = `<button onclick="exportPurposeSheet()" style="font-size:11px;padding:5px 11px;border:1px solid var(--blue);border-radius:99px;background:var(--blue-bg);color:var(--blue);cursor:pointer;margin-bottom:8px" title="목적통장 계좌별 잔액·목표·제안 적립액을 구글 시트 탭으로 내보냅니다">📊 시트로 내보내기</button>`;
+  el.innerHTML = btnHtml + list.map(a=>{
+    const s = purposeSuggest(a);
+    const goalHtml = s.goal>0
+      ? `<div style="font-size:11px;color:var(--txt3)">목표 ${won(s.goal)} · 진행 ${Math.min(999,Math.round(s.cur/s.goal*100))}%</div>`
+      : '';
+    return `<div style="background:var(--card2);border-radius:12px;padding:12px 14px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <span style="font-size:13px;font-weight:800;color:var(--txt)">🎯 ${esc(a.key)}</span>
+        <span style="font-size:13px;font-weight:800;color:var(--txt)">${won(s.cur)}</span>
+      </div>
+      <div style="font-size:11px;color:var(--txt3);margin-top:2px">연동 카테고리: ${s.cats.join(', ')}</div>
+      ${goalHtml}
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <div style="flex:1;background:var(--card);border-radius:9px;padding:8px 10px">
+          <div style="font-size:10px;color:var(--txt3)">제안 월 적립액</div>
+          <div style="font-size:14px;font-weight:800;color:var(--blue)">${won(s.monthly)}</div>
+        </div>
+        <div style="flex:1;background:var(--card);border-radius:9px;padding:8px 10px">
+          <div style="font-size:10px;color:var(--txt3)">제안 분기 적립액</div>
+          <div style="font-size:14px;font-weight:800;color:var(--blue)">${won(s.quarterly)}</div>
+        </div>
+      </div>
+      <div style="font-size:10px;color:var(--txt3);margin-top:6px">${s.basis}</div>
+    </div>`;
+  }).join('');
+}
 function computeGoalAccts(){
   const def = STATE.acctsDef||[];
   if(!def.length || !STATE.initBal) return [];
@@ -3826,7 +3921,7 @@ function saveEdit() {
 // ════════════════════════════════════════════════════════════
 
 // ── 카테고리 이모지 라벨 (예산 키 매칭 폴백용) ──
-let CAT_OUT_LABELS = {'주거비':'🏠 주거비','보험':'🗃️ 보험','통신비':'📞 통신비','식비':'🍽️ 식비','생활용품':'🛒 생활용품','꾸밈비':'👗 꾸밈비','자기계발':'👩‍🎓 자기계발','건강':'😷 건강','교통비':'🚌 교통비','경조사':'🎁 경조사','문화생활':'📺 문화생활','기타':'✔️ 기타'};
+let CAT_OUT_LABELS = {'주거비':'🏠 주거비','보험':'🗃️ 보험','통신비':'📞 통신비','식비':'🍽️ 식비','생활용품':'🛒 생활용품','꾸밈비':'👗 꾸밈비','자기계발':'👩‍🎓 자기계발','건강':'😷 건강','교통비':'🚌 교통비','경조사':'🎁 경조사','문화생활':'📺 문화생활','덕질':'🎤 덕질','기타':'✔️ 기타'};
 let CAT_IN_LABELS = {'근로소득':'👷 근로소득','금융소득':'💵 금융소득','기타소득':'💰 기타소득'};
 let CAT_MV_LABELS = {'카드납부':'💳 카드납부','계좌이체':'🔄 계좌이체','예적금':'예적금','연금':'연금','주식':'주식','목적':'목적','비상금':'비상금'};
 // 대분류를 시트가 기대하는 라벨(이모지) 형식으로 변환. 이미 라벨이면 그대로 정규화 매칭.
@@ -3945,10 +4040,16 @@ function fillBudgetByKey(out, budget){
 }
 // 이 소분류가 해당 월에 예산으로 살아있는지 — 적용기간 밖이면 예산에서 뺀다.
 // 과거 달을 볼 때는 그 달 기준으로 판정하므로, 예전 100% 판정이 나중 설정 때문에 흔들리지 않는다.
+// [신규] 다구간(1차/2차 등 기간별 다른 금액)이 있으면 그 구간들 중 하나라도 해당 월을 덮으면 살아있는 걸로 본다.
 function subActiveIn(sub, ym){
+  const m = String(ym||'').slice(0,7);
+  const periods = (STATE.subPeriods||{})[stripSp(sub)];
+  if(periods && periods.length){
+    if(!m) return true;
+    return periods.some(p => (!p.from || m>=p.from) && (!p.to || m<=p.to));
+  }
   const p = (STATE.subPeriod||{})[stripSp(sub)];
   if(!p) return true;
-  const m = String(ym||'').slice(0,7);
   if(!m) return true;
   if(p.from && m < p.from) return false;
   if(p.to   && m > p.to)   return false;
@@ -3961,7 +4062,16 @@ function majorHasPeriodSub(major, subList){
   return subs.some(sn => !!subPeriodOf(sn));
 }
 function subBudgetOf(major, sub, ym){
-  if(!subActiveIn(sub, ym || (typeof BUD_MONTH!=='undefined' ? BUD_MONTH : currentMonthStr()))) return 0;
+  const _ym = ym || (typeof BUD_MONTH!=='undefined' ? BUD_MONTH : currentMonthStr());
+  // [신규] 다구간 예산 — 1차는 이 금액, 2차는 다른 금액처럼 시기별로 금액이 바뀌는 경우.
+  // 있으면 이 값이 최종 답이고(0원도 유효한 답), 아래 기존 로직은 타지 않는다.
+  const periods = (STATE.subPeriods||{})[stripSp(sub)];
+  if(periods && periods.length){
+    const m = String(_ym||'').slice(0,7);
+    const hit = periods.find(p => (!p.from || m>=p.from) && (!p.to || m<=p.to));
+    return hit ? (Number(hit.amount)||0) : 0;
+  }
+  if(!subActiveIn(sub, _ym)) return 0;
   const sb = STATE.subBudget || {};
   const subT = String(sub||'').trim();
   function findIn(bucket){
@@ -4633,12 +4743,89 @@ function cfgPeriodOf(c, sub){
   const m = ((c.subMeta||{})[sub]) || {};
   return { from: m.from||'', to: m.to||'' };
 }
+// ── [신규] 소분류 다구간 예산 (1차 기간 금액 A, 2차 기간 금액 B, ...) ──
+// c.subMeta[sub].periods = [{from,to,amount}, ...] — 있으면 단일 from/to+subBudget보다 우선.
+function cfgPeriodsOf(c, sub){
+  const m = ((c.subMeta||{})[sub]) || {};
+  return Array.isArray(m.periods) ? m.periods : null;
+}
+// 단일기간(from/to + subBudget 금액)을 다구간 배열로 전환하고 새 빈 구간을 하나 추가
+function cfgSubPeriodsInit(kind, i, sub){
+  const c = (CFG.categories[kind]||[])[i]; if(!c) return;
+  c.subMeta = c.subMeta || {};
+  const m = c.subMeta[sub] = c.subMeta[sub] || {};
+  const existingAmt = Number((c.subBudget||{})[sub]) || 0;
+  m.periods = [
+    { from: m.from||'', to: m.to||'', amount: existingAmt },
+    { from: '', to: '', amount: 0 }
+  ];
+  cfgSaveLocal(); cfgApply(); renderCfgCategories();
+}
+function cfgSubPeriodAdd(kind, i, sub){
+  const c = (CFG.categories[kind]||[])[i]; if(!c) return;
+  const m = (c.subMeta||{})[sub]; if(!m || !Array.isArray(m.periods)) return;
+  m.periods.push({from:'', to:'', amount:0});
+  cfgSaveLocal(); cfgApply(); renderCfgCategories();
+}
+function cfgSubPeriodDel(kind, i, sub, pidx){
+  const c = (CFG.categories[kind]||[])[i]; if(!c) return;
+  const m = (c.subMeta||{})[sub]; if(!m || !Array.isArray(m.periods)) return;
+  m.periods.splice(pidx,1);
+  if(m.periods.length<=1){
+    // 구간이 1개 이하로 줄면 단일모드로 되돌린다 (남은 1개 값을 from/to+subBudget에 다시 반영)
+    if(m.periods.length===1){
+      m.from = m.periods[0].from||''; m.to = m.periods[0].to||'';
+      c.subBudget = c.subBudget || {}; c.subBudget[sub] = m.periods[0].amount||0;
+    }
+    delete m.periods;
+  }
+  cfgSaveLocal(); cfgApply(); renderCfgCategories();
+}
+function cfgSubPeriodSet(kind, i, sub, pidx, field, val){
+  const c = (CFG.categories[kind]||[])[i]; if(!c) return;
+  const m = (c.subMeta||{})[sub]; if(!m || !Array.isArray(m.periods)) return;
+  const p = m.periods[pidx]; if(!p) return;
+  if(field==='amount') p.amount = Number(String(val).replace(/[^0-9-]/g,''))||0;
+  else p[field] = String(val||'').trim().slice(0,7);
+  cfgSaveLocal(); cfgApply(); renderCfgCategories();
+}
 // 소분류 바로 아래에 붙는 '적용기간' 줄 — 값이 있거나 편집 모드일 때만 보인다
 function cfgSubPeriodRow(kind, i, c, sn){
-  const p = cfgPeriodOf(c, sn);
   const editing = !!CFG_PERIOD_OPEN[kind+'|'+i];
-  if(!editing && !p.from && !p.to) return '';
   const inp = 'padding:4px 6px;border:1px solid #E5E8EB;border-radius:7px;font-size:11px;background:#FFF;width:104px;font-family:inherit;color:var(--txt2);';
+  const numInp = 'padding:4px 6px;border:1px solid #E5E8EB;border-radius:7px;font-size:11px;background:#FFF;width:96px;font-family:inherit;color:var(--txt2);text-align:right;';
+  const periods = cfgPeriodsOf(c, sn);
+
+  if(periods){
+    // ── 다구간 모드: 구간마다 시작~끝 + 금액을 따로 적는다 ──
+    if(!editing) {
+      const label = periods.map(p=>`${p.from||'처음'}~${p.to||'계속'} ${won(p.amount||0)}`).join(' · ');
+      return `<div style="${CT.rowSub}padding:0 0 6px"><span></span><span></span>
+        <div style="grid-column:3 / -1;margin-left:12px;font-size:10.5px;color:var(--warning);font-weight:600">📅 ${label}</div></div>`;
+    }
+    const rows = periods.map((p,pidx)=>`
+      <div style="grid-column:3 / -1;margin-left:12px;display:flex;align-items:center;gap:5px;flex-wrap:wrap;font-size:10.5px;color:var(--txt3)">
+        <span>${pidx+1}차</span>
+        <input type="month" value="${esc(p.from)}" title="시작월 (비우면 처음부터)"
+          onchange="cfgSubPeriodSet('${kind}',${i},'${jq(sn)}',${pidx},'from',this.value)" style="${inp}">
+        <span>~</span>
+        <input type="month" value="${esc(p.to)}" title="종료월 (이 달까지 반영)"
+          onchange="cfgSubPeriodSet('${kind}',${i},'${jq(sn)}',${pidx},'to',this.value)" style="${inp}">
+        <input value="${Number(p.amount)||''}" placeholder="금액" inputmode="numeric" title="이 구간의 예산 금액"
+          onchange="cfgSubPeriodSet('${kind}',${i},'${jq(sn)}',${pidx},'amount',this.value)" style="${numInp}">
+        <button onclick="cfgSubPeriodDel('${kind}',${i},'${jq(sn)}',${pidx})" title="이 구간 삭제"
+          style="border:none;background:none;color:var(--txt3);cursor:pointer;font-size:12px">✕</button>
+      </div>`).join('');
+    return `<div style="${CT.rowSub}padding:0 0 4px"><span></span><span></span></div>` + rows +
+      `<div style="${CT.rowSub}padding:2px 0 8px"><span></span><span></span>
+        <button onclick="cfgSubPeriodAdd('${kind}',${i},'${jq(sn)}')"
+          style="grid-column:3 / -1;margin-left:12px;padding:5px 10px;border:1px dashed var(--blue);border-radius:8px;background:none;color:var(--blue);font-size:10.5px;font-weight:600;cursor:pointer;width:fit-content">+ 구간 추가</button>
+      </div>`;
+  }
+
+  // ── 단일기간(기존) 모드 ──
+  const p = cfgPeriodOf(c, sn);
+  if(!editing && !p.from && !p.to) return '';
   const note = (p.from || p.to)
     ? `<span style="color:var(--warning);font-weight:600">${p.from||'처음'} ~ ${p.to||'계속'}만 예산 반영</span>`
     : `<span style="color:var(--txt3)">비우면 계속 반영</span>`;
@@ -4653,6 +4840,8 @@ function cfgSubPeriodRow(kind, i, c, sn){
         <input type="month" value="${esc(p.to)}" title="종료월 (이 달까지 반영)"
           onchange="cfgSetSubPeriod('${kind}',${i},'${jq(sn)}','to',this.value)" style="${inp}">
         ${note}
+        ${editing ? `<button onclick="cfgSubPeriodsInit('${kind}',${i},'${jq(sn)}')" title="시기별로 금액이 다르면(1차/2차) 여기를 눌러 구간을 나누세요"
+          style="padding:3px 9px;border:1px dashed var(--blue);border-radius:8px;background:none;color:var(--blue);font-size:10px;font-weight:600;cursor:pointer">+ 구간 추가(금액 다르게)</button>` : ''}
       </div>
     </div>`;
 }
@@ -5003,6 +5192,8 @@ function renderCfgAccounts(){
   CFG.accounts.forEach(a=>{ if(a.sub){ (usedSubs[a.group]=usedSubs[a.group]||new Set()).add(a.sub); } });
   const subList = g => Array.from(new Set([...(CFG_SUB_HINTS[g]||[]), ...(usedSubs[g]?Array.from(usedSubs[g]):[])]));
 
+  const purposeCatOptions = Object.keys(CAT_OUT_LABELS||{});
+
   const rowHtml = (a, i) => `
     <div style="${AT.row}${a.hidden?'opacity:.45':''}">
       <input value="${esc(a.key)}" placeholder="계좌 이름 (예: 롯카!)"
@@ -5024,7 +5215,16 @@ function renderCfgAccounts(){
       </label>
       <button onclick="if(confirm('${jq(a.key||'이 계좌')} 를 지울까요?')){CFG.accounts.splice(${i},1); cfgSave(); renderCfgAccounts(); renderCfgCards(); cfgApply();}"
         style="${CT.del}">✕</button>
-    </div>`;
+    </div>
+    ${a.group==='contract' ? `
+    <div style="display:flex;gap:6px;padding:2px 0 6px 0;margin-left:2px">
+      <input value="${esc(a.linkedCat||'')}" list="cfg-purpose-cats" placeholder="연동 지출 카테고리 (예: 덕질 / 여러 개는 콤마: 경조사,기타)"
+        title="이 계좌로 충당하는 지출 대분류. 연간 리포트 · 목적통장 카드의 분기 적립 제안 계산에 쓰여요"
+        oninput="cfgSetAcct(${i},'linkedCat',this.value)" style="${CT.inp}flex:2;font-size:11px">
+      <input value="${esc(a.goalDate||'')}" placeholder="목표 시점 YYYY-MM (선택)"
+        title="목표금액을 언제까지 모을지. 비워두면 올해 12월 기준으로 계산해요"
+        oninput="cfgSetAcct(${i},'goalDate',this.value)" style="${CT.inp}flex:1;font-size:11px">
+    </div>` : ''}`;
 
   // 대분류별로 묶어서 소계와 함께
   const blocks = CFG_GROUPS.map(([g, label, side])=>{
@@ -5046,14 +5246,16 @@ function renderCfgAccounts(){
   const minus = sum(a=>CFG_GROUP_SIDE[a.group]==='부채');
 
   const datalists = Object.keys(CFG_SUB_HINTS).map(g=>
-    `<datalist id="cfgsub_${g}">${subList(g).map(x=>`<option>${esc(x)}</option>`).join('')}</datalist>`).join('');
+    `<datalist id="cfgsub_${g}">${subList(g).map(x=>`<option>${esc(x)}</option>`).join('')}</datalist>`).join('')
+    + `<datalist id="cfg-purpose-cats">${purposeCatOptions.map(x=>`<option>${esc(x)}</option>`).join('')}</datalist>`;
 
   el.innerHTML = `
     <div style="font-size:12px;color:var(--txt3);line-height:1.6;margin-bottom:12px">
       <b>지금 이 시점의 잔액</b>을 적으세요. 앱은 이 값에 앞으로의 거래를 더하고 빼서 잔고를 계산합니다.<br>
       카드는 <b>소분류에 카드사</b>를 적어주세요 — 같은 카드사 카드끼리 묶어서 결제일·실적을 계산합니다.<br>
       <b>목표금액</b>은 그 계좌로 최종적으로 모으려는 돈이에요 (예: 전세금 1억). 넣으면 <b>연간 리포트</b>에 진행률로 나옵니다.
-      부채(카드·대출)는 <b>갚아야 할 금액</b>을 양수로 적으면 순자산에서 빠집니다.
+      부채(카드·대출)는 <b>갚아야 할 금액</b>을 양수로 적으면 순자산에서 빠집니다.<br>
+      <b>🎯 목적자금</b> 계좌(덕질통장·비상금통장 등)는 <b>연동 지출 카테고리</b>를 적어두면, 연간 리포트에서 그 카테고리 지출을 근거로 분기당 얼마를 더 채워둬야 하는지 제안해드려요. 목표금액이 있으면 그걸로, 없으면 최근 지출 평균으로 계산합니다.
     </div>
     ${datalists}
     <div style="${AT.head}">
@@ -5762,7 +5964,7 @@ function renderCfgMisc(){
 //  (예전엔 코드 상수였고, 이제는 이 함수가 그 상수들을 다시 채웁니다)
 // ══════════════════════════════════════════════════════════════════
 const CFG_EMOJI = { '주거비':'🏠','보험':'🗃️','통신비':'📞','식비':'🍽️','생활용품':'🛒','꾸밈비':'👗',
-  '자기계발':'👩‍🎓','건강':'😷','교통비':'🚌','경조사':'🎁','문화생활':'📺','기타':'✔️',
+  '자기계발':'👩‍🎓','건강':'😷','교통비':'🚌','경조사':'🎁','문화생활':'📺','덕질':'🎤','기타':'✔️',
   '근로소득':'👷','금융소득':'💵','기타소득':'💰','카드납부':'💳','계좌이체':'🔄' };
 
 function cfgApply(){
@@ -5871,6 +6073,22 @@ function cfgApply(){
         });
       });
       STATE.subPeriod = per;
+    })();
+    // ── 4-e2) 소분류 다구간 예산 (1차 금액 A, 2차 금액 B, ...) ── subBudgetOf/subActiveIn이 우선 참조
+    (function buildSubPeriods(){
+      const per = {};
+      ['지출','이동','수입'].forEach(kind=>{
+        (C[kind]||[]).forEach(c=>{
+          const meta = c.subMeta||{};
+          (c.subs||[]).forEach(sn=>{
+            const m = meta[sn]||{};
+            if(Array.isArray(m.periods) && m.periods.length){
+              per[stripSp(sn)] = m.periods.map(p=>({ from:p.from||'', to:p.to||'', amount:Number(p.amount)||0 }));
+            }
+          });
+        });
+      });
+      STATE.subPeriods = per;
     })();
 
     // ── 4-c) 결제수단·결제일 → 현금흐름 일정 & 카드 예산 ──
@@ -7798,7 +8016,7 @@ function exportBudgetSheet(){
     {label:'변동비', isHeader:true},
     ...Object.keys(CAT_OUT_LABELS).filter(k=>!isFixedMajor(k)).map(k=>({label:k,key:CAT_OUT_LABELS[k]||k,major:k,type:'지출',subs:exSubs(CAT_OUT_SUBS[k])})),
     {label:'변동비2', isHeader:true},
-    ...['경조사','문화생활','기타'].map(k=>({label:k,key:CAT_OUT_LABELS[k]||k,major:k,type:'지출',subs:exSubs(CAT_OUT_SUBS[k])})),
+    ...['경조사','문화생활','덕질','기타'].map(k=>({label:k,key:CAT_OUT_LABELS[k]||k,major:k,type:'지출',subs:exSubs(CAT_OUT_SUBS[k])})),
     {label:'수입', isHeader:true},
     ...Object.keys(CAT_IN_SUBS).map(k=>({label:k,key:k,major:k,type:'수입',subs:CAT_IN_SUBS[k]||[]})),
     // 저축/이동: 카드납부·계좌이체 제외 — 설정한 이동 대분류를 그대로 사용
@@ -7846,6 +8064,27 @@ function exportBudgetSheet(){
   })
   .then(r=>r.json())
   .then(d=>{ if(d&&d.ok) alert('✅ '+yr+' 예산/지출 시트가 업데이트되었습니다!'); else alert('오류: '+((d&&d.error)||'알 수 없는 오류 (Apps Script에 gb_syncBudgetSheet 핸들러가 필요합니다)')); })
+  .catch(err=>{ showToast('⚠️ 전송 시도됨 (' + String(err.message||err).slice(0,30) + ')'); });
+}
+
+// ── 목적통장 → 구글시트 내보내기 (action=syncPurposeSheet) ──
+function exportPurposeSheet(){
+  const url = getUrl();
+  if(!url){ alert('설정에서 Apps Script URL을 먼저 입력해 주세요.'); return; }
+  const list = purposeAcctList();
+  if(!list.length){ alert('연동된 목적통장 계좌가 없습니다. 설정 › 계좌에서 🎯 목적자금 계좌에 연동 지출 카테고리를 적어주세요.'); return; }
+  const rows = list.map(a=>{
+    const s = purposeSuggest(a);
+    return { key:a.key, cats:s.cats.join('·'), cur:s.cur, goal:s.goal, goalDate:a.goalDate||'',
+             monthly:s.monthly, quarterly:s.quarterly, basis:s.basis };
+  });
+  showToast('⏳ 시트로 내보내는 중...');
+  fetch(url, {
+    method:'POST', headers:{'Content-Type':'text/plain'},
+    body: JSON.stringify({ action:'syncPurposeSheet', rows:rows })
+  })
+  .then(r=>r.json())
+  .then(d=>{ if(d&&d.ok) alert('✅ 목적통장 시트가 업데이트되었습니다!'); else alert('오류: '+((d&&d.error)||'알 수 없는 오류 (Apps Script에 syncPurposeSheet 핸들러가 필요합니다)')); })
   .catch(err=>{ showToast('⚠️ 전송 시도됨 (' + String(err.message||err).slice(0,30) + ')'); });
 }
 
