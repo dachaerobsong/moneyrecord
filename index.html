@@ -1128,6 +1128,10 @@ body { padding-bottom:88px; }
     <div class="card-title cfg-fold-head" onclick="cfgToggleFold('cfg-report-card')">📤 리포트 시트로 내보내기 <span class="cfg-fold-arrow">▾</span></div>
     <div id="cfg-report-body"></div>
   </div>
+  <div class="card cfg-fold folded" id="cfg-raw-card">
+    <div class="card-title cfg-fold-head" onclick="cfgToggleFold('cfg-raw-card')">🎯 목적 통장 별도 관리 <span class="cfg-fold-arrow">▾</span></div>
+    <div id="cfg-raw-body"></div>
+  </div>
   <div class="card cfg-fold" id="cfg-misc-card">
     <div class="card-title cfg-fold-head" onclick="cfgToggleFold('cfg-misc-card')">⚙️ 기본값 <span class="cfg-fold-arrow">▾</span></div>
     <div id="cfg-misc-body"></div>
@@ -1145,6 +1149,15 @@ body { padding-bottom:88px; }
     <div class="card-title">🧹 이 브라우저 초기화</div>
     <div style="font-size:12px;color:var(--txt3);line-height:1.6;margin-bottom:10px">이 브라우저에 저장된 설정·메모·시트 주소를 전부 지웁니다. <b>구글 시트의 내용은 지워지지 않습니다.</b> 처음부터 다시 설정하고 싶을 때 쓰세요.</div>
     <button onclick="resetLocalApp()" style="width:100%;padding:13px;background:var(--card);color:var(--red);border:1px solid var(--red);border-radius:14px;font-size:14px;font-weight:700;cursor:pointer">이 브라우저의 설정 지우기</button>
+  </div>
+  <div class="card">
+    <div class="card-title">📤 내역 골라 내보내기</div>
+    <div style="font-size:12px;color:var(--txt3);line-height:1.6;margin-bottom:10px">
+      계좌나 카테고리로 걸러낸 <b>거래 원본</b>을 뽑아 구글 시트에 붙여넣을 수 있어요.
+      덕질 통장, 비상금 통장처럼 따로 정리하는 내역을 시트로 옮길 때 쓰세요.
+      자주 쓰는 조건은 이름을 붙여 저장해두면 다음엔 한 번에 불러옵니다.
+    </div>
+    <div id="xp-body"></div>
   </div>
   <div class="card">
     <div class="card-title">🧾 시트 설정값 점검</div>
@@ -1497,11 +1510,13 @@ function fmtWon(n){ return '₩' + Math.round(Math.abs(n)).toLocaleString('ko-KR
 let STATE = {
   transactions: [],
   accounts: [],
-  eventCats: ['문화생활','경조사','기타'],   // (구버전 호환용 — 실제 판정은 아래 catCadence 사용)
+  eventCats: [],   // (구버전 호환용 — 실제 판정은 아래 catCadence 사용)
   // 카테고리별 예산 판정 주기 — 설정 탭에서 사용자가 직접 편집 가능 (기기별 localStorage 저장)
   // 값: 'monthly'(기본, 매달 판정) | 'quarterly'(3개월 누적 판정) | 'biannual'(6개월 누적 판정) | 'event'(정산이월 — 신호등 없이 누적만)
   // 대분류·소분류 이름을 키로 그대로 사용 (예: '문화생활'은 대분류, '전기세'는 소분류)
-  catCadence: { '문화생활':'event', '경조사':'event', '기타':'event' },
+  // [변경] 특정 카테고리명을 강제로 이벤트누적 취급하던 기본값을 없앴다 — 사람마다 카테고리 구성이
+  //        다르므로, 설정 › 카테고리에서 직접 고른 값만 반영한다. 아무것도 안 고르면 전부 월간(기본).
+  catCadence: {},
   fixedExceptions: [],   // 고정비 대분류 안에서 변동비로 볼 소분류명
   budgetCadence: {}, // (구버전 호환용 — 실제 판정은 catCadence 사용)
   // 유형별 대분류 → 소분류
@@ -2147,11 +2162,10 @@ function setCatCadence(key, val){
 }
 // 주기를 전부 월간으로 되돌리기 — 분기로 바꿔봤다가 온통 빨개졌을 때 한 번에 원복
 function resetAllCadence(){
-  if(!confirm('모든 카테고리 판정 주기를 월간으로 되돌릴까요?\n(기타·경조사·문화생활의 이벤트누적은 유지됩니다)')) return;
-  const KEEP = ['문화생활','경조사','기타'];
+  if(!confirm('모든 카테고리 판정 주기를 월간으로 되돌릴까요?\n(이벤트누적으로 지정해둔 카테고리는 유지됩니다)')) return;
   const next = {};
   Object.keys(STATE.catCadence||{}).forEach(k=>{
-    if(STATE.catCadence[k]==='event' || KEEP.indexOf(normBudgetKey(k))>=0) next[k] = STATE.catCadence[k];
+    if(STATE.catCadence[k]==='event') next[k] = STATE.catCadence[k];
   });
   STATE.catCadence = next;
   try{
@@ -4848,9 +4862,7 @@ function renderCfgCategories(){
           <input value="${pay.day||''}" placeholder="일" inputmode="numeric" title="결제일"
             oninput="cfgSetPay('${kind}',${i},'${jq(sn)}','day',this.value)"
             style="${CT.num}padding:6px 4px;border-color:#F0F2F4">
-          ${kind==='지출' ? `<label title="카드 실적에서 제외" style="display:flex;justify-content:center;cursor:pointer">
-            <input type="checkbox" ${cfgIsNoPerf(c,sn)?'checked':''} ${c.noPerf?'disabled':''}
-              onchange="cfgTogglePerf('${kind}',${i},'${jq(sn)}',this.checked)"></label>` : '<span></span>'}
+          <span></span>
           ${cfgMiniSpark(sn, true, kind)}
           ${kind!=='수입' ? cfgCadenceSelect(kind,i,sn,cfgCadenceOf(c,sn)) : '<span></span>'}
           <button onclick="cfgDelSub('${kind}',${i},${j})" style="${CT.del}">✕</button>
@@ -4888,8 +4900,7 @@ function renderCfgCategories(){
             style="${CT.inp}font-size:11.5px;padding:6px 4px">${cfgAcctOptions(pay.acct)}</select>
           <input value="${pay.day||''}" placeholder="일" inputmode="numeric" title="결제일 (1~31)"
             oninput="cfgSetPay('${kind}',${i},null,'day',this.value)" style="${CT.num}padding:6px 4px">
-          ${kind==='지출' ? `<label title="이 대분류 전체를 카드 실적에서 제외" style="display:flex;justify-content:center;cursor:pointer">
-            <input type="checkbox" ${c.noPerf?'checked':''} onchange="cfgTogglePerf('${kind}',${i},null,this.checked)"></label>` : '<span></span>'}
+          <span></span>
           ${cfgMiniSpark(c.major, false, kind)}
           ${kind!=='수입' ? cfgCadenceSelect(kind,i,null,cfgCadenceOf(c,null)) : '<span></span>'}
           <button onclick="if(confirm('${jq(c.major)} 를 지울까요?')){CFG.categories['${kind}'].splice(${i},1); cfgSaveLocal(); renderCfgCategories(); cfgApply();}"
@@ -4915,7 +4926,7 @@ function renderCfgCategories(){
         <span style="text-align:center">${flagLabel||''}</span>
         <span style="text-align:right">${kind==='지출'?'월 예산':kind==='이동'?'월 목표':'월 수입'}</span>
         <span>결제수단</span><span style="text-align:right">결제일</span>
-        <span style="text-align:center">${kind==='지출'?'카드실적제외':''}</span>
+        <span></span>
         <span style="text-align:center">12개월</span>
         <span style="text-align:center">${kind!=='수입'?'주기':''}</span><span></span>
       </div>
@@ -5532,6 +5543,201 @@ function renderCfgReport(){
 }
 
 // ── 기본값 ──
+// ══════════════════════════════════════════════════════════════════
+//  원본 내역 시트로 내보내기 — 조건에 맞는 거래를 지정한 시트 탭에 쌓는다.
+//  탭을 덮어쓰지 않고 거래 ID 기준으로 새 줄만 덧붙이므로,
+//  시트에서 J열 이후에 직접 적은 내용(행사 태그 등)은 그대로 남는다.
+// ══════════════════════════════════════════════════════════════════
+function rawPresets(){
+  if(!Array.isArray(CFG.rawExports)) CFG.rawExports = [];
+  return CFG.rawExports;
+}
+function rawSavePresets(){ cfgSave(); renderCfgRawExport(); }
+
+// 조건에 맞는 거래 추출 — 계좌·대분류·소분류 중 하나라도 걸리면 포함(OR)
+function rawFilterTx(p){
+  const all = (STATE.transactions||[]).filter(t=>!isRemovedTx(t));
+  const acc  = (p.accounts||[]).map(x=>String(x).trim()).filter(Boolean);
+  const maj  = (p.majors||[]).map(x=>normBudgetKey(x)).filter(Boolean);
+  const sub  = (p.subs||[]).map(x=>String(x).trim()).filter(Boolean);
+  const from = String(p.from||'').trim(), to = String(p.to||'').trim();
+  if(!acc.length && !maj.length && !sub.length) return [];
+  return all.filter(t=>{
+    const ym = String(t.date||'').slice(0,7);
+    if(from && ym < from) return false;
+    if(to   && ym > to)   return false;
+    if(acc.length){
+      const fields = [t.account, t.outAcct, t.inAcct].map(x=>String(x||'').trim());
+      if(acc.some(a=>fields.indexOf(a)>=0)) return true;
+    }
+    if(maj.length && maj.indexOf(normBudgetKey(t.major||''))>=0) return true;
+    if(sub.length && sub.indexOf(String(t.category||t.sub||'').trim())>=0) return true;
+    return false;
+  }).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+}
+
+function rawExportRun(i){
+  const p = rawPresets()[i]; if(!p) return;
+  const st = document.getElementById('cfg-raw-status');
+  const url = getUrl();
+  if(!url){ if(st) st.textContent = '시트 연동 후 사용할 수 있어요.'; return; }
+  const tab = String(p.tab||'').trim();
+  if(!tab){ if(st) st.textContent = '탭 이름을 먼저 적어주세요.'; return; }
+  const list = rawFilterTx(p);
+  if(!list.length){ if(st) st.textContent = '조건에 맞는 내역이 없어요.'; return; }
+
+  const acc  = (p.accounts||[]).map(x=>String(x).trim()).filter(Boolean);
+  const debt = (typeof GRP_DEBT!=='undefined' ? GRP_DEBT : []);
+
+  // 부호 통일 — 나가는 돈은 음수, 들어오는 돈은 양수. 그래야 시트에서 그냥 더하면 상계된다.
+  // 구분 열 — 통장에서 직접 나갔는지 카드로 썼는지를 나눠야 통장 잔액과 대조가 된다.
+  const rows = list.map(t=>{
+    const amt = Number(t.amount)||0;
+    const inA = String(t.inAcct||'').trim(), outA = String(t.outAcct||t.account||'').trim();
+    let sign = 1, kind = '기타';
+    if(t.type==='지출'){
+      sign = -1;
+      kind = acc.indexOf(outA)>=0 ? '통장' : (debt.indexOf(outA)>=0 ? '카드' : '기타');
+    } else if(t.type==='수입'){
+      sign = 1; kind = '수입';
+    } else {
+      if(acc.indexOf(inA)>=0){ sign = 1; kind = '적립'; }
+      else if(acc.indexOf(outA)>=0){ sign = -1; kind = '출금'; }
+      else { sign = 1; kind = '기타'; }
+    }
+    return [ String(t.id||''), t.date||'', t.type||'', t.major||'', t.category||t.sub||'',
+             t.memo||'', sign*amt, (outA||inA), kind ];
+  });
+
+  // 통장 실잔액 — 장부 잔액과 얼마나 벌어졌는지 보려고 같이 보낸다(카드로 쓴 만큼 차이가 난다)
+  let acctBal = 0;
+  try{ const f = calcBalances(); acc.forEach(k=>{ acctBal += f(k); }); }catch(e){}
+
+  if(st) st.textContent = `${list.length}건 보내는 중…`;
+  fetch(url, { method:'POST', headers:{'Content-Type':'text/plain'},
+    body: JSON.stringify({ action:'syncRawExport', tab:tab, rows:rows,
+                           accounts:acc, acctBal:Math.round(acctBal) }) })
+    .then(()=>{ if(st) st.textContent = `[${tab}] 탭에 ${list.length}건 반영했어요 · ${new Date().toLocaleTimeString('ko-KR')}`; })
+    .catch(e=>{ if(st) st.textContent = '전송 실패: '+e.message; });
+}
+
+function rawAddPreset(){
+  rawPresets().push({ name:'', tab:'', accounts:[], majors:[], subs:[], from:String(new Date().getFullYear())+'-01', to:'' });
+  rawSavePresets();
+}
+function rawDelPreset(i){
+  const p = rawPresets()[i]; if(!p) return;
+  if(!confirm(`「${p.name||'이름 없음'}」 설정을 지울까요?\n(시트의 탭은 지워지지 않아요)`)) return;
+  rawPresets().splice(i,1); rawSavePresets();
+}
+function rawSetField(i, key, val){
+  const p = rawPresets()[i]; if(!p) return;
+  p[key] = String(val).trim();
+  // 이름을 적으면 탭 이름을 비워둔 경우에 한해 같이 채워준다
+  if(key==='name' && !String(p.tab||'').trim()) p.tab = String(val).trim();
+  cfgSave(); renderCfgRawExport();
+}
+// 통장·카테고리 선택 — 드롭다운에서 고르면 칩으로 쌓인다
+function rawAddPick(i, encoded){
+  const p = rawPresets()[i]; if(!p || !encoded) return;
+  const kind = encoded.slice(0,2), val = encoded.slice(2);
+  const key = kind==='A:' ? 'accounts' : kind==='M:' ? 'majors' : 'subs';
+  p[key] = p[key] || [];
+  if(p[key].indexOf(val)<0) p[key].push(val);
+  cfgSave(); renderCfgRawExport();
+}
+function rawDelPick(i, key, idx){
+  const p = rawPresets()[i]; if(!p) return;
+  (p[key]||[]).splice(idx,1);
+  cfgSave(); renderCfgRawExport();
+}
+
+function renderCfgRawExport(){
+  const el = document.getElementById('cfg-raw-body'); if(!el) return;
+  const list = rawPresets();
+  const esc = s => String(s==null?'':s).replace(/"/g,'&quot;').replace(/</g,'&lt;');
+
+  // 고를 수 있는 통장 — 카드·부채는 뺀다(목적 통장은 현금·투자 계좌)
+  const accOpts = (STATE.acctsDef||[])
+    .filter(a=>a.group==='cash' || a.group==='invest')
+    .map(a=>`<option value="A:${esc(a.key)}">${esc(a.label||a.key)}</option>`).join('');
+
+  // 고를 수 있는 카테고리 — 대분류와 소분류를 한 목록에 묶어 보여준다
+  let catOpts = '';
+  ['지출','이동','수입'].forEach(kind=>{
+    const cs = (CFG.categories[kind]||[]).filter(c=>c.major);
+    if(!cs.length) return;
+    catOpts += `<optgroup label="${kind} · 대분류">` +
+      cs.map(c=>`<option value="M:${esc(c.major)}">${esc(c.major)}</option>`).join('') + `</optgroup>`;
+    const subs = [];
+    cs.forEach(c=>(c.subs||[]).forEach(sn=>{ if(sn && subs.indexOf(sn)<0) subs.push(sn); }));
+    if(subs.length) catOpts += `<option disabled>─ ${kind} · 소분류 ─</option>` +
+      subs.map(sn=>`<option value="S:${esc(sn)}">${esc(sn)}</option>`).join('');
+  });
+
+  const chips = (i, key, arr) => (arr||[]).map((v,idx)=>
+    `<span style="display:inline-flex;align-items:center;gap:4px;background:var(--card2);border-radius:99px;padding:3px 6px 3px 10px;font-size:11.5px;color:var(--txt);margin:0 4px 4px 0">
+       ${esc(v)}<button onclick="rawDelPick(${i},'${key}',${idx})" style="background:none;border:none;color:var(--txt3);cursor:pointer;font-size:12px;padding:0 2px">✕</button>
+     </span>`).join('') || `<span style="font-size:11.5px;color:var(--txt3)">없음</span>`;
+
+  const picker = (i, opts) => `<select onchange="rawAddPick(${i}, this.value); this.value=''"
+      style="padding:5px 8px;border:1px solid #E5E8EB;border-radius:8px;font-size:11.5px;background:#fff;color:var(--txt2);cursor:pointer">
+      <option value="">+ 추가</option>${opts}</select>`;
+
+  const txt = (i,key,ph,w) => `<input value="${esc(list[i][key]||'')}" placeholder="${ph}"
+      onchange="rawSetField(${i},'${key}',this.value)"
+      style="width:${w||'100%'};padding:7px 9px;border:1px solid #E5E8EB;border-radius:8px;font-size:12.5px;box-sizing:border-box">`;
+
+  let html = `<div style="font-size:12px;color:var(--txt3);line-height:1.6;margin-bottom:12px">
+    통장을 따로 만들어 관리하는 돈(비상금·목적자금 등)이 있으면 여기에 등록하세요.
+    해당 내역이 구글 시트의 <b>정산 탭</b>으로 모이고, 적립·사용·잔액이 자동으로 집계됩니다.
+    <b>통장을 나눠 쓰지 않는다면 이 기능은 안 쓰셔도 됩니다.</b>
+  </div>`;
+
+  if(!list.length){
+    html += `<div style="font-size:12.5px;color:var(--txt3);text-align:center;padding:16px 0;line-height:1.6">
+      등록된 목적 통장이 없어요.<br>아래에서 추가하세요.</div>`;
+  }
+
+  list.forEach((p,i)=>{
+    let n = 0; try{ n = rawFilterTx(p).length; }catch(e){}
+    const ready = String(p.tab||'').trim() && ((p.accounts||[]).length || (p.majors||[]).length || (p.subs||[]).length);
+    html += `<div style="border:1px solid #EEF0F3;border-radius:12px;padding:12px;margin-bottom:10px">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+        <input value="${esc(p.name)}" onchange="rawSetField(${i},'name',this.value)" placeholder="이름 (예: 비상금)"
+          style="flex:1;min-width:0;padding:7px 9px;border:1px solid #E5E8EB;border-radius:8px;font-size:13px;font-weight:700;box-sizing:border-box">
+        <button onclick="rawDelPreset(${i})" style="flex:none;background:none;border:none;color:var(--txt3);font-size:15px;cursor:pointer">✕</button>
+      </div>
+
+      <div style="font-size:11.5px;color:var(--txt3);margin-bottom:4px">연결할 통장</div>
+      <div style="margin-bottom:10px">${chips(i,'accounts',p.accounts)} ${picker(i, accOpts)}</div>
+
+      <div style="font-size:11.5px;color:var(--txt3);margin-bottom:4px">이 돈으로 쓰는 항목</div>
+      <div style="margin-bottom:10px">
+        ${chips(i,'majors',p.majors)}${chips(i,'subs',p.subs)} ${picker(i, catOpts)}
+      </div>
+
+      <div style="display:grid;grid-template-columns:64px 1fr;gap:6px 8px;align-items:center;font-size:11.5px;color:var(--txt3)">
+        <span>시트 탭</span>${txt(i,'tab','예: 비상금정산')}
+        <span>기간</span>
+        <div style="display:flex;gap:6px;align-items:center">
+          ${txt(i,'from','2026-01','100%')}<span style="flex:none">~</span>${txt(i,'to','비우면 계속','100%')}
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px;align-items:center;margin-top:12px">
+        <span style="flex:1;font-size:11.5px;color:var(--txt3)">해당 내역 <b style="color:var(--txt)">${n}건</b></span>
+        <button onclick="rawExportRun(${i})" ${ready?'':'disabled'}
+          style="flex:none;padding:8px 16px;background:${ready?'var(--blue)':'var(--card2)'};color:${ready?'#fff':'var(--txt3)'};border:none;border-radius:10px;font-size:12.5px;font-weight:700;cursor:${ready?'pointer':'default'}">시트로 보내기</button>
+      </div>
+    </div>`;
+  });
+
+  html += `<button onclick="rawAddPreset()" style="width:100%;padding:11px;background:var(--card2);color:var(--txt2);border:none;border-radius:12px;font-size:12.5px;font-weight:700;cursor:pointer">+ 목적 통장 추가</button>
+    <div id="cfg-raw-status" style="font-size:11.5px;color:var(--txt3);text-align:center;margin-top:10px"></div>`;
+  el.innerHTML = html;
+}
+
 function renderCfgMisc(){
   const el = document.getElementById('cfg-misc-body'); if(!el) return;
   cfgSeedIfEmpty();
@@ -5645,16 +5851,9 @@ function cfgApply(){
           });
         });
       });
-      // ★ 여기서 STATE.catCadence를 통째로 갈아끼우는 바람에, '기타·경조사·문화생활 = 이벤트누적'
-      //   기본값과 설정 › 카테고리 주기 UI에서 고른 값이 cfgApply()가 돌 때마다 날아갔다.
-      //   카테고리 표에서 주기를 '한 번도 안 건드린'(cadence 칸이 빈) 항목에 한해 기본값을 되살린다.
-      //   (표에서 명시적으로 '월간'을 골랐다면 c.cadence==='monthly'라 기본값이 덮어쓰지 않는다)
-      const EVENT_DEFAULTS = ['문화생활','경조사','기타'];
-      (C['지출']||[]).forEach(c=>{
-        if(!c.major || c.cadence) return;
-        const k = normBudgetKey(c.major);
-        if(!cad[k] && EVENT_DEFAULTS.indexOf(k) >= 0) cad[k] = 'event';
-      });
+      // [변경] 예전엔 여기서 '기타·경조사·문화생활 = 이벤트누적' 기본값을 강제로 되살렸다.
+      //   카테고리 구성은 사람마다 다르므로 이름으로 강제하지 않는다 — 설정 › 카테고리 표에서
+      //   사용자가 명시적으로 고른 cadence 값(c.cadence / subMeta[sn].cadence)만 반영한다.
       STATE.catCadence = cad;
       try{ LS.set('gb_cat_settings', JSON.stringify({ catCadence: cad })); }catch(e){}
     })();
@@ -5926,7 +6125,7 @@ function renderAllSettings(){
   // 렌더 뒤에 접힘 상태를 다시 입힌다 — 시트 로드·탭 이동 등으로 다시 그려질 때
   // 카드가 펴진 채로 남는 경로를 막기 위함
   setTimeout(()=>{ try{ applySavedFolds(); }catch(e){} }, 0);
-  ['renderCfgCategories','renderCfgAccounts','renderCfgCards','renderCfgTemplates','renderCfgReport','renderCfgMisc']
+  ['renderCfgCategories','renderCfgAccounts','renderCfgCards','renderCfgTemplates','renderCfgReport','renderCfgRawExport','renderCfgMisc']
     .forEach(fn=>{ try{ if(typeof window[fn]==='function') window[fn](); }catch(e){ console.error(fn, e); } });
 }
 
