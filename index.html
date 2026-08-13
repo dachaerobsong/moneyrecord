@@ -1395,6 +1395,34 @@ function cardIssuerGroups(useObj, budObj){
     return {issuer:base, cards, used, bud};
   });
 }
+// [v6 추가] 카드 결제 현황에서 "납부 입력하기"를 누르면 거래내역 입력 폼으로 이동해서
+//   이동 / 카드납부 / 이번 달 사용액까지 미리 채워둔다. 어느 계좌에서 나가는지는 사람마다
+//   다르고 실수하면 잔고가 틀어지므로, 자동으로 저장하지 않고 확인 후 직접 저장 버튼을 누르게 한다.
+function cardPayEntry(issuer, cardKey, amount){
+  goToTab('ledger');
+  setLedgerSub('input', document.querySelector('#p-ledger .sub-tab[data-sub="input"]'));
+  requestAnimationFrame(()=>{
+    const te = document.getElementById('tx-type');
+    if(te){ te.value = '이동'; updateCategoryOptions(); }
+    const me = document.getElementById('tx-major');
+    if(me){
+      const opt = [...me.options].find(o=>normBudgetKey(o.value)==='카드납부');
+      if(opt) me.value = opt.value;
+      updateSubOptions();
+    }
+    const ce = document.getElementById('tx-category');
+    if(ce){
+      const opt = [...ce.options].find(o=>o.value===issuer || o.value.indexOf(issuer)>=0);
+      if(opt) ce.value = opt.value;
+    }
+    const ia = document.getElementById('tx-in-acct'); if(ia) ia.value = cardKey;
+    const oa = document.getElementById('tx-out-acct'); if(oa) oa.value = ''; // 어느 계좌에서 낼지는 직접 선택
+    const ae = document.getElementById('tx-amount'); if(ae) ae.value = amount;
+    const de = document.getElementById('tx-date'); if(de) de.valueAsDate = new Date();
+    showToast(`${issuer} 결제 예정 ${won(amount)}을 채워뒀어요 · 낼 계좌만 고르고 저장하세요`);
+    oa && oa.focus();
+  });
+}
 function cardToggleOne(detId, carId){
   const el=document.getElementById(detId); if(!el) return;
   const open=el.style.display!=='none';
@@ -1484,7 +1512,10 @@ function renderCardList(container, useObj, budObj, prefix, catByCard){
           ${subLine}
         </span>
       </div>
-      <div id="${detId}" style="display:${isOpen(detId)?'block':'none'};padding:2px 14px 8px">${cardDetailRows(g,useObj,budObj,catByCard)}</div>
+      <div id="${detId}" style="display:${isOpen(detId)?'block':'none'};padding:2px 14px 8px">${cardDetailRows(g,useObj,budObj,catByCard)}
+        ${g.used>0 ? `<button onclick="cardPayEntry('${jq(g.issuer)}','${jq(g.cards[0])}',${g.used})"
+          style="width:100%;margin-top:8px;padding:8px;border:1px solid var(--blue);border-radius:10px;background:var(--blue-bg);color:var(--blue);font-size:12px;font-weight:700;cursor:pointer">💳 납부 입력하기</button>` : ''}
+      </div>
     </div>`;
   }).join('');
 }
@@ -8498,17 +8529,20 @@ let CASH_PLAN = null;
 // 고정비는 오직 '설정 › 카테고리'만 보고, 현금흐름(CASH_PLAN.items)은 완전히 별개 트랙으로 둔다.
 // 이유: 전세대출원금(부채상환)·급여이체(계좌이동)처럼 '지출'로 잡히면 안 되는 항목이 섞여있어서,
 // 대분류에 억지로 매핑하면 예산 집계가 더 틀어진다. 현금흐름은 "이 돈이 언제 빠져나가는가"만 추적한다.
+// [v6 추가] moveTo — 이 돈이 내 다른 계좌로 들어가는 항목은 목적지를 적어둔다.
+//   목적지가 '1차(가용) 잔고'에 남아있는 계좌면, 총 현금은 그대로라 필요현금 계산에서 뺀다.
+//   목적지가 없으면(엄마생활비·전세대출이자처럼 남에게 나가는 돈) 지금처럼 그대로 뺀다.
 const LEGACY_CASH_ITEMS = [
   {name:'엄마생활비',      amount:350000,  day:1,  source:'bank'},
   {name:'전세대출이자',    amount:640000,  day:13, source:'bank'},
-  {name:'KB뱅크 급여이체', amount:500000,  day:13, source:'bank'},
+  {name:'KB뱅크 급여이체', amount:500000,  day:13, source:'bank', moveTo:'KB뱅크'},
   {name:'가족곗돈',        amount:50000,   day:21, source:'bank'},
   {name:'전세대출원금',    amount:600000,  day:21, source:'bank'},
-  {name:'집계약용',        amount:1000000, day:21, source:'bank'},
-  {name:'비상금저축',      amount:200000,  day:21, source:'bank'},
-  {name:'덕질저축',        amount:50000,   day:21, source:'bank'},
-  {name:'개인연금(자동)',  amount:500000,  day:25, source:'bank'},
-  {name:'ISA',             amount:400000,  day:25, source:'bank'},
+  {name:'집계약용',        amount:1000000, day:21, source:'bank', moveTo:'케이-집계약용'},
+  {name:'비상금저축',      amount:200000,  day:21, source:'bank', moveTo:'케이-비상금'},
+  {name:'덕질저축',        amount:50000,   day:21, source:'bank', moveTo:'케이-덕질'},
+  {name:'개인연금(자동)',  amount:500000,  day:25, source:'bank', moveTo:'미래-종합'},
+  {name:'ISA',             amount:400000,  day:25, source:'bank', moveTo:'미래-ISA'},
   {name:'우체국보험',      amount:74220,   day:25, source:'bank'},
   {name:'관리비',          amount:120000,  day:31, source:'bank'},
   {name:'대딩곗돈',        amount:50000,   day:31, source:'bank'},
@@ -8677,7 +8711,10 @@ function buildCashEvents(plan, offset){
       const day = (ov && ov.day!=null) ? ov.day : (Number(it.day)||1);
       const amount = (ov && ov.amount!=null) ? ov.amount : (Number(it.amount)||0);
       const eff=Math.min(day, monLast);
-      if(eff===dd) events.push({date:new Date(cur), name:it.name, amount, source:it.source||'bank', ym, overridden: !!ov});
+      // [v6 추가] 이 항목이 어느 계좌로 들어가는지(acct/moveTo)를 이벤트에도 그대로 넘긴다.
+      //   목적지가 여전히 '1차(가용) 잔고'에 속한 계좌라면 총 현금은 안 줄어드는 내부 이동이라,
+      //   이 정보가 있어야 아래에서 그런 이벤트를 필요현금 계산에서 뺄 수 있다.
+      if(eff===dd) events.push({date:new Date(cur), name:it.name, amount, source:it.source||'bank', ym, overridden: !!ov, acct: it.acct||it.moveTo||''});
     });
     Object.entries(plan.cardPayDays||{}).forEach(([issuer,payDay])=>{
       const eff=Math.min(Number(payDay)||14, monLast);
@@ -8722,12 +8759,22 @@ function renderCashPlan(){
   if(cycleLblEl) cycleLblEl.textContent = CASH_CYCLE_OFFSET===0 ? '이번 주기' : (payday.getMonth()+1)+'월 주기';
 
   // 현재 현금성 잔고 — 설정 탭에서 성격이 '현금·입출금'인 계좌만 합산
-  const CASH_ACCTS = (plan.cashAccounts && plan.cashAccounts.length) ? plan.cashAccounts
+  const CASH_ACCTS_ALL = (plan.cashAccounts && plan.cashAccounts.length) ? plan.cashAccounts
     : (CFG.accounts||[]).filter(a=>a.group==='cash').map(a=>a.key);
-  let cashNow=0;
+  // [v6 추가] 🎯 목적 통장 별도 관리(설정)에 등록한 계좌는 '2차 잔고'로 따로 뺀다.
+  //   평소 가용 현금 계산(1차)에는 안 섞이고, 화면 아래에 참고용으로만 보여준다.
+  const purposeAccts = (function(){
+    const set = new Set();
+    (rawPresets()||[]).forEach(p=>(p.accounts||[]).forEach(a=>set.add(a)));
+    return set;
+  })();
+  const CASH_ACCTS = CASH_ACCTS_ALL.filter(k=>!purposeAccts.has(k));
+  const CASH_ACCTS_2ND = CASH_ACCTS_ALL.filter(k=>purposeAccts.has(k));
+  let cashNow=0, cashSecondary=0;
   if(STATE.initBal){
     const cb=calcBalances();
     cashNow=CASH_ACCTS.reduce((s,k)=>s+cb(k),0);
+    cashSecondary=CASH_ACCTS_2ND.reduce((s,k)=>s+cb(k),0);
   }
   // 최근 급여
   const salTx=(STATE.transactions||[]).filter(t=>t.type==='수입'&&String(t.category||'').indexOf('월급')>=0)
@@ -8740,8 +8787,13 @@ function renderCashPlan(){
   const preEvents=events.filter(e=>+e.date < +payday);
   const paydayEvents=events.filter(e=>+e.date === +payday);
   // 급여 전 '아직 안 낸' 통장 출금만 = 지금 필요한 현금
-  const needNow = preEvents.filter(e=>e.source==='bank' && !eventPaid(e)).reduce((s,e)=>s+e.amount,0);
-  const paydayOut=bankSum(paydayEvents);
+  // [v6 수정] 예전엔 source==='bank'이면 무조건 뺐다. 그런데 "KB뱅크 급여이체"나 "비상금저축"처럼
+  //   내 다른 현금 계좌로 옮기는 항목은, 그 계좌가 여전히 1차 잔고 안에 있으면 총 현금이
+  //   줄지 않는 내부 이동이다(양쪽 다 CASH_ACCTS 합계에 잡히므로). 그런 이동은 필요현금에서 뺀다.
+  //   목적지가 2차(목적통장)로 옮겨졌거나 아예 없는(남에게 나가는 돈) 이벤트만 실제로 뺀다.
+  const staysInPrimary = e => e.acct && CASH_ACCTS.indexOf(e.acct) >= 0;
+  const needNow = preEvents.filter(e=>e.source==='bank' && !eventPaid(e) && !staysInPrimary(e)).reduce((s,e)=>s+e.amount,0);
+  const paydayOut=bankSum(paydayEvents.filter(e=>!staysInPrimary(e)));
   const diff = cashNow - needNow;           // 급여 전 여유/부족
   const afterPayday = diff + salary - paydayOut;
 
@@ -8769,7 +8821,11 @@ function renderCashPlan(){
           ? `급여일(${plan.payday || Number(CFG.settings && CFG.settings['급여일']) || 25}일) +${won(salary)} − 급여일 출금 ${won(paydayOut)} → 직후 ${won(afterPayday)}`
           : `급여 내역이 아직 없어요 — 수입을 '월급'으로 한 번 입력하면 급여일 이후 잔고까지 계산해요`
       }</div>
-      ${CASH_CYCLE_OFFSET>0 ? `<div style="font-size:11px;color:rgba(255,255,255,0.65);margin-top:6px">* 미리보기 주기예요 — 위 잔고는 오늘 시점 기준이라, 실제 그때 잔고와는 달라질 수 있어요</div>` : ''}`;
+      ${CASH_CYCLE_OFFSET>0 ? `<div style="font-size:11px;color:rgba(255,255,255,0.65);margin-top:6px">* 미리보기 주기예요 — 위 잔고는 오늘 시점 기준이라, 실제 그때 잔고와는 달라질 수 있어요</div>` : ''}
+      ${CASH_ACCTS_2ND.length ? `<div style="margin-top:12px;padding-top:10px;border-top:1px dashed rgba(255,255,255,0.25);font-size:12px;color:rgba(255,255,255,0.75)">
+        <div style="display:flex;justify-content:space-between"><span>2차 잔고 <span style="opacity:.7">(🎯 목적통장 · 평소엔 제외)</span></span><b style="color:#D6F5E3">${won(cashSecondary)}</b></div>
+        <div style="font-size:10.5px;color:rgba(255,255,255,0.6);display:flex;flex-wrap:wrap;gap:2px 8px;margin-top:2px">${CASH_ACCTS_2ND.map(k=>`<span style="white-space:nowrap">${k} ${won(cb2(k))}</span>`).join('<span style="opacity:0.5"> · </span>')}</div>
+      </div>` : ''}`;
   }
 
   // ── 타임라인 (체크로 납부 표시) ──
