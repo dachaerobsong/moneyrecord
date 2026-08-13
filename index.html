@@ -125,7 +125,10 @@ body { background: var(--bg); color: var(--txt); min-height: 100vh; max-width: 4
   /* [재조정] 색을 다 죽였더니 잘한 것도 안 보여서, 판정이 있는 세 색만 또렷하게 되살렸다.
      원칙: 초록=잘함 · 앰버=임박 · 빨강=초과 · 회색=아직 판정할 수 없음(대기·예산없음).
      회색을 넉넉히 쓰는 대신 세 색은 확실히 구분되게 둔다. */
-  --green:#2E9E6B; --green-bg:#E9F6F0; --warning:#C08A3E; --warn-bg:#F8F1E4; --red:#E2564F; --red-bg:#FBEEEC; --radius:18px; }
+  /* [톤 다운] 세 색이 다 같은 채도로 서 있으니 화면이 눈아팠다. 이제 채도에 순서를 준다:
+     빨강만 또렷하게(경보), 앰버는 한 단계 낮게, 초록은 세이지에 가깝게 눌러서
+     여러 줄에 깔려도 배경처럼 읽히게 한다. 눈이 갈 곳은 빨강 하나여야 한다. */
+  --green:#5A9179; --green-bg:#EDF4F0; --warning:#B08A50; --warn-bg:#F7F2E8; --red:#D9534C; --red-bg:#FBEDEC; --radius:18px; }
 body { padding-bottom:88px; }
 .topnav { background:rgba(255,255,255,.92); padding:0 20px; }
 .topnav-logo { color:var(--txt); letter-spacing:-.8px; }
@@ -6302,15 +6305,15 @@ function budCatRowHtml(c){
       ? `<span style="font-size:11px;color:var(--txt3);font-weight:400"> / ${won(c.bud)}</span>` : '');
   } else {
     pct = c.bud>0 ? Math.round(c.spend/c.bud*100) : null;
-    dotC = budDotColor(pct);
+    // [수정] 아직 한 푼도 안 쓴 항목(0%)을 초록으로 칠하면 "잘함"으로 읽힌다.
+    //   고정비는 결제일 전이라 0%인 것뿐이라 판정 자체가 아직 불가능하다 → 회색.
+    dotC = (pct===0) ? 'var(--txt3)' : budDotColor(pct);
     pctTxt = pct!==null ? pct+'%' : '';
-    // [추가] %만으로는 "그래서 얼마 남았나"가 안 보였다. 남은 금액(초록)·초과 금액(빨강)을
-    //        숫자로 같이 준다 — 826%보다 '+₩412,000 초과'가 바로 행동으로 이어진다.
+    // [수정] 남은/초과 금액은 색을 빼고 회색으로만 둔다. 색은 % 한 곳에만 실어야
+    //   화면에서 눈이 갈 곳이 하나로 정해진다(초과 금액도 옆의 빨간 %가 이미 말하고 있다).
     const gap = c.bud>0 ? c.bud - c.spend : 0;
-    const gapTxt = c.bud>0
-      ? (gap >= 0
-          ? `<span style="font-size:10.5px;color:var(--green);font-weight:700;white-space:nowrap"> ${won(gap)} 남음</span>`
-          : `<span style="font-size:10.5px;color:var(--red);font-weight:700;white-space:nowrap"> +${won(-gap)} 초과</span>`)
+    const gapTxt = (c.bud>0 && pct!==0)
+      ? `<span style="font-size:10.5px;color:var(--txt3);font-weight:600;white-space:nowrap"> ${gap>=0?won(gap)+' 남음':'+'+won(-gap)+' 초과'}</span>`
       : '';
     amtRight = c.bud>0
       ? `<b>${won(c.spend)}</b><span style="font-size:11px;color:var(--txt3);font-weight:400"> / ${won(c.bud)}</span>${gapTxt}`
@@ -6425,7 +6428,7 @@ function budCatRowHtml(c){
       <span style="font-size:12px;color:var(--blue);font-weight:700;flex:none">${open?'▾':'▸'}</span>
       <span style="flex:none;max-width:34%;font-size:13px;font-weight:600;color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:6px">${label} ${tag}</span>
       ${memoInputMajorInlineHtml(c.major)}
-      <span style="font-size:13px;display:flex;align-items:center;gap:6px;flex:none">${amtRight}</span>
+      <span style="font-size:13px;display:flex;align-items:center;gap:6px;flex:1;min-width:0;justify-content:flex-end;overflow:hidden;white-space:nowrap">${amtRight}</span>
       <span style="display:flex;align-items:center;gap:4px;justify-content:flex-end;flex:none">${pctBadgeHtml(pctTxt||null, dotC)}</span>
     </div>
     ${barHtml}
@@ -9547,10 +9550,12 @@ function renderOverspendTeaser(){
       return `<div style="border-top:1px solid #F2F4F6">
         <div onclick="spikeToggle('${r.key}')" style="display:flex;align-items:center;gap:7px;padding:7px 0;cursor:pointer">
           <span style="flex:none;font-size:12px;color:var(--blue);font-weight:700">${open?'▾':'▸'}</span>
-          <span style="flex:1;min-width:0;font-size:13px;font-weight:600;color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.label}</span>
-          <span style="flex:none;display:flex;gap:7px">${tags.join('')}</span>
-          <span style="flex:none;font-size:12.5px;font-weight:700;color:var(--txt);font-variant-numeric:tabular-nums">${won(r.spend)}${r.bud>0?`<span style="font-size:10.5px;color:var(--txt3);font-weight:400"> / ${won(r.bud)}</span>`:''}</span>
-          ${pctBadgeHtml(r.pct, dotC)}
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:600;color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.label}</div>
+            ${tags.length?`<div style="display:flex;gap:7px;margin-top:1px">${tags.join('')}</div>`:''}
+          </div>
+          <span style="flex:none;font-size:12.5px;font-weight:700;color:var(--txt);font-variant-numeric:tabular-nums;text-align:right">${won(r.spend)}${r.bud>0?`<span style="font-size:10.5px;color:var(--txt3);font-weight:400"> / ${won(r.bud)}</span>`:''}</span>
+          <span style="flex:none">${pctBadgeHtml(r.pct, dotC)}</span>
         </div>
         ${detail}
       </div>`;
@@ -10179,6 +10184,13 @@ function rptJudgeMonth(ym){
   // 4) 저축 — [변경] 다른 항목이 전부 예산 대비 %인데 저축만 수입 대비였다.
   //    예산이 있으면 예산 대비로 통일하고, 수입 대비 저축률은 보조로 함께 적는다.
   const saveRate = mIn>0 ? Math.round(mSave/mIn*100) : null;
+  // [추가] 보조 지표 — 잉여율 (수입 − 지출) / 수입.
+  //   저축률은 '저축'으로 지정한 대분류만 세므로 비상금·목적통장처럼 일부러 저축에서 뺀 돈이 안 잡힌다.
+  //   잉여율은 지출이 아닌 돈 전부(저축 + 목적통장 + 안 쓰고 남은 현금)를 센다.
+  //   두 값의 차이가 곧 "저축으로는 안 세지만 안 쓴 돈"이라, 나란히 두면 그 크기가 그대로 보인다.
+  const surplusRate = mIn>0 ? Math.round((mIn-mOut)/mIn*100) : null;
+  const surplusTxt  = surplusRate!==null
+    ? ` · 잉여율 ${surplusRate}% <span style="color:var(--txt3)">(수입−지출, 비상금·목적 포함)</span>` : '';
   // 목표 출처: ① 시트 [저축목표] 월목표 합계 → ② 대분류 예산 → ③ '저축' 대분류 예산
   const _res = saveGoalsResolved();
   const goalList = _res.list;
@@ -10191,12 +10203,12 @@ function rptJudgeMonth(ym){
     const p = Math.round(mSave/saveBudget*100);
     saveCheck = { label:'저축', val:p+'%',
       d: p>=100 ? 'green' : p>=85 ? 'yellow' : 'red',
-      basis: `저축 ${won(mSave)} / 목표 ${won(saveBudget)} <span style="color:var(--txt3)">(${saveBudSrcTxt})</span>${saveRate!==null?` · 수입 대비 저축률 ${saveRate}%`:''}${goalList.length?`<br>${goalList.map(g=>{const a=saveGoalActual(g,tx);return `${g.name} ${won(a)}/${won(g.monthly)}`;}).join(' · ')}`:''}`,
+      basis: `저축 ${won(mSave)} / 목표 ${won(saveBudget)} <span style="color:var(--txt3)">(${saveBudSrcTxt})</span>${saveRate!==null?` · 수입 대비 저축률 ${saveRate}%`:''}${surplusTxt}${goalList.length?`<br>${goalList.map(g=>{const a=saveGoalActual(g,tx);return `${g.name} ${won(a)}/${won(g.monthly)}`;}).join(' · ')}`:''}`,
       crit: '🟢 예산 100% 이상 · 🟡 85% 이상 · 🔴 그 미만' };
   } else {
     saveCheck = { label:'저축률', val: saveRate!==null?saveRate+'%':'−',
       d: saveRate===null?'gray':(saveRate>=30?'green':saveRate>=20?'yellow':'red'),
-      basis: mIn>0 ? `저축 ${won(mSave)} / <b>수입</b> ${won(mIn)} · 저축 예산이 없어 수입 대비로 판정 ` : '수입 기록이 없어 계산 불가',
+      basis: mIn>0 ? `저축 ${won(mSave)} / <b>수입</b> ${won(mIn)} · 저축 예산이 없어 수입 대비로 판정${surplusTxt}` : '수입 기록이 없어 계산 불가',
       crit:'🟢 수입의 30% 이상 · 🟡 20% 이상 · 🔴 그 미만 (다른 항목은 예산 대비 %예요)' };
   }
 
