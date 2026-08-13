@@ -771,6 +771,10 @@ body { padding-bottom:88px; }
       <div class="card-title">💵 현금/예금</div>
       <div id="bal-cash"></div>
     </div>
+    <div class="card" id="bal-invest-card" style="display:none;">
+      <div class="card-title">📈 저축·투자</div>
+      <div id="bal-invest"></div>
+    </div>
     <div class="card" id="bal-contract-card" style="display:none;">
       <div class="card-title">🏡 목적자금 통장</div>
       <div id="bal-contract"></div>
@@ -3228,11 +3232,13 @@ function renderBalanceList() {
       if(el) el.innerHTML = '<div style="text-align:center;color:var(--txt3);padding:16px;font-size:13px;">설정에서 시트를 불러오면<br>계좌 잔고가 표시됩니다</div>';
     });
     const ct = document.getElementById('bal-contract-card'); if(ct) ct.style.display='none';
+    const ic = document.getElementById('bal-invest-card'); if(ic) ic.style.display='none';
     const ld = document.getElementById('bal-longdebt'); if(ld) ld.textContent='₩0';
     return;
   }
 
   const cashA = def.filter(a => a.group==='cash');
+  const invA  = def.filter(a => a.group==='invest');
   const conA  = def.filter(a => a.group==='contract');
   const debtA = def.filter(a => a.group==='debt');
   const ldA   = def.filter(a => a.group==='longdebt');
@@ -3245,6 +3251,22 @@ function renderBalanceList() {
       return `<div class="item-row"><div class="item-left"><span class="item-name">${a.label}</span></div><div class="item-right" style="color:${v<0?'var(--red)':'var(--txt)'}">${fmtWon(v)}</div></div>`;
     }).join('') +
     `<div class="item-row" style="border-top:1px solid #E5E8EB;margin-top:4px;"><div class="item-left"><span class="item-name" style="font-weight:700">합계</span></div><div class="item-right" style="color:var(--blue);font-weight:700">${fmtWon(cashT)}</div></div>`;
+
+  // [v9 추가] 저축·투자 — 케이-집계약용처럼 group이 'invest'인 계좌는 여태 이 화면 어디에도
+  //   안 보였다("잔고 확인할 때 같이 보고 싶다"고 하신 부분). 현금 합계와는 분리해서 따로 보여준다.
+  const investCard = document.getElementById('bal-invest-card');
+  if(invA.length){
+    investCard.style.display = '';
+    const invT = invA.reduce((s,a)=>s+cb(a.key),0);
+    document.getElementById('bal-invest').innerHTML =
+      invA.map(a => {
+        const v = cb(a.key);
+        return `<div class="item-row"><div class="item-left"><span class="item-name">${a.label}</span></div><div class="item-right" style="color:${v<0?'var(--red)':'var(--txt)'}">${fmtWon(v)}</div></div>`;
+      }).join('') +
+      `<div class="item-row" style="border-top:1px solid #E5E8EB;margin-top:4px;"><div class="item-left"><span class="item-name" style="font-weight:700">합계</span></div><div class="item-right" style="color:var(--blue);font-weight:700">${fmtWon(invT)}</div></div>`;
+  } else {
+    investCard.style.display = 'none';
+  }
 
   // 목적자금 통장
   const conCard = document.getElementById('bal-contract-card');
