@@ -122,7 +122,10 @@ body { background: var(--bg); color: var(--txt); min-height: 100vh; max-width: 4
   /* [색 정리] 예전엔 이 블록이 위쪽 :root의 차분한 파스텔 팔레트를 채도 높은 값으로 통째로 덮어쓰고 있었다.
      그래서 초록/노랑/빨강이 죄다 진하게 뜨면서 화면이 알록달록해졌다. 원칙: 색은 "예산 초과(빨강)"에만 쓰고
      나머지(정상/주의)는 거의 색이 안 보이는 회색 톤으로 낮춘다 — 빨강 하나만 눈에 띄어야 진짜 위험이 바로 보인다. */
-  --green:#7C8A80; --green-bg:#EEF1EE; --warning:#B98A4A; --warn-bg:#F5F0E5; --red:#E2564F; --red-bg:#FBEEEC; --radius:18px; }
+  /* [재조정] 색을 다 죽였더니 잘한 것도 안 보여서, 판정이 있는 세 색만 또렷하게 되살렸다.
+     원칙: 초록=잘함 · 앰버=임박 · 빨강=초과 · 회색=아직 판정할 수 없음(대기·예산없음).
+     회색을 넉넉히 쓰는 대신 세 색은 확실히 구분되게 둔다. */
+  --green:#2E9E6B; --green-bg:#E9F6F0; --warning:#C08A3E; --warn-bg:#F8F1E4; --red:#E2564F; --red-bg:#FBEEEC; --radius:18px; }
 body { padding-bottom:88px; }
 .topnav { background:rgba(255,255,255,.92); padding:0 20px; }
 .topnav-logo { color:var(--txt); letter-spacing:-.8px; }
@@ -4071,6 +4074,27 @@ function budDotColorGoal(pct){
   if(pct>=80) return 'var(--warning)';
   return 'var(--red)';
 }
+// ── 목표형 항목이 '아직 들어올 때가 안 된' 상태인지 ──
+// [버그] 수입·저축은 급여일에 한 번에 들어오는데, 신호등은 월말 기준 달성률로만 판정했다.
+//        그래서 급여일(25일) 전에는 근로소득·예적금·연금이 전부 0% 빨강으로 떴고,
+//        정작 진짜 위험한 '꾸밈비 826%'가 같은 빨강에 묻혔다.
+//        아직 예정일이 안 지났으면 빨강이 아니라 회색 '대기'가 맞다.
+function budGoalDueDay(secType, major){
+  try{
+    const list = (CFG.categories && CFG.categories[secType]) || [];
+    const key = normBudgetKey(major);
+    const hit = list.find(c => normBudgetKey(c.major) === key);
+    if(hit && Number(hit.day) > 0) return Number(hit.day);
+  }catch(e){}
+  const pay = Number((CFG.settings||{})['급여일']);
+  return pay > 0 ? pay : 25;
+}
+function budGoalWaiting(secType, major, pct){
+  if(pct === null || pct >= 100) return false;
+  const ym = (typeof BUD_MONTH!=='undefined' && BUD_MONTH) || currentMonthStr();
+  if(ym !== currentMonthStr()) return false;      // 지난 달은 그대로 판정
+  return new Date().getDate() < budGoalDueDay(secType, major);
+}
 
 // ── 예산행 빌더 (수입 / 저축·이동 전용 — 예산 대비 신호등 + 펼치면 보이는 메모) ──
 let _budRowSeq = 0;
@@ -5864,9 +5888,12 @@ function budRowHtml(secType, major, subList){
   const pct = bud>0 ? Math.round(spend/bud*100) : null;
   // 신호등 방향: 지출·카드납부는 "적게 쓸수록 좋음", 수입·저축(이동)은 "목표를 채울수록 좋음"
   const goalDir = !isExpense && !(isMoveType && normBudgetKey(major)==='카드납부');
-  const dotC = goalDir ? budDotColorGoal(pct) : budDotColor(pct);
+  const waiting = goalDir && budGoalWaiting(secType, major, pct);
+  const dotC = waiting ? 'var(--txt3)' : (goalDir ? budDotColorGoal(pct) : budDotColor(pct));
   const over = pct!==null && !goalDir && pct>100;
+  const beat = goalDir && pct!==null && pct>100 ? spend - bud : 0;   // 목표보다 더 번/모은 금액
   const badgeBg = dotC==='var(--red)' ? 'var(--red-bg)' : dotC==='var(--warning)' ? 'var(--warn-bg)' : dotC==='var(--green)' ? 'var(--green-bg)' : 'var(--card2)';
+  void badgeBg;
   const badgeC  = dotC==='var(--txt3)' ? 'var(--txt3)' : dotC;
   let detail = '';
   const isMove = (secType==='이동');
@@ -5948,8 +5975,11 @@ function budRowHtml(secType, major, subList){
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:6px">
-        <span style="font-size:14px;font-weight:700;color:${over?'var(--red)':spend>0?'var(--txt)':'var(--txt3)'}">${won(spend)}</span>
-        ${pct!==null?`<span style="font-size:10px;padding:1px 6px;border-radius:5px;background:${badgeBg};color:${badgeC};font-weight:600">${pct}%</span>`:''}
+        ${beat>0?`<span style="font-size:10px;color:var(--green);font-weight:700">+${won(beat)}</span>`:''}
+        <span style="font-size:14px;font-weight:700;color:${over?'var(--red)':(goalDir&&pct!==null&&pct>=100)?'var(--green)':spend>0?'var(--txt)':'var(--txt3)'}">${won(spend)}</span>
+        ${waiting
+          ? `<span style="font-size:10px;padding:1px 6px;border-radius:5px;background:var(--card2);color:var(--txt3);font-weight:600">${budGoalDueDay(secType, major)}일 예정</span>`
+          : (pct!==null?`<span style="font-size:10px;padding:1px 6px;border-radius:5px;background:${badgeBg};color:${badgeC};font-weight:600">${pct}%</span>`:'')}
         <span title="예산 대비" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${dotC};flex-shrink:0"></span>
       </div>
     </div>
