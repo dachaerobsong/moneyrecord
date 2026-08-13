@@ -6199,7 +6199,10 @@ function cfgApply(){
       if(typeof CASH_PLAN==='object' && CASH_PLAN){
         const manual = (CASH_PLAN.items||[]).filter(it=>!it.auto);
         CASH_PLAN.items = manual.concat(items);
-        CASH_PLAN.payday = Number(CFG.settings['급여일']) || CASH_PLAN.payday || 25;
+        // [v7 수정] 여기서 설정 › 급여일 값으로 매번 덮어써서, 현금흐름 탭에서 급여일을
+        //   따로 바꿔도(예: 카드 결제 기준일 등) 다음 동기화 때 25일로 되돌아갔다.
+        //   한 번 사용자가 직접 바꾼 뒤에는(paydayTouched) 자동 동기화를 건너뛴다.
+        if(!CASH_PLAN.paydayTouched) CASH_PLAN.payday = Number(CFG.settings['급여일']) || CASH_PLAN.payday || 25;
         if(typeof saveCashPlanObj==='function') saveCashPlanObj(CASH_PLAN);
       }
     })();
@@ -6714,6 +6717,69 @@ function catNormalBand(major, ym){
            upper: Math.round(q3 + iqr*1.5) };   // 이상치 경계 (Tukey)
 }
 
+// [v6 추가] "기타"는 소분류가 사실상 하나뿐이라(항상 '기타') 소분류로 묶어봐야 의미가 없다.
+//   대신 메모 앞부분의 단어를 태그처럼 쓰는 경우가 많아서("여행용 40만 이체", "공모주 10"),
+//   메모의 첫 단어로 묶는다. 3번 이상 반복되는 태그는 실제 소분류로 승격할 만하다는 뜻이라
+//   그 개수도 같이 계산해둔다(승격 제안에 사용).
+function txGroupKey(major, t){
+  if(normBudgetKey(major)==='기타'){
+    const memo = String(t.memo||'').trim();
+    if(!memo) return '(메모 없음)';
+    const first = memo.split(/[\s\/\-·:(]/)[0].trim();
+    return first || '(메모 없음)';
+  }
+  return String(t.category||'').trim() || '(소분류 없음)';
+}
+function txGroupIsTagBased(major){ return normBudgetKey(major)==='기타'; }
+
+// [v7 추가] 카테고리 세부내역(소분류 소계 + 개별 거래)을 그리는 곳이 4곳에 따로 있었다
+// (budCatRowHtml / rptShowDrill / renderOverspendReason / moToggleCatDrill). 그래서 소분류
+// 그룹핑을 한 곳만 고치면 나머지 세 곳은 예전 그대로인 "안 보임" 현상이 생겼다.
+// 이제 전부 이 함수 하나를 부른다 — 소분류 소계를 고치는 곳도 앞으로 여기 하나뿐이다.
+const TX_GROUP_OPEN = {};
+function txGroupedDetailHtml(major, txs, idPrefix){
+  if(!txs.length) return '<div style="font-size:11px;color:var(--txt3);padding:6px 0 4px 14px">내역 없음</div>';
+  const groups = {}; const order = [];
+  txs.forEach(t=>{
+    const sn = txGroupKey(major, t);
+    if(!groups[sn]){ groups[sn] = []; order.push(sn); }
+    groups[sn].push(t);
+  });
+  order.sort((a,b)=>{
+    const sa = groups[a].reduce((s,t)=>s+(Number(t.amount)||0),0);
+    const sb = groups[b].reduce((s,t)=>s+(Number(t.amount)||0),0);
+    return sb-sa;
+  });
+  const promote = txGroupIsTagBased(major) ? order.filter(sn=>groups[sn].length>=3 && sn!=='(메모 없음)') : [];
+  const tagNote = txGroupIsTagBased(major)
+    ? `<div style="font-size:10px;color:var(--txt3);padding:2px 0 4px 14px">메모 앞 단어로 자동 묶었어요${promote.length?` · <b style="color:var(--blue)">${promote.join(', ')}</b>는 3번 넘게 나와서 소분류로 만들어도 좋아요`:''}</div>` : '';
+  const rows = order.map((sn,gi)=>{
+    const items = groups[sn];
+    const subTotal = items.reduce((s,t)=>s+(Number(t.amount)||0),0);
+    const gid = idPrefix + '_' + gi;
+    const subOpen = TX_GROUP_OPEN[gid] !== false; // 기본 펼침
+    const itemRows = items.map(t=>`<div style="display:flex;align-items:center;gap:6px;padding:3px 0 3px 26px">
+        <span style="flex:none;font-size:9.5px;color:var(--txt3);width:24px">${parseInt(String(t.date).slice(8,10))}일</span>
+        <span style="flex:1;min-width:0;font-size:11.5px;color:var(--txt2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.memo||sn}</span>
+        <span style="font-size:11.5px;font-weight:400;color:${Number(t.amount)<0?'var(--green)':'var(--txt2)'};white-space:nowrap">${wonP(Number(t.amount)||0)}</span>
+      </div>`).join('');
+    return `<div style="padding:4px 0;border-top:1px solid #F2F4F6">
+      <div onclick="txGroupToggle('${gid}')" style="display:flex;align-items:center;gap:6px;cursor:pointer">
+        <span style="flex:none;font-size:10px;color:var(--txt3)">${subOpen?'▾':'▸'}</span>
+        <span style="flex:1;min-width:0;font-size:12px;color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sn} <span style="font-size:10px;color:var(--txt3)">${items.length}건</span></span>
+        <span style="font-size:12px;font-weight:600;color:${subTotal<0?'var(--green)':'var(--txt)'};white-space:nowrap">${wonP(subTotal)}</span>
+      </div>
+      ${subOpen ? itemRows : ''}
+    </div>`;
+  }).join('');
+  return tagNote + rows;
+}
+function txGroupToggle(gid){
+  TX_GROUP_OPEN[gid] = !(TX_GROUP_OPEN[gid] !== false);
+  if(typeof TX_GROUP_RERENDER === 'function') TX_GROUP_RERENDER();
+}
+let TX_GROUP_RERENDER = null; // 클릭 직전에 각 렌더 함수가 자기 자신을 재호출하도록 등록해둔다
+
 function budCatRowHtml(c){
   const label = CAT_OUT_LABELS[c.major]||c.major;
   const key = normBudgetKey(c.major);
@@ -6846,25 +6912,22 @@ function budCatRowHtml(c){
         + (orphans.length>12 ? `<div style="padding:2px 0 2px 26px;font-size:11px;color:var(--txt3)">… 외 ${orphans.length-12}건</div>` : '');
     }
   } else {
-    // 변동비: 소분류 합산 대신 실제 거래 내역을 그대로 표시 (뭘 샀는지 바로 보임 → 메모 부담 감소)
-    // 건수가 달마다 달라도 카드 높이가 흔들리지 않도록 고정 최대높이 + 내부 스크롤
-    // 헤더의 대분류 금액과 아래 목록이 같은 규칙을 쓰게 맞춘다 (예전엔 목록이 남의 대분류
-    // 거래까지 끌어와서, 목록을 더한 값과 헤더 금액이 달랐다)
+    // 변동비: 예전엔 소분류 구분 없이 거래를 그냥 시간순으로 나열했다. 그래서 "미용/헤어에
+    //   얼마 썼는지"를 보려면 목록을 눈으로 다 훑어서 더해야 했다. 이제 소분류별로 묶어
+    //   소계를 먼저 보여주고, 그 아래에 실제 거래를 들여써서 나열한다 — 높이는 그대로
+    //   고정+내부 스크롤이라 카드가 늘어지지 않는다.
     const txs = budTx().filter(majorTxPred('지출', c.major, subList))
       .slice().sort((a,b)=>String(b.date).localeCompare(String(a.date)));
-    const rows = txs.map(t=>`<div style="display:flex;align-items:center;gap:6px;padding:4px 0 4px 14px;border-top:1px solid #F2F4F6">
-        <span style="flex:none;font-size:10px;color:var(--txt3);width:26px">${parseInt(String(t.date).slice(8,10))}일</span>
-        <span style="flex:1;min-width:0;font-size:12px;color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.memo||t.category}<span style="font-size:10px;color:var(--txt3)"> · ${t.category}</span></span>
-        <span style="font-size:12px;font-weight:400;color:${Number(t.amount)<0?'var(--green)':'var(--txt)'};white-space:nowrap">${wonP(Number(t.amount)||0)}</span>
-      </div>`).join('');
-    // 건수와 무관하게 항상 같은 높이로 고정(월 이동 시 레이아웃 불변) — 식비만 크게, 나머지 변동비는 3줄 정도
-    const boxH = key==='식비' ? 216 : 72;
-    const scrollHintAt = key==='식비' ? 7 : 3;
+    // [v7] 소분류 그룹핑은 이제 이 함수 하나뿐이다 — txGroupedDetailHtml
+    TX_GROUP_RERENDER = renderBudgetHome; // 소분류 접기/펼치기 후 다시 그릴 함수
+    const idPrefix = 'budsub_' + key.replace(/\s+/g,'_');
+    // [수정] 항목이 많은 카테고리(문화생활·기타)는 3줄짜리 박스에 다 안 들어가 스크롤이
+    //   너무 빡빡했다. 대분류별로 평소 항목 수가 다르니 박스 높이도 다르게 준다.
+    const boxH = key==='식비' ? 216 : (key==='문화생활' || key==='기타') ? 180 : 96;
     const transitBox = (key==='교통비' && typeof transitRealBoxHtml==='function') ? transitRealBoxHtml(BUD_MONTH) : '';
-    detail = transitBox + `<div style="height:${boxH}px;overflow-y:auto;-webkit-overflow-scrolling:touch">
-        ${txs.length ? rows : '<div style="font-size:11px;color:var(--txt3);padding:8px 0 4px 14px">이번 달 내역 없음</div>'}
-      </div>
-      <div style="font-size:10px;color:var(--txt3);text-align:center;padding:2px 0;height:13px">${txs.length>scrollHintAt?`총 ${txs.length}건 · 스크롤해서 더 보기`:''}</div>`;
+    detail = transitBox + `<div style="max-height:${boxH}px;overflow-y:auto;-webkit-overflow-scrolling:touch">
+        ${txGroupedDetailHtml(c.major, txs, idPrefix)}
+      </div>`;
   }
 
   const rid = 'budcatr_' + key.replace(/\s+/g,'_');
@@ -8847,7 +8910,9 @@ function renderCashPlan(){
         const d = list[0].date;
         if(+d < +today) return;                       // 지난 날은 이미 잔고에 반영돼 있음
         if(+d === +payday && salary>0) running += salary;
-        running -= list.filter(e=>e.source==='bank' && !eventPaid(e)).reduce((s,e)=>s+e.amount,0);
+        // [v7 수정] needNow와 같은 기준을 쓴다 — 내 다른 계좌로 옮기는 돈(목적지가 1차 잔고
+        //   안에 있는 경우)은 총 현금이 안 줄어드니 예상 잔고 굴릴 때도 빼면 안 된다.
+        running -= list.filter(e=>e.source==='bank' && !eventPaid(e) && !staysInPrimary(e)).reduce((s,e)=>s+e.amount,0);
         projected[k] = running;
       });
       // ── 완료 항목 숨기기 ──
@@ -8879,6 +8944,9 @@ function renderCashPlan(){
           const actualAmt = paid ? paidInfo.amount : 0;
           const tag = e.source==='비상금' ? ' <span style="font-size:10px;color:var(--warning)">비상금</span>'
                     : e.isCard ? ' <span style="font-size:10px;color:var(--blue)">카드</span>' : '';
+          // [v7 추가] "계좌에 들어가는 돈 표시"가 어디로 갔는지 물으셨던 부분 — 목적지 계좌가
+          //   있으면(급여이체·저축 이동 등) 이름 옆에 "→ 계좌명"으로 보여준다.
+          const acctTag = e.acct ? ` <span style="font-size:10px;color:var(--txt3)">→ ${e.acct}</span>` : '';
           const doneTag = paid ? ' <span style="font-size:10px;color:var(--green)">완료</span>' : '';
           const icon = e.source==='bank'
             ? `<span style="font-size:16px;line-height:1;color:${paid?'var(--green)':'var(--txt3)'}">${paid?'☑':'☐'}</span>`
@@ -8894,7 +8962,7 @@ function renderCashPlan(){
             : '';
           return `<div style="display:flex;align-items:center;gap:8px;font-size:clamp(12px,3.6vw,14px);padding:4px 0">
             ${icon}
-            <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${nameStyle}">${e.name}${tag}${doneTag}${ovTag}</span>
+            <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${nameStyle}">${e.name}${tag}${acctTag}${doneTag}${ovTag}</span>
             <span style="font-weight:600;flex:none;white-space:nowrap">${amtHtml}</span>${editIcon}</div>`;
         }).join('');
         if(!shown.length && !payRow) return '';
@@ -8929,26 +8997,35 @@ function renderCashEdit(){
   const b=document.getElementById('cash-edit-body');
   if(!b) return;
   const srcOpts=['bank','비상금','정보'];
-  const itemRows=p.items.map((it,i)=>`
+  const itemRows=p.items.map((it,i)=>{
+    // [v7 추가] auto 항목은 설정 › 카테고리의 결제수단·결제일에서 매번 다시 만들어진다.
+    //   여기서 날짜/금액을 고쳐도 다음 동기화 때 그대로 되돌아가 "계속 25일로 바뀐다"는
+    //   혼란을 줬다. 그래서 auto 항목은 입력을 잠그고 원본을 고치라고 안내한다.
+    const locked = !!it.auto;
+    const moveToTag = it.moveTo || it.acct
+      ? `<span style="font-size:10px;color:var(--txt3);white-space:nowrap">→ ${it.moveTo||it.acct}</span>` : '';
+    return `
     <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
-      <input value="${(it.name||'').replace(/"/g,'&quot;')}" onchange="cashEditField(${i},'name',this.value)" style="flex:2;min-width:0;border:1px solid #E5E8EB;border-radius:10px;padding:8px;font-size:13px">
-      <input type="number" value="${Number(it.amount)||0}" onchange="cashEditField(${i},'amount',this.value)" style="flex:1.4;min-width:0;border:1px solid #E5E8EB;border-radius:10px;padding:8px;font-size:13px" placeholder="금액">
-      <input type="number" value="${Number(it.day)||1}" min="1" max="31" onchange="cashEditField(${i},'day',this.value)" style="width:52px;border:1px solid #E5E8EB;border-radius:10px;padding:8px;font-size:13px" title="일">
-      <select onchange="cashEditField(${i},'source',this.value)" style="width:74px;border:1px solid #E5E8EB;border-radius:10px;padding:8px;font-size:12px">
+      <input value="${(it.name||'').replace(/"/g,'&quot;')}" ${locked?'disabled':''} onchange="cashEditField(${i},'name',this.value)" style="flex:2;min-width:0;border:1px solid #E5E8EB;border-radius:10px;padding:8px;font-size:13px;${locked?'background:#F5F6F8;color:var(--txt3)':''}">
+      <input type="number" value="${Number(it.amount)||0}" ${locked?'disabled':''} onchange="cashEditField(${i},'amount',this.value)" style="flex:1.4;min-width:0;border:1px solid #E5E8EB;border-radius:10px;padding:8px;font-size:13px;${locked?'background:#F5F6F8;color:var(--txt3)':''}" placeholder="금액">
+      <input type="number" value="${Number(it.day)||1}" min="1" max="31" ${locked?'disabled':''} onchange="cashEditField(${i},'day',this.value)" style="width:52px;border:1px solid #E5E8EB;border-radius:10px;padding:8px;font-size:13px;${locked?'background:#F5F6F8;color:var(--txt3)':''}" title="일">
+      <select ${locked?'disabled':''} onchange="cashEditField(${i},'source',this.value)" style="width:74px;border:1px solid #E5E8EB;border-radius:10px;padding:8px;font-size:12px;${locked?'background:#F5F6F8;color:var(--txt3)':''}">
         ${srcOpts.map(s=>`<option value="${s}"${it.source===s?' selected':''}>${s==='bank'?'통장':s}</option>`).join('')}
       </select>
-      <button onclick="cashDeleteItem(${i})" style="border:none;background:none;color:var(--txt3);font-size:16px;cursor:pointer;padding:2px">✕</button>
-    </div>`).join('');
+      ${locked ? `<span style="font-size:9.5px;color:var(--blue);white-space:nowrap" title="설정 › 카테고리에서 고치세요">🔒자동</span>` : `<button onclick="cashDeleteItem(${i})" style="border:none;background:none;color:var(--txt3);font-size:16px;cursor:pointer;padding:2px">✕</button>`}
+    </div>${moveToTag?`<div style="margin:-5px 0 8px 4px">${moveToTag}</div>`:''}`;
+  }).join('');
   b.innerHTML=`
     <div style="font-size:12px;color:var(--txt3);margin-bottom:10px;line-height:1.6">항목별로 금액·날짜·출금처(통장/비상금/정보용)를 수정하세요. ‘정보’는 현금 계산에서 제외됩니다.<br>
       이 목록은 <b>설정 › 카테고리</b>에 결제수단·결제일을 넣은 항목에서 자동으로 만들어져요. 카테고리에 없는 항목(엄마생활비·전세대출 원금/이자 등)은 아래 버튼으로 직접 넣습니다. 여기 있는 항목은 <b>고정비 예산과는 별개</b>로만 관리돼요 — 얼마가 언제 나가는지만 추적하고, 예산 집계엔 영향을 주지 않습니다.</div>
     <button onclick="openCashImportModal()" style="width:100%;padding:9px;margin-bottom:12px;border:1px solid var(--blue);border-radius:10px;background:var(--blue-bg);color:var(--blue);font-size:12.5px;font-weight:700;cursor:pointer">⬇︎ 이전 앱 고정 일정 가져오기</button>
-    <div style="display:flex;gap:6px;align-items:center;margin-bottom:10px">
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px;flex-wrap:wrap">
       <span style="font-size:13px;color:var(--txt2)">급여일</span>
       <input type="number" value="${p.payday||21}" min="1" max="31" onchange="cashEditPayday(this.value)" style="width:60px;border:1px solid #E5E8EB;border-radius:10px;padding:8px;font-size:13px"> 일
       <span style="font-size:13px;color:var(--txt2);margin-left:10px">카드결제일</span>
       <span style="font-size:12px;color:var(--txt3)">삼성 ${p.cardPayDays?.삼성||13} · 그 외 ${p.cardPayDays?.국민||14}</span>
     </div>
+    <div style="font-size:10.5px;color:var(--txt3);margin-bottom:10px">${p.paydayTouched ? '여기서 직접 바꾼 값이라 자동 동기화되지 않아요' : '설정 › 급여일 값을 따라가요 · 여기서 바꾸면 그때부터 직접 관리돼요'}</div>
     ${itemRows}
     <div style="display:flex;gap:8px;margin-top:12px">
       <button onclick="cashAddItem()" style="flex:1;padding:11px;border:1px dashed var(--blue);border-radius:12px;background:var(--blue-bg);color:var(--blue);font-size:13px;font-weight:700;cursor:pointer">+ 항목 추가</button>
@@ -8979,7 +9056,7 @@ function cashEditField(i,key,val){
   saveCashPlanObj(CASH_PLAN);
   renderCashPlan();
 }
-function cashEditPayday(val){ CASH_PLAN.payday=parseInt(val)||21; saveCashPlanObj(CASH_PLAN); renderCashPlan(); }
+function cashEditPayday(val){ CASH_PLAN.payday=parseInt(val)||21; CASH_PLAN.paydayTouched=true; saveCashPlanObj(CASH_PLAN); renderCashPlan(); }
 function cashAddItem(){ CASH_PLAN.items.push({name:'새 항목', amount:0, day:1, source:'bank'}); saveCashPlanObj(CASH_PLAN); renderCashEdit(); }
 function cashDeleteItem(i){ CASH_PLAN.items.splice(i,1); saveCashPlanObj(CASH_PLAN); renderCashPlan(); renderCashEdit(); }
 // ── 이번 달만 다르게(월별 예외) ──
@@ -9526,8 +9603,9 @@ function rptUnifiedTable(year){
       if(noJudge){
         return `<td onclick="${click}" style="${cellBase(isCur)};color:var(--txt2)">${disp}</td>`;
       }
-      const memoTxt = (kind==='expense' && catKey) ? (GB_MEMO[ym+'|'+catKey] || '') : '';
-      const memoIcon = memoTxt ? `<span title="${String(memoTxt).replace(/"/g,'&quot;')}" style="margin-left:2px;font-size:9px">📝</span>` : '';
+      // [v7 수정] 메모 아이콘(📝)을 셀마다 찍었는데, 어차피 눌러보면 메모가 나오는 화면이라
+      //   중복 정보였고 표가 지저분해 보였다. 아이콘은 빼고 title(호버)로만 남긴다.
+      const memoIcon = '';
       if(cadence==='bimonthly' || cadence==='quarterly' || cadence==='biannual'){
         const pN = CADENCE_PERIOD_LEN[cadence];
         if(!isPeriodEndMonth(ym, pN)){
@@ -9751,7 +9829,11 @@ function rptShowCatYear(catKey, label){
   if(modal) modal.style.display='flex';
 }
 
-function rptShowDrill(kind, key, ym, label){  const tx = rptDrillTx(kind, key, ym).slice().sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+let RPT_DRILL_LAST = null; // {kind,key,ym,label} — 소분류 토글 시 팝업을 그 상태 그대로 다시 그리기 위함
+function rptShowDrill(kind, key, ym, label){
+  RPT_DRILL_LAST = {kind, key, ym, label};
+  TX_GROUP_RERENDER = () => rptShowDrill(kind, key, ym, label);
+  const tx = rptDrillTx(kind, key, ym).slice().sort((a,b)=>String(b.date).localeCompare(String(a.date)));
   const total = tx.reduce((s,t)=>s+(Number(t.amount)||0),0);
   const budget = STATE.budget||{};
   const budgetByKey = {};
@@ -9763,11 +9845,15 @@ function rptShowDrill(kind, key, ym, label){  const tx = rptDrillTx(kind, key, y
   const m = parseInt(ym.split('-')[1]);
   const titleEl = document.getElementById('rpt-drill-title');
   if(titleEl) titleEl.textContent = `${label} · ${m}월`;
-  const rows = tx.length ? tx.map(t=>`<div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-top:1px solid #F2F4F6">
+  // [v7] 소분류 그룹핑은 이제 txGroupedDetailHtml 하나뿐이다. 수입/저축처럼 소분류가
+  //   얼마 없는 경우엔 그냥 나열해도 충분해서 지출(kind==='expense')일 때만 그룹핑한다.
+  const rows = (kind==='expense' && tx.length)
+    ? txGroupedDetailHtml(key, tx, 'rptdrillsub')
+    : (tx.length ? tx.map(t=>`<div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-top:1px solid #F2F4F6">
       <span style="flex:none;font-size:10px;color:var(--txt3);width:26px">${parseInt(String(t.date).slice(8,10))}일</span>
       <span style="flex:1;min-width:0;font-size:12px;color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.memo||t.category||''}${t.category?` <span style="font-size:10px;color:var(--txt3)">· ${t.category}</span>`:''}</span>
       <span style="font-size:12px;font-weight:600;color:var(--txt);white-space:nowrap">${won(Number(t.amount)||0)}</span>
-    </div>`).join('') : '<div style="font-size:12px;color:var(--txt3);padding:10px 0">이 달엔 내역이 없어요</div>';
+    </div>`).join('') : '<div style="font-size:12px;color:var(--txt3);padding:10px 0">이 달엔 내역이 없어요</div>');
   gbMemoLoad();
   const catMemo = (kind==='expense' && key) ? (GB_MEMO[ym+'|'+key]||'') : '';
   const memoBox = (kind==='expense' && key) ? `
@@ -10048,11 +10134,14 @@ function renderOverspendTeaser(){
     const spend = mtx.filter(outCatPred(major)).reduce((s,t)=>s+(Number(t.amount)||0),0);
     const bud = budgetOf(major);
     const overBud = bud>0 ? spend-bud : 0;
-    const pct = bud>0 ? Math.round(spend/bud*100) : null;
+    const pct = budPct(spend, bud);
     return { major, key:k, label:CAT_OUT_LABELS[major]||major, fixed:isFixedMajor(major),
              spend, bud, pct, overBud, spike: spikeByMajor[k]||0,
              cadence: catCadence(major) };
-  }).filter(r => r.cadence!=='event' && (r.overBud>0 || r.spike>0))
+  })
+    // [v7 수정] overBud>0이면 단 몇백 원만 넘어도 "돈 새는 이유"에 올랐다. 반올림 오차
+    //   수준(예산의 2% 또는 3천원 중 큰 쪽)까지는 진짜 문제가 아니므로 여기서 걸러낸다.
+    .filter(r => r.cadence!=='event' && ((r.overBud > Math.max(3000, r.bud*0.02)) || r.spike>0))
     .sort((a,b)=> (b.overBud+b.spike)-(a.overBud+a.spike));
 
   if(!rows.length){
@@ -10066,19 +10155,16 @@ function renderOverspendTeaser(){
     const sumOver = rs.reduce((s,r)=>s+Math.max(0,r.overBud),0);
     const body = rs.map(r=>{
       const open = !!SPIKE_OPEN[r.key];
-      const dotC = r.pct===null ? 'var(--txt3)' : r.pct>110 ? 'var(--red)' : r.pct>100 ? 'var(--warning)' : 'var(--txt3)';
+      const dotC = budDotColor(r.pct);
       const tags = [];
       if(r.overBud>0) tags.push(`<span style="font-size:10px;font-weight:700;color:var(--red)">예산 +${manW(r.overBud)}</span>`);
       if(r.spike>0)   tags.push(`<span style="font-size:10px;font-weight:700;color:var(--warning)">평소 +${manW(r.spike)}</span>`);
       let detail = '';
       if(open){
+        TX_GROUP_RERENDER = renderOverspendReason;
         const txs = mtx.filter(outCatPred(r.major)).sort((a,b)=>String(b.date).localeCompare(String(a.date)));
         detail = `<div style="max-height:150px;overflow-y:auto;-webkit-overflow-scrolling:touch;margin:2px 0 6px">
-          ${txs.length ? txs.map(t=>`<div style="display:flex;align-items:center;gap:6px;padding:3px 0 3px 22px;font-size:11.5px">
-              <span style="flex:none;color:var(--txt3);width:24px">${parseInt(String(t.date).slice(8,10))}일</span>
-              <span style="flex:1;min-width:0;color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.memo||t.category||''}<span style="color:var(--txt3);font-size:10px"> · ${t.category||''}</span></span>
-              <span style="flex:none;font-weight:600;color:${Number(t.amount)<0?'var(--green)':'var(--txt)'};font-variant-numeric:tabular-nums">${wonP(Number(t.amount)||0)}</span>
-            </div>`).join('') : '<div style="font-size:11px;color:var(--txt3);padding:4px 0 4px 22px">내역 없음</div>'}
+          ${txGroupedDetailHtml(r.major, txs, 'spike_'+r.key)}
         </div>
         <div style="padding:0 0 6px 22px">${typeof memoInputHtml==='function'?memoInputHtml(r.major,''):''}</div>`;
       }
@@ -10136,8 +10222,8 @@ function renderMonthBudgetBrief(){
 
   const catRow = c => {
     const label = CAT_OUT_LABELS[c.major] || c.major;
-    const pct = Math.round(c.spend / c.bud * 100);
-    const cls = pct>=100 ? 'over' : pct>=80 ? 'warn' : 'ok';
+    const pct = budPct(c.spend, c.bud);
+    const cls = pct>100 ? 'over' : pct>=90 ? 'warn' : 'ok';
     return `<div>
       <div class="cat-row" onclick="moToggleCatDrill('${c.major}','${ym}','${label.replace(/'/g,'')}',this)" style="cursor:pointer">
         <div class="cat-name">${label}</div>
@@ -10163,6 +10249,30 @@ function renderMonthBudgetBrief(){
 
 // 카테고리별 예산 소진 행을 누르면 모달을 띄우는 대신, 그 행 바로 아래에 인라인으로
 // 거래 내역·메모를 펼침/접음 (아코디언, 같은 카드 안에선 한 번에 하나만 열림)
+// [v7] 내용 조립과 열고닫기를 분리했다 — 소분류를 펼치고 접을 때 패널 전체가
+//   닫혔다 다시 열리면 스크롤 위치가 튀므로, 내용만 갈아끼우는 refresh 경로가 필요했다.
+function moCatDrillInnerHtml(key, ym){
+  const tx = rptDrillTx('expense', key, ym).slice().sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+  const total = tx.reduce((s,t)=>s+(Number(t.amount)||0),0);
+  const budget = STATE.budget||{};
+  const budgetByKey = {};
+  fillBudgetByKey(budgetByKey, budget);
+  const bud = budgetByKey[key]||0;
+  gbMemoLoad();
+  const catMemo = GB_MEMO[ym+'|'+key]||'';
+  const rows = txGroupedDetailHtml(key, tx, 'motoggle_'+key.replace(/\s+/g,'_'));
+  return `<div style="margin-bottom:10px">
+      <div style="font-size:11px;color:var(--txt3);margin-bottom:4px">📝 이 달 메모 <span style="font-weight:400">(예산 상세·카테고리별 브리핑과 같은 메모예요)</span></div>
+      <input value="${String(catMemo).replace(/"/g,'&quot;')}" placeholder="왜 이랬는지 메모"
+        onchange="rptSaveDrillMemo('${ym}','${key}',this.value)"
+        style="width:100%;box-sizing:border-box;border:1px solid #E5E8EB;border-radius:10px;padding:9px 11px;font-size:12.5px;font-family:inherit;color:var(--txt2);background:var(--card)">
+    </div>
+    <div style="display:flex;justify-content:space-between;padding:2px 0 10px;border-bottom:1px solid #E5E8EB;margin-bottom:4px">
+      <div><div style="font-size:11px;color:var(--txt3)">실제</div><div style="font-size:15px;font-weight:800">${won(total)}</div></div>
+      <div style="text-align:right"><div style="font-size:11px;color:var(--txt3)">예산</div><div style="font-size:15px;font-weight:700;color:var(--txt2)">${bud>0?won(bud):'–'}</div></div>
+    </div>
+    ${rows}`;
+}
 function moToggleCatDrill(key, ym, label, rowEl){
   const wrap = rowEl.closest('div'); // .cat-row를 감싼 바깥 div
   const container = wrap.parentElement;
@@ -10180,32 +10290,11 @@ function moToggleCatDrill(key, ym, label, rowEl){
       openOne.remove();
     }
   }
-  const tx = rptDrillTx('expense', key, ym).slice().sort((a,b)=>String(b.date).localeCompare(String(a.date)));
-  const total = tx.reduce((s,t)=>s+(Number(t.amount)||0),0);
-  const budget = STATE.budget||{};
-  const budgetByKey = {};
-  fillBudgetByKey(budgetByKey, budget);
-  const bud = budgetByKey[key]||0;
-  gbMemoLoad();
-  const catMemo = GB_MEMO[ym+'|'+key]||'';
-  const rows = tx.length ? tx.map(t=>`<div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-top:1px solid #E5E8EB">
-      <span style="flex:none;font-size:10px;color:var(--txt3);width:26px">${parseInt(String(t.date).slice(8,10))}일</span>
-      <span style="flex:1;min-width:0;font-size:12px;color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.memo||t.category||''}${t.category?` <span style="font-size:10px;color:var(--txt3)">· ${t.category}</span>`:''}</span>
-      <span style="font-size:12px;font-weight:600;color:var(--txt);white-space:nowrap">${won(Number(t.amount)||0)}</span>
-    </div>`).join('') : '<div style="font-size:12px;color:var(--txt3);padding:8px 0">이 달엔 내역이 없어요</div>';
-  const html = `<div class="cat-drill-inline" style="padding:12px 14px;margin:2px 0 10px;background:var(--card2);border-radius:12px">
-    <div style="margin-bottom:10px">
-      <div style="font-size:11px;color:var(--txt3);margin-bottom:4px">📝 이 달 메모 <span style="font-weight:400">(예산 상세·카테고리별 브리핑과 같은 메모예요)</span></div>
-      <input value="${String(catMemo).replace(/"/g,'&quot;')}" placeholder="왜 이랬는지 메모"
-        onchange="rptSaveDrillMemo('${ym}','${key}',this.value)"
-        style="width:100%;box-sizing:border-box;border:1px solid #E5E8EB;border-radius:10px;padding:9px 11px;font-size:12.5px;font-family:inherit;color:var(--txt2);background:var(--card)">
-    </div>
-    <div style="display:flex;justify-content:space-between;padding:2px 0 10px;border-bottom:1px solid #E5E8EB;margin-bottom:4px">
-      <div><div style="font-size:11px;color:var(--txt3)">실제</div><div style="font-size:15px;font-weight:800">${won(total)}</div></div>
-      <div style="text-align:right"><div style="font-size:11px;color:var(--txt3)">예산</div><div style="font-size:15px;font-weight:700;color:var(--txt2)">${bud>0?won(bud):'–'}</div></div>
-    </div>
-    ${rows}
-  </div>`;
+  TX_GROUP_RERENDER = () => {
+    const el = wrap.nextElementSibling;
+    if(el && el.classList.contains('cat-drill-inline')) el.innerHTML = moCatDrillInnerHtml(key, ym);
+  };
+  const html = `<div class="cat-drill-inline" style="padding:12px 14px;margin:2px 0 10px;background:var(--card2);border-radius:12px">${moCatDrillInnerHtml(key, ym)}</div>`;
   wrap.insertAdjacentHTML('afterend', html);
   rowEl.style.background = 'var(--card2)';
 }
