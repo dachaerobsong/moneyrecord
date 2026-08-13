@@ -130,6 +130,9 @@ body { background: var(--bg); color: var(--txt); min-height: 100vh; max-width: 4
      여러 줄에 깔려도 배경처럼 읽히게 한다. 눈이 갈 곳은 빨강 하나여야 한다. */
   /* [v8 추가 톤 다운] 지난번보다 한 단계 더 파스텔하게 — 채도를 낮추고 밝기를 올려서
      세 색 모두 배경처럼 은은하게 앉도록 했다. 빨강도 경보색이 아니라 더스티 로즈 톤으로. */
+  /* [v8 추가] "맨 위 신호등"(월 종합 판정 점) 하나만은 눈에 띄어도 된다고 하셔서,
+     파스텔과 별개로 선명한 버전을 하나 더 둔다. 나머지는 전부 파스텔 그대로. */
+  --green-vivid:#2E9E6B; --warning-vivid:#C08A3E; --red-vivid:#E2564F;
   --green:#7CA88E; --green-bg:#EEF4F0; --warning:#C2996A; --warn-bg:#F8F1E6; --red:#CC8A87; --red-bg:#FAEEEC; --radius:18px; }
 body { padding-bottom:88px; }
 .topnav { background:rgba(255,255,255,.92); padding:0 20px; }
@@ -836,8 +839,10 @@ body { padding-bottom:88px; }
     </div>
 
     <!-- 달 이동 (진단이 아니라 네비게이션이라 본문 위로 올림) -->
-    <section class="card" id="mo-history-card" style="padding:12px 16px">
-      <div style="font-size:11px;color:var(--txt3);margin-bottom:7px">다른 달로 이동 · 색은 그 달 종합 판정</div>
+    <!-- [v8 수정] 월 신호등을 보면서 아래 세부 내역(한눈에 보기 표)을 같이 볼 수 있게
+         mo-nav-bar 바로 아래에 이어서 고정한다. top 값은 mo-nav-bar 실제 높이에 맞춘 근사치. -->
+    <section class="card" id="mo-history-card" style="padding:10px 16px;position:sticky;top:172px;z-index:49;background:var(--card);box-shadow:0 4px 10px -6px rgba(0,0,0,0.08)">
+      <div style="font-size:11px;color:var(--txt3);margin-bottom:6px">다른 달로 이동 · 색은 그 달 종합 판정</div>
       <div id="mo-history-strip"></div>
     </section>
 
@@ -3605,7 +3610,7 @@ function renderAnalysis() {
         <div style="font-size:14px;font-weight:800;color:var(--blue)">${won(totalSave)}</div>
       </div>
     </div>
-    <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--txt2)"><span>지출 비율</span><span style="font-weight:700;color:${expRatio>100?'var(--red)':expRatio>=85?'var(--warning)':'var(--txt)'}">${expRatio>100?'🔴':expRatio>=85?'🟡':'🟢'} ${expRatio}%</span></div>
+    <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--txt2)"><span>지출 비율</span><span style="font-weight:700;color:${expRatio>100?'var(--red)':expRatio>=85?'var(--warning)':'var(--txt)'}"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${expRatio>100?'var(--red)':expRatio>=85?'var(--warning)':'var(--green)'};margin-right:4px"></span>${expRatio}%</span></div>
     <div style="display:flex;justify-content:flex-end;align-items:center;margin-top:10px">
       <span style="font-size:12px;font-weight:700;padding:5px 13px;border-radius:99px;background:${rateBg};color:${rateFg}">저축률 ${saveRate}%</span>
     </div>`;
@@ -3640,8 +3645,8 @@ function renderAnalysis() {
   // 막대는 같은 정보를 두 번 그리는 셈이었다 (월간 피벗표의 신호등과도 기준을 맞춤).
   const rows = cats.map(c => {
     const pct = c.bud>0 ? Math.round(c.spend/c.bud*100) : null;
-    const dot = pct==null ? '⚪' : pct<=100 ? '🟢' : pct<=110 ? '🟡' : '🔴';
     const dc  = pct==null ? 'var(--txt3)' : pct<=100 ? 'var(--green)' : pct<=110 ? 'var(--warning)' : 'var(--red)';
+    const dot = `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${dc}"></span>`;
     let diffBadge = '';
     if(c.bud>0){
       diffBadge = c.diff>0
@@ -7310,7 +7315,9 @@ function renderBudgetHome(){
   const dotEl = document.getElementById('bud-month-dot');
   if(dotEl){
     const j = (typeof rptJudgeMonth==='function') ? rptJudgeMonth(BUD_MONTH) : null;
-    const dotCMap = { green:'var(--green)', yellow:'var(--warning)', red:'var(--red)', gray:'var(--txt3)' };
+    // [v8 수정] 이 점은 "맨 위 신호등"이라 파스텔 대신 선명한 색을 쓴다 — 한눈에 상태를
+    //   파악해야 하는 유일한 요약 지표라, 여기만은 눈에 띄는 게 맞다.
+    const dotCMap = { green:'var(--green-vivid)', yellow:'var(--warning-vivid)', red:'var(--red-vivid)', gray:'var(--txt3)' };
     dotEl.style.background = j ? dotCMap[j.dot] : 'var(--txt3)';
   }
   // ── 다른 달 히스토리 (연간 리포트에 있던 월별 신호등을 이 탭으로 이동) ──
@@ -9582,16 +9589,20 @@ function rptUnifiedTable(year){
   }
 
   // dot 판정: dir='low'(지출, 낮을수록 좋음) | 'high'(수입/저축, 높을수록 좋음)
+  // [v8 수정] 🟢🟡🔴 이모지는 고유색이 박혀 있어서 채도를 낮춰도 그대로 원색으로 남았다.
+  //   CSS 배경색 점으로 바꿔서 --green/--warning/--red 파스텔 값이 실제로 반영되게 한다.
+  const cssDot = c => `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${c}"></span>`;
   function dotFor(dir, v, bud, avg){
-    if(v===0 && bud===0 && avg===0) return {c:'var(--txt3)', dot:'⚪'};
+    if(v===0 && bud===0 && avg===0) return {c:'var(--txt3)', dot:cssDot('var(--txt3)')};
+    const mk = c => ({c, dot:cssDot(c)});
     if(dir==='low'){
-      if(bud>0){ const p=v/bud*100; return p<=100?{c:'var(--green)',dot:'🟢'}:p<=110?{c:'var(--warning)',dot:'🟡'}:{c:'var(--red)',dot:'🔴'}; }
-      if(avg>0){ const p=v/avg*100; return p<=110?{c:'var(--green)',dot:'🟢'}:p<=130?{c:'var(--warning)',dot:'🟡'}:{c:'var(--red)',dot:'🔴'}; }
-      return {c:'var(--txt3)', dot:'⚪'};
+      if(bud>0){ const p=v/bud*100; return p<=100?mk('var(--green)'):p<=110?mk('var(--warning)'):mk('var(--red)'); }
+      if(avg>0){ const p=v/avg*100; return p<=110?mk('var(--green)'):p<=130?mk('var(--warning)'):mk('var(--red)'); }
+      return mk('var(--txt3)');
     } else {
-      if(bud>0){ const p=v/bud*100; return p>=100?{c:'var(--green)',dot:'🟢'}:p>=85?{c:'var(--warning)',dot:'🟡'}:{c:'var(--red)',dot:'🔴'}; }
-      if(avg>0){ const p=v/avg*100; return p>=95?{c:'var(--green)',dot:'🟢'}:p>=70?{c:'var(--warning)',dot:'🟡'}:{c:'var(--red)',dot:'🔴'}; }
-      return {c:'var(--txt3)', dot:'⚪'};
+      if(bud>0){ const p=v/bud*100; return p>=100?mk('var(--green)'):p>=85?mk('var(--warning)'):mk('var(--red)'); }
+      if(avg>0){ const p=v/avg*100; return p>=95?mk('var(--green)'):p>=70?mk('var(--warning)'):mk('var(--red)'); }
+      return mk('var(--txt3)');
     }
   }
 
@@ -9734,7 +9745,7 @@ function rptUnifiedTable(year){
   const expTotBud = Object.keys(CAT_OUT_LABELS).reduce((s,k)=> s + (budgetByKey[normBudgetKey(k)]||0), 0);
   body += buildRow('지출 합계', expTotVals, expTotBud, 'low', {kind:'expense-all', catKey:'', drillLabel:'지출 전체', stickyBottom:true});
 
-  return `<div id="rpt-cat-scroll-wrap" style="overflow:auto;-webkit-overflow-scrolling:touch;max-height:min(58vh,440px);border:1px solid #EEECE3;border-radius:12px">
+  return `<div id="rpt-cat-scroll-wrap" style="overflow:auto;-webkit-overflow-scrolling:touch;max-height:min(80vh,900px);border:1px solid #EEECE3;border-radius:12px">
     <table style="border-collapse:collapse;width:100%;min-width:${420+months.length*46}px">
       <thead>${head}</thead>
       <tbody>${body}</tbody>
