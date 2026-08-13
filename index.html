@@ -247,23 +247,26 @@ body { padding-bottom:88px; }
 @media (min-width: 860px){
   .tabbar{ display:none; }
 
+  /* [여백 정리] 예전엔 216px 폭에 순자산 블록을 margin-top:auto로 화면 맨 아래에 붙여놨다.
+     탭이 4개뿐이라 메뉴와 순자산 사이가 통째로 빈 채로 남아, 사이드바가 '두 섬 사이의 협곡'
+     처럼 보였다. 폭을 줄이고 순자산을 메뉴 바로 아래로 끌어올려 위쪽에 모아둔다. */
   .sidebar{
-    display:flex; flex-direction:column; gap:4px;
-    position:fixed; top:0; left:0; bottom:0; width:216px;
-    padding:22px 14px; box-sizing:border-box;
+    display:flex; flex-direction:column; gap:2px;
+    position:fixed; top:0; left:0; bottom:0; width:172px;
+    padding:16px 10px; box-sizing:border-box;
     border-right:1px solid rgba(0,0,0,.06); background:var(--card); z-index:100; overflow-y:auto;
   }
-  .sb-logo{ font-size:16px; font-weight:800; color:var(--blue); padding:6px 10px 20px; }
-  .sidebar .sb-item{ display:flex; flex-direction:row; align-items:center; gap:10px; justify-content:flex-start;
-    padding:11px 12px; border-radius:12px; font-size:13.5px; font-weight:700; color:var(--txt3); width:100%; background:none; border:none; cursor:pointer; }
-  .sidebar .sb-item .icon{ font-size:18px; }
+  .sb-logo{ font-size:15px; font-weight:800; color:var(--blue); padding:4px 8px 12px; }
+  .sidebar .sb-item{ display:flex; flex-direction:row; align-items:center; gap:9px; justify-content:flex-start;
+    padding:9px 10px; border-radius:10px; font-size:13px; font-weight:700; color:var(--txt3); width:100%; background:none; border:none; cursor:pointer; }
+  .sidebar .sb-item .icon{ font-size:17px; }
   .sidebar .sb-item.on{ background:var(--blue-bg); color:var(--blue); }
-  .sb-net{ margin-top:auto; background:var(--card2); border-radius:14px; padding:14px; }
-  .sb-net .lb{ font-size:10.5px; color:var(--txt3); }
-  .sb-net .vv{ font-size:16px; font-weight:800; color:var(--txt); margin-top:2px; }
+  .sb-net{ margin-top:14px; background:var(--card2); border-radius:12px; padding:11px 12px; }
+  .sb-net .lb{ font-size:10px; color:var(--txt3); }
+  .sb-net .vv{ font-size:15px; font-weight:800; color:var(--txt); margin-top:1px; letter-spacing:-.3px; }
 
   body{ max-width:none; margin:0; padding-bottom:40px; }
-  .app-main{ margin-left:216px; }
+  .app-main{ margin-left:172px; }
   .topnav{ max-width:min(1200px,94vw); margin:0 auto; }
   .panel{ max-width:min(1200px,94vw); margin:0 auto; }
   #p-analysis.panel{ max-width:min(1400px,94vw); }
@@ -2189,7 +2192,7 @@ function loadStateCache(){
     const c = JSON.parse(LS.get('gb_state_cache')||'null');
     if(!c || !c.transactions || !c.transactions.length) return false;
     STATE.transactions = c.transactions;
-    if(c.budget) STATE.budget = c.budget;
+    if(c.budget){ STATE.budget = c.budget; STATE.budgetSheet = Object.assign({}, c.budget); }
     if(c.subBudget) STATE.subBudget = c.subBudget;
     if(c.cardBudget) STATE.cardBudget = c.cardBudget;
     if(c.saveGoals) STATE.saveGoals = c.saveGoals;
@@ -2262,7 +2265,9 @@ function fetchFromSheet(silent) {
       if(data.config){
         // [추가] GAS가 [저축목표] 블록을 어떤 이름으로 내려주든 나중에 찾아낼 수 있도록 원본 보관
         STATE.rawConfig = data.config;
-        if(data.config.budget) STATE.budget = data.config.budget;
+        // [추가] 설정 화면 값이 덮어쓰기 전의 '시트 원본 예산'을 따로 보관한다.
+        //        설정값과 시트값이 다를 때 어느 쪽이 쓰이고 있는지 점검 화면에서 보여주기 위함.
+        if(data.config.budget){ STATE.budget = data.config.budget; STATE.budgetSheet = Object.assign({}, data.config.budget); }
         if(data.config.subBudget) STATE.subBudget = data.config.subBudget;
         if(data.config.cardBudget) STATE.cardBudget = data.config.cardBudget;
         if(data.config.saveGoals) STATE.saveGoals = data.config.saveGoals;
@@ -4114,7 +4119,7 @@ function pctBadgeHtml(pct, dotC, opts){
   const badge = (pct===null || pct===undefined) ? ''
     : isOver
       ? `<span style="font-size:10px;padding:1px 6px;border-radius:5px;background:${bg};color:${fg};font-weight:700;font-variant-numeric:tabular-nums">${typeof pct==='number'?pct+'%':pct}</span>`
-      : `<span style="font-size:10.5px;color:${c==='var(--warning)'?'var(--warning)':'var(--txt3)'};font-weight:600;font-variant-numeric:tabular-nums">${typeof pct==='number'?pct+'%':pct}</span>`;
+      : `<span style="font-size:10.5px;color:${(c==='var(--warning)'||c==='var(--green)')?c:'var(--txt3)'};font-weight:600;font-variant-numeric:tabular-nums">${typeof pct==='number'?pct+'%':pct}</span>`;
   const dot = (opts.noDot || !isOver) ? '' : `<span title="${opts.title||'예산 초과'}" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${c};flex-shrink:0"></span>`;
   return `<span style="display:inline-flex;align-items:center;gap:5px">${badge}${dot}</span>`;
 }
@@ -4292,6 +4297,39 @@ function debugConfig(){
   L.push('■ 저축 대분류 예산 조회 결과');
   SAVE_MAJORS.forEach(m=> L.push(`  ${m}: ${money(budgetOf(m, CAT_MV_SUBS[m]))}`));
   L.push(`  저축: ${money(budgetOf('저축'))}`);
+
+  // ── 예산 출처 비교 ──
+  // [추가] cfgApply가 설정 › 카테고리 값으로 시트 예산을 덮어쓰면서, 화면 숫자가
+  //        '설정에서 온 값'인지 '시트 앱설정 옛 예산 행에서 온 값'인지 구분이 안 됐다.
+  //        둘을 나란히 찍어 서로 다른 항목만 눈에 띄게 한다.
+  (function budgetSource(){
+    const cfgB   = (CFG && CFG.budget) || {};
+    const sheetB = STATE.budgetSheet || {};
+    const useB   = STATE.budget || {};
+    const kindOf = name => {
+      const C = (CFG && CFG.categories) || {};
+      for(const k of ['지출','이동','수입']){
+        if((C[k]||[]).some(c => normBudgetKey(c.major) === normBudgetKey(name))) return k;
+      }
+      return '?';
+    };
+    const keys = Array.from(new Set([].concat(Object.keys(cfgB), Object.keys(sheetB), Object.keys(useB)))).sort();
+    const diff = [];
+    L.push('');
+    L.push('■ 예산 출처 비교  [설정 = 설정›카테고리 월목표 / 시트 = 앱설정 옛 예산 행]');
+    if(!keys.length){ L.push('  (예산 항목 없음)'); return; }
+    if(!STATE.budgetSheet){ L.push('  ※ 아직 시트를 한 번도 안 읽었습니다. 상단 🔄 동기화 후 다시 눌러주세요.'); }
+    keys.forEach(k=>{
+      const a = Number(cfgB[k])||0, b = Number(sheetB[k])||0, u = Number(useB[k])||0;
+      const mark = (a>0 && b>0 && a!==b) ? '  ← 다름' : (a===0 && b>0 ? '  ← 시트값만 있음' : '');
+      if(mark) diff.push(k);
+      L.push(`  [${kindOf(k)}] ${k}  설정 ${a?money(a):'–'} / 시트 ${b?money(b):'–'} / 실사용 ${u?money(u):'–'}${mark}`);
+    });
+    L.push('');
+    L.push(diff.length
+      ? `  → 확인할 항목 ${diff.length}개: ${diff.join(', ')}`
+      : '  → 설정값과 시트값이 모두 일치합니다. 따로 고칠 것 없습니다.');
+  })();
 
   L.push('');
   L.push('■ 계좌 (' + (STATE.acctsDef||[]).length + '개)');
@@ -6266,8 +6304,16 @@ function budCatRowHtml(c){
     pct = c.bud>0 ? Math.round(c.spend/c.bud*100) : null;
     dotC = budDotColor(pct);
     pctTxt = pct!==null ? pct+'%' : '';
+    // [추가] %만으로는 "그래서 얼마 남았나"가 안 보였다. 남은 금액(초록)·초과 금액(빨강)을
+    //        숫자로 같이 준다 — 826%보다 '+₩412,000 초과'가 바로 행동으로 이어진다.
+    const gap = c.bud>0 ? c.bud - c.spend : 0;
+    const gapTxt = c.bud>0
+      ? (gap >= 0
+          ? `<span style="font-size:10.5px;color:var(--green);font-weight:700;white-space:nowrap"> ${won(gap)} 남음</span>`
+          : `<span style="font-size:10.5px;color:var(--red);font-weight:700;white-space:nowrap"> +${won(-gap)} 초과</span>`)
+      : '';
     amtRight = c.bud>0
-      ? `<b>${won(c.spend)}</b><span style="font-size:11px;color:var(--txt3);font-weight:400"> / ${won(c.bud)}</span>`
+      ? `<b>${won(c.spend)}</b><span style="font-size:11px;color:var(--txt3);font-weight:400"> / ${won(c.bud)}</span>${gapTxt}`
       : `<b>${won(c.spend)}</b>`;
   }
 
