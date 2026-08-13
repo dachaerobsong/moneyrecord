@@ -826,19 +826,27 @@ body { padding-bottom:88px; }
   <div id="sub-analysis-month" class="analysis-sub-panel sub-on">
 
     <!-- 월 네비 + 액션 (상단 고정) -->
+    <!-- [v14 추가] 폰에서 상단 고정바 두 개(네비+신호등 띠)가 화면을 너무 차지한다고 하셔서,
+         여기도 접을 수 있게 했다. 접으면 월 이동 버튼만 남고 나머지(연간 배지·모두 펼치기·
+         시트로 버튼)는 숨는다 — 월 이동은 계속 써야 하니 이건 항상 보이게 둔다. -->
     <div id="mo-nav-bar" style="position:sticky;top:116px;z-index:50;background:var(--bg);display:flex;align-items:center;justify-content:space-between;padding:8px 4px 12px;margin:0 -2px;">
       <div style="display:flex;align-items:center;gap:8px">
         <button onclick="budMonthNav(-1)" style="width:30px;height:30px;border-radius:50%;border:1px solid var(--txt3);background:var(--card);color:var(--txt2);font-size:15px;cursor:pointer">‹</button>
         <span id="bud-month-label" style="font-size:17px;font-weight:800;color:var(--txt)"></span>
         <button onclick="budMonthNav(1)" style="width:30px;height:30px;border-radius:50%;border:1px solid var(--txt3);background:var(--card);color:var(--txt2);font-size:15px;cursor:pointer">›</button>
-        <span id="bud-month-dot-c" onclick="analysisGoToPeriod()" title="연간 리포트로 이동" style="cursor:pointer;display:flex;align-items:center;gap:4px;padding:4px 9px 4px 7px;border-radius:99px;background:var(--card2)">
-          <span id="bud-month-dot" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--txt3)"></span>
-          <span style="font-size:11px;color:var(--txt2);font-weight:600">연간</span>
+        <span id="mo-nav-extra" style="display:inline-flex;align-items:center;gap:8px">
+          <span id="bud-month-dot-c" onclick="analysisGoToPeriod()" title="연간 리포트로 이동" style="cursor:pointer;display:flex;align-items:center;gap:4px;padding:4px 9px 4px 7px;border-radius:99px;background:var(--card2)">
+            <span id="bud-month-dot" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--txt3)"></span>
+            <span style="font-size:11px;color:var(--txt2);font-weight:600">연간</span>
+          </span>
         </span>
       </div>
       <div style="display:flex;align-items:center;gap:6px">
-        <button id="bud-toggle-all" onclick="budToggleAll()" style="font-size:12px;padding:5px 11px;border:1px solid #E5E8EB;border-radius:99px;background:#FFF;color:var(--txt2);cursor:pointer;white-space:nowrap">모두 펼치기</button>
-        <button onclick="exportBudgetSheet()" style="font-size:12px;padding:5px 11px;border:1px solid var(--blue);border-radius:99px;background:var(--blue-bg);color:var(--blue);cursor:pointer;white-space:nowrap" title="선택 연도의 월별 예산/지출을 구글 시트로 내보냅니다">📊 시트로</button>
+        <span id="mo-nav-extra2" style="display:inline-flex;align-items:center;gap:6px">
+          <button id="bud-toggle-all" onclick="budToggleAll()" style="font-size:12px;padding:5px 11px;border:1px solid #E5E8EB;border-radius:99px;background:#FFF;color:var(--txt2);cursor:pointer;white-space:nowrap">모두 펼치기</button>
+          <button onclick="exportBudgetSheet()" style="font-size:12px;padding:5px 11px;border:1px solid var(--blue);border-radius:99px;background:var(--blue-bg);color:var(--blue);cursor:pointer;white-space:nowrap" title="선택 연도의 월별 예산/지출을 구글 시트로 내보냅니다">📊 시트로</button>
+        </span>
+        <button onclick="moNavFoldToggle()" id="mo-nav-fold-btn" title="상단바 줄이기/펼치기" style="width:28px;height:28px;border-radius:50%;border:1px solid #E5E8EB;background:#FFF;color:var(--txt3);font-size:12px;cursor:pointer;flex:none">▴</button>
       </div>
     </div>
 
@@ -7148,12 +7156,12 @@ function renderMonthKpi(){
     return `<span style="font-size:11px;font-weight:700;color:${good?'var(--green)':'var(--red)'}">${diff>0?'▲':'▼'} ${manW(Math.abs(diff))}</span>`;
   };
   const tile = (label, value, color, sub, deltaHtml) => `
-    <div style="background:var(--card2);border-radius:14px;padding:13px 14px">
+    <div style="background:var(--card2);border-radius:14px;padding:13px 14px;min-width:0">
       <div style="font-size:11px;color:var(--txt3);margin-bottom:3px">${label}</div>
-      <div style="font-size:19px;font-weight:800;color:${color};font-variant-numeric:tabular-nums;letter-spacing:-.3px">${value}</div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:6px">
+      <div style="font-size:clamp(15px,4.4vw,19px);font-weight:800;color:${color};font-variant-numeric:tabular-nums;letter-spacing:-.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${value}">${value}</div>
+      <div style="margin-top:6px;display:flex;flex-direction:column;gap:2px;min-width:0">
         <span style="font-size:11px;color:var(--txt3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${sub}</span>
-        ${deltaHtml}
+        <span style="white-space:nowrap">${deltaHtml}</span>
       </div>
     </div>`;
 
@@ -7169,7 +7177,7 @@ function renderMonthKpi(){
   }
 
   el.innerHTML = `
-    <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px">
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px">
       ${tile('수입', won(cur.mIn), 'var(--green)', cur.mBal>=0?`잔액 ${manW(cur.mBal)}`:`적자 ${manW(cur.mBal)}`, delta(cur.mIn, prev.mIn, true))}
       ${tile('지출', won(cur.mOut), 'var(--red)', `고정 ${manW(cur.mFix)} · 변동 ${manW(cur.mVar)}`, delta(cur.mOut, prev.mOut, false))}
       ${tile('저축 · 이동', won(cur.mSave), 'var(--blue)', cur.rate!=null?`저축률 ${cur.rate}%`:'수입 없음', delta(cur.mSave, prev.mSave, true))}
@@ -7350,6 +7358,7 @@ function renderBudgetHome(){
   }
   // ── 다른 달 히스토리 (연간 리포트에 있던 월별 신호등을 이 탭으로 이동) ──
   if(typeof renderMonthHistoryStrip==='function') renderMonthHistoryStrip();
+  if(typeof moNavFoldApply==='function') moNavFoldApply();
 
   // ── 이번 달 탭 신규 위젯 ──
   if(typeof renderMonthHeroGauge==='function') renderMonthHeroGauge('mo-hero-gauge', BUD_MONTH);
@@ -9506,17 +9515,17 @@ function renderRptKpi(d){
   const nwDiff = (d.nwStart!=null && d.nwEnd!=null) ? Math.round(d.nwEnd-d.nwStart) : null;
   const y = d.yoy;
   const tile = (label, total, avgTxt, color, deltaHtml, subTxt) => `
-    <div style="background:var(--card2);border-radius:14px;padding:13px 14px">
+    <div style="background:var(--card2);border-radius:14px;padding:13px 14px;min-width:0">
       <div style="font-size:11px;color:var(--txt3);margin-bottom:3px">${label}</div>
-      <div style="font-size:19px;font-weight:800;color:${color};font-variant-numeric:tabular-nums;letter-spacing:-.3px">${total}</div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:6px">
-        <span style="font-size:11px;color:var(--txt3);white-space:nowrap">${avgTxt}</span>
-        ${deltaHtml}
+      <div style="font-size:clamp(15px,4.4vw,19px);font-weight:800;color:${color};font-variant-numeric:tabular-nums;letter-spacing:-.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${total}">${total}</div>
+      <div style="margin-top:6px;display:flex;flex-direction:column;gap:2px;min-width:0">
+        <span style="font-size:11px;color:var(--txt3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${avgTxt}</span>
+        <span style="white-space:nowrap">${deltaHtml}</span>
       </div>
-      ${subTxt?`<div style="font-size:10.5px;color:var(--txt3);margin-top:4px">${subTxt}</div>`:''}
+      ${subTxt?`<div style="font-size:10.5px;color:var(--txt3);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${subTxt}</div>`:''}
     </div>`;
   el.innerHTML = `
-    <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px">
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px">
       ${tile('연간 총수입', won(d.totalIncome), '월평균 '+manW(Math.round(d.totalIncome/n)), 'var(--green)', rptDelta(y?y.incomeDiff:null, true), '')}
       ${tile('연간 총지출', won(d.totalExpense), '월평균 '+manW(Math.round(d.totalExpense/n)), 'var(--red)', rptDelta(y?y.expenseDiff:null, false), `고정 ${manW(Math.round(d.fixedTotal/n))} · 변동 ${manW(Math.round(d.varTotal/n))}`)}
       ${tile('연간 총저축', won(d.totalSave), '월평균 '+manW(Math.round(d.totalSave/n)), 'var(--blue)', rptDelta(y?y.saveDiff:null, true), d.saveRate!=null?`저축률 ${d.saveRate}%${y&&y.saveRateDiff!=null?` (작년比 ${y.saveRateDiff>=0?'+':''}${y.saveRateDiff}%p)`:''}`:'')}
@@ -11004,6 +11013,24 @@ function renderMonthHistoryStrip(){
   moHistoryFoldApply();
 }
 // [v10 추가] 다른 달 이동 띠 접기/펼치기 — 상태는 기기에 저장해 다음에도 유지
+// [v14 추가] 월 네비바 압축 모드 — 접으면 연간 배지·모두 펼치기·시트로 버튼이 숨고
+//   월 이동 버튼만 남아 높이가 줄어든다. mo-history-card 접기와 별개로 기억된다.
+function moNavFold(){ return LS.get('mo_nav_fold')==='1'; }
+function moNavFoldToggle(){
+  LS.set('mo_nav_fold', moNavFold() ? '' : '1');
+  moNavFoldApply();
+  if(typeof syncStickyTop==='function') setTimeout(syncStickyTop, 0);
+}
+function moNavFoldApply(){
+  const folded = moNavFold();
+  const e1 = document.getElementById('mo-nav-extra');
+  const e2 = document.getElementById('mo-nav-extra2');
+  const btn = document.getElementById('mo-nav-fold-btn');
+  if(e1) e1.style.display = folded ? 'none' : '';
+  if(e2) e2.style.display = folded ? 'none' : '';
+  if(btn) btn.textContent = folded ? '▾' : '▴';
+}
+document.addEventListener('DOMContentLoaded', moNavFoldApply);
 function moHistoryFold(){ return LS.get('mo_history_fold')==='1'; }
 function moHistoryFoldToggle(){
   LS.set('mo_history_fold', moHistoryFold() ? '' : '1');
