@@ -821,7 +821,7 @@ body { padding-bottom:88px; }
   <!-- 가계부 5) 이번 달 진단 + 예산 관리 (통합) -->
   <div id="sub-analysis-month" class="analysis-sub-panel sub-on">
 
-    <!-- 월 네비 + 액션 (상단 고정) — applyRedesignIA()가 이 sticky 블록을 서브탭 아래로 옮긴다 -->
+    <!-- 월 네비 + 액션 (상단 고정) -->
     <div id="mo-nav-bar" style="position:sticky;top:116px;z-index:50;background:var(--bg);display:flex;align-items:center;justify-content:space-between;padding:8px 4px 12px;margin:0 -2px;">
       <div style="display:flex;align-items:center;gap:8px">
         <button onclick="budMonthNav(-1)" style="width:30px;height:30px;border-radius:50%;border:1px solid var(--txt3);background:var(--card);color:var(--txt2);font-size:15px;cursor:pointer">‹</button>
@@ -839,9 +839,10 @@ body { padding-bottom:88px; }
     </div>
 
     <!-- 달 이동 (진단이 아니라 네비게이션이라 본문 위로 올림) -->
-    <!-- [v8 수정] 월 신호등을 보면서 아래 세부 내역(한눈에 보기 표)을 같이 볼 수 있게
-         mo-nav-bar 바로 아래에 이어서 고정한다. top 값은 mo-nav-bar 실제 높이에 맞춘 근사치. -->
-    <section class="card" id="mo-history-card" style="padding:10px 16px;position:sticky;top:172px;z-index:49;background:var(--card);box-shadow:0 4px 10px -6px rgba(0,0,0,0.08)">
+    <!-- [v9] mo-nav-bar 바로 아래에 이어서 고정한다. top 값은 JS(syncStickyTop2)가 mo-nav-bar
+         실제 높이를 실측해서 --stick-top-2로 채운다 — 하드코딩 오프셋이 화면마다 어긋나
+         빈 틈이 보이던 문제라, 앞서 상단바에 썼던 것과 같은 실측 방식으로 고쳤다. -->
+    <section class="card" id="mo-history-card" style="padding:10px 16px;position:sticky;top:var(--stick-top-2, 172px);z-index:49;background:var(--card);box-shadow:0 4px 10px -6px rgba(0,0,0,0.08)">
       <div style="font-size:11px;color:var(--txt3);margin-bottom:6px">다른 달로 이동 · 색은 그 달 종합 판정</div>
       <div id="mo-history-strip"></div>
     </section>
@@ -7708,8 +7709,9 @@ function computeMonthHeroScore(ym){
   if(!j) return { score:null, items:[] };
   const items = j.checks.filter(c=>c.label!=='주기 결제' && c.d!=='gray');
   if(!items.length) return { score:null, items:[] };
-  const score = Math.round(items.reduce((s,c)=>s+(HERO_DOT_SCORE[c.d]||0),0)/items.length);
-  return { score, items };
+  // [v9 수정] j.score(=rptJudgeMonth의 종합 dot과 같은 계산)를 그대로 쓴다.
+  //   여기서 따로 다시 평균내면, 나중에 한쪽만 고쳤을 때 또 점수와 dot이 어긋난다.
+  return { score: j.score, items };
 }
 function renderMonthHeroGauge(elId, ym){
   const el = document.getElementById(elId);
@@ -10896,14 +10898,15 @@ function rptJudgeMonth(ym){
   if(blowoutCheck) checks.push(blowoutCheck);
   if(burstCheck) checks.push(burstCheck);
 
-  // 월 종합: 회색 제외. 빨강 1개→빨강, 노랑 2개 이상→노랑, 나머지 녹
-  // 종합 판정에는 '주기 결제'를 넣지 않는다 — 정보 제공용이지 잘잘못이 아니다
+  // [v9 수정] 예전엔 "빨강 1개라도 있으면 무조건 빨강"이라, 나머지 항목이 다 좋아서
+  //   점수(평균)는 76점처럼 괜찮게 나와도 dot은 빨강으로 튀는 모순이 있었다.
+  //   이제 dot도 같은 평균 점수에서 뽑는다 — 점수와 색이 항상 같은 이야기를 하게.
   const judged = checks.filter(c=>c.label!=='주기 결제');
-  const reds = judged.filter(c=>c.d==='red').length;
-  const yellows = judged.filter(c=>c.d==='yellow').length;
-  const overallDot = reds>0 ? 'red' : yellows>=2 ? 'yellow' : 'green';
+  const scoreItems = judged.filter(c=>c.d!=='gray');
+  const score = scoreItems.length ? Math.round(scoreItems.reduce((s,c)=>s+(HERO_DOT_SCORE[c.d]||0),0)/scoreItems.length) : null;
+  const overallDot = score===null ? 'gray' : score>=85 ? 'green' : score>=65 ? 'yellow' : 'red';
 
-  return { dot: overallDot, dotC, checks, mIn, mOut, mSave, mFixed, mVar, mEvent, isComplete };
+  return { dot: overallDot, dotC, checks, score, mIn, mOut, mSave, mFixed, mVar, mEvent, isComplete };
 }
 
 // ── 월별 히스토리 그리드 (예산/분석 탭 하단) ──
@@ -10915,7 +10918,9 @@ function renderMonthHistoryStrip(){
   const curYm = BUD_MONTH || currentMonthStr();
   const year = curYm.slice(0,4);
   const nowYm = currentMonthStr();
-  const dotC = {'green':'var(--green)','yellow':'var(--warning)','red':'var(--red)','gray':'var(--txt3)'};
+  // [v9 수정] "위아래 동그라미가 서로 연동된 게 아니니 이것도 눈에 띄어도 된다"고 하셔서
+  //   여기(다른 달 이동 띠)도 선명한 색으로 되돌린다. 파스텔은 표 안의 촘촘한 점들에만 남긴다.
+  const dotC = {'green':'var(--green-vivid)','yellow':'var(--warning-vivid)','red':'var(--red-vivid)','gray':'var(--txt3)'};
   const cells = [];
   for(let m=1;m<=12;m++){
     const ym = year+'-'+String(m).padStart(2,'0');
@@ -11260,6 +11265,15 @@ function syncStickyTop(){
     });
     if(sawSub && subH <= 0) subH = 50;
     document.documentElement.style.setProperty('--stick-top', Math.max(0, navH + subH - 1) + 'px');
+    // [v9 추가] mo-history-card가 mo-nav-bar 바로 아래에 이어 붙도록, mo-nav-bar의
+    //   실제 렌더 높이를 더해 --stick-top-2를 만든다. 하드코딩 오프셋(172px)이 화면마다
+    //   어긋나면서 둘 사이에 빈 틈(뒤 배경 비침)이 보이던 문제의 원인이었다.
+    const navBar = document.getElementById('mo-nav-bar');
+    if(navBar && navBar.offsetParent!==null){
+      const stickTop = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--stick-top')) || (navH+subH-1);
+      const navBarH = Math.round(navBar.getBoundingClientRect().height);
+      document.documentElement.style.setProperty('--stick-top-2', Math.max(0, stickTop + navBarH - 1) + 'px');
+    }
   }catch(e){}
 }
 window.addEventListener('resize', syncStickyTop);
