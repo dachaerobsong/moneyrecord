@@ -922,7 +922,7 @@ body { padding-bottom:88px; }
          여기 남아있는 건 "원본이 있어야 옮길 수 있어서"일 뿐, 이 화면에는 표시되지 않는다. -->
     <div class="rail">
       <section class="card need-cash" id="mo-cash-verdict-card">
-        <div class="card-title" style="color:rgba(255,255,255,0.85)">다음 급여일(<span id="cash-payday-lbl">21</span>일)까지 필요 현금</div>
+        <div class="card-title" style="color:rgba(255,255,255,0.85);display:flex;align-items:center;gap:4px;flex-wrap:wrap">다음 급여일(<input id="cash-payday-lbl" type="number" min="1" max="31" value="21" onclick="event.stopPropagation()" onchange="cashEditPayday(this.value)" style="width:44px;text-align:center;border:1px solid rgba(255,255,255,0.4);border-radius:8px;background:rgba(255,255,255,0.12);color:#fff;font-size:13px;font-weight:700;padding:2px 0" title="눌러서 급여일을 직접 바꿀 수 있어요">일)까지 필요 현금</div>
         <div id="cash-verdict"></div>
       </section>
       <section class="card rail-card" id="mo-cash-timeline-card">
@@ -7774,7 +7774,7 @@ function renderMonthHeroGauge(elId, ym){
   const ins = (typeof computeMonthlyInsight==='function') ? computeMonthlyInsight(ym) : null;
   function heroReasonPhrase(c){
     const v = c.val;
-    if(c.label==='수입') return v.indexOf('-')===0 ? `수입이 평균보다 ${v.slice(1)} 줄었어요` : `수입은 평균 대비 ${v}`;
+    if(c.label==='수입') return `수입이 목표의 ${v}${c.d==='red'?'에 그쳤어요':'예요'}`;
     if(c.label==='고정비') return `고정비가 예산의 ${v}${c.d==='red'?'까지 초과했어요':'예요'}`;
     if(c.label==='변동비') return `변동비가 예산의 ${v}${c.d==='red'?'까지 초과했어요':'예요'}`;
     if(c.label==='저축')   return `저축이 목표의 ${v}${c.d==='red'?'에 그쳤어요':'예요'}`;
@@ -8863,7 +8863,7 @@ function cashCycleNav(delta){
 function renderCashPlan(){
   CASH_PLAN = CASH_PLAN || loadCashPlan();
   const plan = CASH_PLAN;
-  const pdEl=document.getElementById('cash-payday-lbl'); if(pdEl) pdEl.textContent=plan.payday || Number(CFG.settings && CFG.settings['급여일']) || 25;
+  const pdEl=document.getElementById('cash-payday-lbl'); if(pdEl) pdEl.value=plan.payday || Number(CFG.settings && CFG.settings['급여일']) || 25;
 
   const {events, payday, today} = buildCashEvents(plan, CASH_CYCLE_OFFSET);
   const cycleLblEl = document.getElementById('cash-cycle-lbl');
@@ -8877,6 +8877,10 @@ function renderCashPlan(){
   const purposeAccts = (function(){
     const set = new Set();
     (rawPresets()||[]).forEach(p=>(p.accounts||[]).forEach(a=>set.add(a)));
+    // [v13 추가] 설정에서 등록 안 해도, 이름에 "비상금"·"덕질"이 들어간 계좌는 자동으로
+    //   2차 잔고 취급한다. 매번 설정 화면까지 가서 등록해야 하는 게 계속 누락·유실의
+    //   원인이었어서, 가장 많이 요청하신 이 두 계좌는 이름만으로 바로 잡는다.
+    CASH_ACCTS_ALL.filter(k=>/비상금|덕질/.test(k)).forEach(k=>set.add(k));
     return set;
   })();
   const CASH_ACCTS = CASH_ACCTS_ALL.filter(k=>!purposeAccts.has(k));
@@ -8936,7 +8940,14 @@ function renderCashPlan(){
       ${CASH_ACCTS_2ND.length ? `<div style="margin-top:12px;padding-top:10px;border-top:1px dashed rgba(255,255,255,0.25);font-size:12px;color:rgba(255,255,255,0.75)">
         <div style="display:flex;justify-content:space-between"><span>2차 잔고 <span style="opacity:.7">(🎯 목적통장 · 평소엔 제외)</span></span><b style="color:#D6F5E3">${won(cashSecondary)}</b></div>
         <div style="font-size:10.5px;color:rgba(255,255,255,0.6);display:flex;flex-wrap:wrap;gap:2px 8px;margin-top:2px">${CASH_ACCTS_2ND.map(k=>`<span style="white-space:nowrap">${k} ${won(cb2(k))}</span>`).join('<span style="opacity:0.5"> · </span>')}</div>
-      </div>` : ''}`;
+      </div>` : (function(){
+        // [v12 추가] 비상금·덕질처럼 이름으로 바로 알아볼 수 있는 계좌가 있는데 아직
+        //   목적통장으로 등록 안 된 경우, 설정까지 찾아가지 않아도 여기서 한 번에 등록한다.
+        const guess = CASH_ACCTS_ALL.filter(k=>/비상금|덕질/.test(k));
+        return guess.length ? `<div style="margin-top:12px;padding-top:10px;border-top:1px dashed rgba(255,255,255,0.25)">
+          <button onclick="cashQuickSplitPurpose()" style="width:100%;padding:9px;border:1px solid rgba(255,255,255,0.4);border-radius:10px;background:rgba(255,255,255,0.12);color:#fff;font-size:12px;font-weight:700;cursor:pointer">🎯 ${guess.join('·')} 2차 잔고로 빼기</button>
+        </div>` : '';
+      })()}`;
   }
 
   // ── 타임라인 (체크로 납부 표시) ──
@@ -9103,6 +9114,22 @@ function cashEditField(i,key,val){
   CASH_PLAN.items[i][key]=val;
   saveCashPlanObj(CASH_PLAN);
   renderCashPlan();
+}
+// [v12 추가] 현금흐름 화면에서 바로 누르는 원터치 등록 — 설정 화면까지 갈 필요 없이
+//   이름에 "비상금"·"덕질"이 들어간 계좌를 목적통장으로 등록한다.
+function cashQuickSplitPurpose(){
+  const acctsAll = (CFG.accounts||[]).filter(a=>a.group==='cash'||a.group==='invest').map(a=>a.key);
+  const guess = acctsAll.filter(k=>/비상금|덕질/.test(k));
+  if(!guess.length){ showToast('비상금·덕질이 이름에 들어간 계좌를 못 찾았어요'); return; }
+  const list = rawPresets();
+  guess.forEach(k=>{
+    const name = k.replace(/^케이-?/,'').trim() || k;
+    if(list.some(p=>(p.accounts||[]).indexOf(k)>=0)) return; // 이미 등록됐으면 건너뜀
+    list.push({ name, tab:name+'정산', accounts:[k], majors:[], subs:[], from:String(new Date().getFullYear())+'-01', to:'' });
+  });
+  cfgSave();
+  renderCashPlan();
+  showToast(`✅ ${guess.join('·')} 계좌를 목적통장으로 등록했어요 · 설정 › 🎯 목적 통장 별도 관리에서 확인·수정할 수 있어요`);
 }
 function cashEditPayday(val){ CASH_PLAN.payday=parseInt(val)||21; CASH_PLAN.paydayTouched=true; saveCashPlanObj(CASH_PLAN); renderCashPlan(); }
 function cashAddItem(){ CASH_PLAN.items.push({name:'새 항목', amount:0, day:1, source:'bank'}); saveCashPlanObj(CASH_PLAN); renderCashEdit(); }
@@ -10840,22 +10867,27 @@ function rptJudgeMonth(ym){
       crit: '🟢 전월 이하 · 🟡 10% 이내 증가 · 🔴 그 이상 (예산 설정 시 예산 대비)' };
   }
 
-  // 1) 수입 추이: 최근 3개월 평균 대비
-  // [v11 수정] "왜 월급만 보냐, 수입으로 해달라"는 요청으로 되돌림. 이제 보너스·연말정산·
-  //   기타소득까지 전부 포함한 총수입으로 비교한다. 보너스 달에 확 튀는 건 감수하고,
-  //   대신 "수입"이라는 이름 그대로 총수입을 본다.
-  const prev3 = [1,2,3].map(i=>{
-    const y=parseInt(ym.slice(0,4)); const m=parseInt(ym.slice(5,7))-i;
-    const ym2=(m<=0?y-1:y)+'-'+String(m<=0?m+12:m).padStart(2,'0');
-    return allTx.filter(t=>String(t.date).slice(0,7)===ym2 && t.type==='수입').reduce((s,t)=>s+(Number(t.amount)||0),0);
-  });
-  const avg3 = prev3.filter(v=>v>0).length ? prev3.reduce((a,b)=>a+b,0)/prev3.filter(v=>v>0).length : 0;
-  const inChgPct = avg3>0 ? Math.round((mIn-avg3)/avg3*100) : null;
+  // 1) 수입: 목표(예산) 대비로 판정 — 다른 항목들과 같은 방식
+  // [v13 수정] 최근 3개월 평균과 비교하는 방식은, 그 3개월 안에 연말정산·보너스처럼
+  //   한 번 튀는 달이 끼면 평균 자체가 부풀어서, 다음 달은 아무 문제 없어도 "감소"로
+  //   잡혔다. "예산과 같으면 100점, 넘으면 더 좋은 것"이라고 하신 게 맞다 — 다른 항목처럼
+  //   목표(예산) 대비로 바꾼다. 수입 예산을 안 넣어두신 경우엔 판정 근거가 없으니
+  //   억지로 평균과 비교해 틀리기보다 판정을 보류(회색)한다.
+  const incomeBudget = Object.keys(CAT_IN_LABELS||{}).reduce((s,m)=> s + budgetOf(m), 0);
   const avgIncome=avgOf('수입');
-  const incomeCheck = { label:'수입', val:inChgPct!==null?(inChgPct>0?'+':'')+inChgPct+'%':'−',
-    d: inChgPct===null?'gray':(inChgPct>=-3?'green':inChgPct>=-8?'yellow':'red'),
-    basis: `이번 달 ${won(mIn)}${avgIncome!=null?` · 평균 ${won(avgIncome)}`:''}${avg3>0?` · 최근3개월 ${won(Math.round(avg3))} 대비`:''} · 월급·보너스·연말정산·기타소득 전부 포함`,
-    crit:'🟢 평균 대비 3% 이내 변동 · 🟡 3~8% 감소 · 🔴 8% 초과 감소 (월급·보너스·연말정산 등 총수입 기준)' };
+  let incomeCheck;
+  if(incomeBudget > 0){
+    const pct = Math.round(mIn/incomeBudget*100);
+    incomeCheck = { label:'수입', val:pct+'%',
+      d: pct>=100 ? 'green' : pct>=90 ? 'yellow' : 'red',
+      basis: `이번 달 수입 ${won(mIn)} / 목표 ${won(incomeBudget)}${avgIncome!=null?` · 평균 ${won(avgIncome)}`:''} · 월급·보너스·연말정산·기타소득 전부 포함`,
+      crit:'🟢 목표 100% 이상(넘길수록 좋음) · 🟡 90% 이상 · 🔴 그 미만 (설정 › 카테고리 › 수입 예산 기준)' };
+  } else {
+    incomeCheck = { label:'수입', val: avgIncome!=null?won(mIn):'−',
+      d: 'gray',
+      basis: `이번 달 수입 ${won(mIn)}${avgIncome!=null?` · 평균 ${won(avgIncome)}`:''} · 수입 예산이 없어 판정을 보류해요`,
+      crit:'설정 › 카테고리 › 수입에 월급(또는 목표) 예산을 넣으면 목표 대비로 판정해요' };
+  }
 
   // 2) 고정비 (예산 이하가 정상 → 100% 기준), 3) 변동비 (90% 여유 기준)
   const fixedCheck = spendCheck('고정비', mFixedAdj, fixedBudget+fixedBudgetAdj, prevFixed, 100, 105, avgOf('고정비'), mFixed, cadBurstFix);
