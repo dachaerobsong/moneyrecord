@@ -862,8 +862,11 @@ body { padding-bottom:88px; }
       <div class="card-title" style="margin-bottom:10px">🧾 지출 내역 <small style="font-size:11px;color:var(--txt3);font-weight:500">카테고리를 누르면 세부 내역·메모</small></div>
       <div id="mo-budget-progress"></div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin:14px 0 2px;padding-top:12px;border-top:1px solid #F2F4F6">
-        <span style="font-size:12px;font-weight:600;color:var(--txt2)">카테고리별 지출 <span style="font-weight:400;color:var(--txt3)">· 위험한 순서</span></span>
-        <div style="font-size:11px;color:var(--txt3)">예산 초과만 <b style="color:var(--red)">빨강</b>으로 표시</div>
+        <span style="font-size:12px;font-weight:600;color:var(--txt2)">카테고리별 지출 <span id="bud-cat-sort-label" style="font-weight:400;color:var(--txt3)"></span></span>
+        <div style="display:flex;align-items:center;gap:8px">
+          <button id="bud-cat-sort-btn" onclick="budToggleCatSort()" style="font-size:11px;padding:4px 10px;border:1px solid #E5E8EB;border-radius:99px;background:#FFF;color:var(--txt2);cursor:pointer;white-space:nowrap"></button>
+          <div style="font-size:11px;color:var(--txt3)">예산 초과만 <b style="color:var(--red)">빨강</b>으로 표시</div>
+        </div>
       </div>
       <div id="bud-cat-spend"></div>
     </section>
@@ -1217,7 +1220,7 @@ const LS = {
 // ── 카테고리 기본값 ────────────────────────────────────────────────
 // 여기 값은 '처음 켰을 때의 초안'일 뿐이다. 설정 탭에서 고치면 CFG가 이 객체들을
 // 통째로 다시 채운다(cfgApplyCategories). 그래서 const 가 아니라 let 이다.
-let CAT_OUT_SUBS = {'주거비':['월세/이자','관리비','공과금'],'보험':['보험료'],'통신비':['휴대폰','인터넷'],'식비':['장보기','배달','외식','카페'],'생활용품':['생활소모품','가전/가구'],'꾸밈비':['의류/잡화','미용'],'자기계발':['수강료','도서','운동'],'건강':['병원/약국','건강보조'],'교통비':['대중교통','택시','주유'],'경조사':['경조사비'],'문화생활':['공연/전시','구독'],'덕질':['콘서트/팬미팅','앨범/굿즈','멤버십/구독','기타'],'기타':['기타']};
+let CAT_OUT_SUBS = {'주거비':['월세/이자','관리비','공과금'],'보험':['보험료'],'통신비':['휴대폰','인터넷'],'식비':['장보기','배달','외식','카페'],'생활용품':['생활소모품','가전/가구'],'꾸밈비':['의류/잡화','미용'],'자기계발':['수강료','도서','운동'],'건강':['병원/약국','건강보조'],'교통비':['대중교통','택시','주유'],'경조사':['경조사비'],'문화생활':['공연/전시','기타 입장료','OTT','덕질'],'기타':['기타']};
 let CAT_IN_SUBS = {'근로소득':['월급','상여'],'금융소득':['이자','배당'],'기타소득':['환급','부수입']};
 let CAT_MV_SUBS = {'카드납부':[],'예적금':['적금','청약','대출원금'],'연금':['개인연금'],'주식':['ISA','일반투자'],'목적':['목적자금'],'비상금':['비상금'],'계좌이체':['계좌이체']};
 
@@ -2095,7 +2098,7 @@ function loadCatSettings(){
 }
 // ── 설정 탭: 카테고리별 예산 판정 주기 UI ──
 const CAT_CADENCE_OPTS = [
-  ['monthly','월간 (기본)'], ['quarterly','분기 (3개월 누적)'],
+  ['monthly','월간 (기본)'], ['bimonthly','격월 (2개월 누적)'], ['quarterly','분기 (3개월 누적)'],
   ['biannual','반기 (6개월 누적)'], ['event','이벤트누적 (정산이월·신호등 없음)']
 ];
 function renderCatSettings(){
@@ -2133,6 +2136,7 @@ function renderCatSettings(){
             <span style="font-size:12.5px;color:var(--txt);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sub}</span>
             <select onchange="setCatCadence('${sub}', this.value)" style="font-size:11.5px;padding:5px 6px;border:1px solid #E5E8EB;border-radius:9px;background:#FFF;color:var(--txt2)">
               <option value="monthly" ${curSub==='monthly'?'selected':''}>월간</option>
+              <option value="bimonthly" ${curSub==='bimonthly'?'selected':''}>격월</option>
               <option value="quarterly" ${curSub==='quarterly'?'selected':''}>분기</option>
               <option value="biannual" ${curSub==='biannual'?'selected':''}>반기</option>
             </select>
@@ -3254,7 +3258,7 @@ function majorOfSub(sub){
 }
 // 카테고리별 예산 주기: 'monthly'(기본, 매달 판정) | 'quarterly'(3개월 누적 판정) | 'biannual'(6개월 누적 판정) | 'event'(신호등 없이 누적만)
 // 대분류·소분류 상관없이 STATE.catCadence 하나만 보고 판정 (설정 탭에서 사용자가 직접 편집)
-const CADENCE_PERIOD_LEN = { quarterly: 3, biannual: 6 };
+const CADENCE_PERIOD_LEN = { bimonthly: 2, quarterly: 3, biannual: 6 };
 function catCadence(major){
   const key = normBudgetKey(major);
   return (STATE.catCadence||{})[key] || 'monthly';
@@ -3926,7 +3930,7 @@ function saveEdit() {
 // ════════════════════════════════════════════════════════════
 
 // ── 카테고리 이모지 라벨 (예산 키 매칭 폴백용) ──
-let CAT_OUT_LABELS = {'주거비':'🏠 주거비','보험':'🗃️ 보험','통신비':'📞 통신비','식비':'🍽️ 식비','생활용품':'🛒 생활용품','꾸밈비':'👗 꾸밈비','자기계발':'👩‍🎓 자기계발','건강':'😷 건강','교통비':'🚌 교통비','경조사':'🎁 경조사','문화생활':'📺 문화생활','덕질':'🎤 덕질','기타':'✔️ 기타'};
+let CAT_OUT_LABELS = {'주거비':'🏠 주거비','보험':'🗃️ 보험','통신비':'📞 통신비','식비':'🍽️ 식비','생활용품':'🛒 생활용품','꾸밈비':'👗 꾸밈비','자기계발':'👩‍🎓 자기계발','건강':'😷 건강','교통비':'🚌 교통비','경조사':'🎁 경조사','문화생활':'📺 문화생활','기타':'✔️ 기타'};
 let CAT_IN_LABELS = {'근로소득':'👷 근로소득','금융소득':'💵 금융소득','기타소득':'💰 기타소득'};
 let CAT_MV_LABELS = {'카드납부':'💳 카드납부','계좌이체':'🔄 계좌이체','예적금':'예적금','연금':'연금','주식':'주식','목적':'목적','비상금':'비상금'};
 // 대분류를 시트가 기대하는 라벨(이모지) 형식으로 변환. 이미 라벨이면 그대로 정규화 매칭.
@@ -4198,14 +4202,12 @@ function subSpendBud(type, major, sub){
 }
 
 // ── 신호등 색상 헬퍼 (예산 대비 %) ──
-// [v5 추가] 예산을 1원이라도 넘었는데 반올림 때문에 "정확히 100%"로 보이는 문제.
-//   반올림은 소수점 이하를 버리기도 하고 올리기도 하는데, 초과분이 0.5%p보다 작으면
-//   버림 방향으로 반올림돼 100%로 표시된다. 실제로는 예산을 넘었으니 최소 101%로 보여준다.
+// [v6에서 되돌림] v5에서 "1원이라도 넘으면 무조건 101%"로 강제했는데, 반대로 이게 과했다.
+//   100.2%처럼 반올림 오차 범위(±0.5%p) 안의 초과는 그냥 100%로 봐도 되는 오차다.
+//   실제로 신경 써야 할 초과만 잡히도록 그냥 반올림으로 되돌린다.
 function budPct(spend, bud){
   if(!(bud>0)) return null;
-  const raw = spend/bud*100;
-  const r = Math.round(raw);
-  return (spend>bud && r<=100) ? 101 : r;
+  return Math.round(spend/bud*100);
 }
 function budDotColor(pct){
   if(pct===null) return 'var(--txt3)';
@@ -4545,17 +4547,11 @@ function cfgSeedIfEmpty(){
     if(!x.subBudget) x.subBudget = {};
     if(!Array.isArray(x.subs)) x.subs = [];
   }));
-  // [v5 추가] 위 시딩은 "카테고리가 통째로 비었을 때"만 실행된다. 그래서 앱에 새 기본
-  //   카테고리(예: 덕질)가 추가돼도, 이미 설정을 쓰고 있던 사용자에게는 채워지지 않는다.
-  //   여기서는 지출 카테고리 중 지금 앱 기본값에는 있는데 사용자 설정에는 아예 없는
-  //   대분류만 추가로 채운다 — 있는 항목은 절대 건드리지 않는다.
-  (function addMissingDefaultMajors(){
-    const have = new Set((c['지출']||[]).map(x=>normBudgetKey(x.major)));
-    Object.keys(CAT_OUT_LABELS||{}).forEach(m=>{
-      if(have.has(normBudgetKey(m))) return;
-      c['지출'].push({ major:m, subs:(CAT_OUT_SUBS&&CAT_OUT_SUBS[m])||[], flags:isFixedMajor(m)?'fixed':'', budget:0, subBudget:{} });
-    });
-  })();
+  // [v5에서 추가했다가 v6에서 되돌림] "앱 기본값에는 있는데 사용자 설정엔 없는 대분류를
+  //   자동으로 채워 넣는" 로직을 넣었었는데, 이게 렌더할 때마다(=삭제 버튼을 누른 직후에도)
+  //   다시 실행돼서 방금 지운 카테고리를 그 자리에서 되살렸다. 사용자가 카테고리를 완전히
+  //   비웠다면 그건 "안 쓰겠다"는 뜻으로 존중한다. 새 기본 카테고리가 필요하면 각자
+  //   설정에서 "+ 대분류"로 직접 추가하면 된다.
   if(!CFG.accounts.length){
     CFG.accounts = (STATE.acctsDef||[]).map(a=>{
       const raw = (STATE.initBal&&STATE.initBal[a.key])||0;
@@ -4933,7 +4929,7 @@ function cfgMiniSpark(key, isSub, type){
 // ── 예산 판정 주기 ──
 // 목적: 소분류까지 예산을 짜놓고 보니 몇 달에 한 번 튀는 항목이 있을 때, 그 줄에서 바로 바꾸는 것.
 // 예전엔 별도 카드에 대분류를 전부 나열했는데, 정작 보고 싶은 소분류가 거기 없었다.
-const CADENCE_OPTS = [['monthly','월'],['quarterly','분기'],['biannual','반기'],['event','이벤트']];
+const CADENCE_OPTS = [['monthly','월'],['bimonthly','격월'],['quarterly','분기'],['biannual','반기'],['event','이벤트']];
 function cfgSetCadence(kind, i, sub, val){
   const c = CFG.categories[kind][i]; if(!c) return;
   const v = val || 'monthly';
@@ -5989,7 +5985,7 @@ function renderCfgMisc(){
 //  (예전엔 코드 상수였고, 이제는 이 함수가 그 상수들을 다시 채웁니다)
 // ══════════════════════════════════════════════════════════════════
 const CFG_EMOJI = { '주거비':'🏠','보험':'🗃️','통신비':'📞','식비':'🍽️','생활용품':'🛒','꾸밈비':'👗',
-  '자기계발':'👩‍🎓','건강':'😷','교통비':'🚌','경조사':'🎁','문화생활':'📺','덕질':'🎤','기타':'✔️',
+  '자기계발':'👩‍🎓','건강':'😷','교통비':'🚌','경조사':'🎁','문화생활':'📺','기타':'✔️',
   '근로소득':'👷','금융소득':'💵','기타소득':'💰','카드납부':'💳','계좌이체':'🔄' };
 
 function cfgApply(){
@@ -6696,7 +6692,7 @@ function budCatRowHtml(c){
     // 누적형(문화생활·경조사·기타): 신호등 판정 없이 이번 달 금액만 참고 표시
     pct = null; dotC = 'var(--txt3)'; pctTxt = '누적';
     amtRight = `<b>${won(c.spend)}</b>`;
-  } else if(cadence==='quarterly' || cadence==='biannual'){
+  } else if(cadence==='bimonthly' || cadence==='quarterly' || cadence==='biannual'){
     // ── 주기 예산 판정 규칙 ────────────────────────────────────────
     // 분모는 언제나 "주기 전체 예산"(월예산 × N), 분자는 "주기 시작~이번 달 누적".
     //   초과(>100%)  → 주기 중간이라도 즉시 빨강. 초과는 시점과 무관하게 이미 사실이므로
@@ -6706,7 +6702,7 @@ function budCatRowHtml(c){
     //                  매 주기 앞 두 달마다 가짜 초록불이 뜨고 전체 게이지도 부풀어 오른다.
     //   90% 미만 + 주기 끝   → 여기서만 초록. "잘 지켰다"는 주기가 끝나야 확정된다.
     const pN = CADENCE_PERIOD_LEN[cadence];
-    const pLabel = pN===6 ? '반기' : '분기';
+    const pLabel = pN===6 ? '반기' : pN===2 ? '격월' : '분기';
     pct = c.qBudFull>0 ? Math.round(c.qSpend/c.qBudFull*100) : null;
     if(pct===null){
       dotC = 'var(--txt3)';
@@ -6783,10 +6779,10 @@ function budCatRowHtml(c){
         const isQEnd = isPeriodEndMonth(BUD_MONTH, sN);
         const qSum = periodSubSpend(c.major, sub, BUD_MONTH, sN);
         const qBud = sbud*sN;
-        const pLabel = sN===6 ? '반기' : '분기';
+        const pLabel = sN===6 ? '반기' : sN===2 ? '격월' : '분기';
         sover = isQEnd && qBud>0 && qSum>qBud;
         spct = isQEnd && qBud>0 ? Math.round(qSum/qBud*100) : null;
-        cadNote = ` <span style="font-size:8.5px;color:var(--txt3)">${isQEnd?`· ${pLabel}합 ${wonP(qSum)}${qBud>0?'/'+won(qBud):''}`:`· ${pLabel}판정 ${sN===6?'6·12월':'3·6·9·12월'}`}</span>`;
+        cadNote = ` <span style="font-size:8.5px;color:var(--txt3)">${isQEnd?`· ${pLabel}합 ${wonP(qSum)}${qBud>0?'/'+won(qBud):''}`:`· ${pLabel}판정 ${sN===6?'6·12월':sN===2?'짝수월':'3·6·9·12월'}`}</span>`;
       } else {
         sover = sbud>0 && ss>sbud;
         spct = sbud>0 ? Math.round(ss/sbud*100) : null;
@@ -7042,11 +7038,27 @@ function renderMonthKpi(){
     </div>`;
 }
 
+// ── 카테고리별 소진 목록 정렬 — 위험순(매달 순서가 바뀜) / 고정순(설정에 등록한 순서 그대로) ──
+// [v6 추가] 위험순은 "이번 달 뭐가 급한지"엔 좋지만, 매달 훑어볼 땐 항목 위치가 계속
+//   바뀌어서 찾기 힘들다는 피드백. 두 모드를 토글로 제공하고 선택은 기억해둔다.
+function budCatSortMode(){ return LS.get('bud_cat_sort') || 'risk'; }
+function budToggleCatSort(){
+  LS.set('bud_cat_sort', budCatSortMode()==='risk' ? 'fixed' : 'risk');
+  if(typeof renderMonthBudgetProgress==='function') renderMonthBudgetProgress();
+}
+function budCatSortBtnSync(){
+  const mode = budCatSortMode();
+  const btn = document.getElementById('bud-cat-sort-btn');
+  const lbl = document.getElementById('bud-cat-sort-label');
+  if(btn) btn.textContent = mode==='risk' ? '📌 고정 순으로 보기' : '⚠️ 위험 순으로 보기';
+  if(lbl) lbl.textContent = mode==='risk' ? '· 위험한 순서' : '· 설정에 등록한 순서 (매달 같은 위치)';
+}
 // ── ③ 예산 진행: 총예산 게이지 + 카테고리별 소진 목록(위험순) ──
 function renderMonthBudgetProgress(){
   const el = document.getElementById('mo-budget-progress');
   const ym = (typeof BUD_MONTH!=='undefined' && BUD_MONTH) || currentMonthStr();
   const tx = (typeof budTx==='function') ? budTx() : [];
+  budCatSortBtnSync();
 
   const catsAll = buildOutCats(ym, tx, 'risk');
   if(el){
@@ -7116,7 +7128,10 @@ function renderMonthBudgetProgress(){
   // 카테고리 목록 — 예전엔 이 목록이 두 카드에 각각 그려졌다. 이제 여기 하나만.
   const catEl = document.getElementById('bud-cat-spend');
   if(catEl){
-    const cats = catsAll;
+    // 게이지 합계 계산은 항상 위 catsAll(risk 순서로 만들어졌지만 합계엔 순서가 안 씀)을 쓰고,
+    // 화면에 그리는 목록만 선택된 정렬 모드로 다시 만든다.
+    const mode = budCatSortMode();
+    const cats = mode==='risk' ? catsAll : buildOutCats(ym, tx, 'fixed');
     catEl.innerHTML = cats.length ? cats.map(c => budCatRowHtml(c)).join('')
       : '<div style="color:var(--txt3);font-size:13px;text-align:center;padding:8px 0">지출 내역 없음</div>';
   }
@@ -8042,7 +8057,7 @@ function exportBudgetSheet(){
     {label:'변동비', isHeader:true},
     ...Object.keys(CAT_OUT_LABELS).filter(k=>!isFixedMajor(k)).map(k=>({label:k,key:CAT_OUT_LABELS[k]||k,major:k,type:'지출',subs:exSubs(CAT_OUT_SUBS[k])})),
     {label:'변동비2', isHeader:true},
-    ...['경조사','문화생활','덕질','기타'].map(k=>({label:k,key:CAT_OUT_LABELS[k]||k,major:k,type:'지출',subs:exSubs(CAT_OUT_SUBS[k])})),
+    ...['경조사','문화생활','기타'].map(k=>({label:k,key:CAT_OUT_LABELS[k]||k,major:k,type:'지출',subs:exSubs(CAT_OUT_SUBS[k])})),
     {label:'수입', isHeader:true},
     ...Object.keys(CAT_IN_SUBS).map(k=>({label:k,key:k,major:k,type:'수입',subs:CAT_IN_SUBS[k]||[]})),
     // 저축/이동: 카드납부·계좌이체 제외 — 설정한 이동 대분류를 그대로 사용
@@ -9457,7 +9472,7 @@ function rptUnifiedTable(year){
       }
       const memoTxt = (kind==='expense' && catKey) ? (GB_MEMO[ym+'|'+catKey] || '') : '';
       const memoIcon = memoTxt ? `<span title="${String(memoTxt).replace(/"/g,'&quot;')}" style="margin-left:2px;font-size:9px">📝</span>` : '';
-      if(cadence==='quarterly' || cadence==='biannual'){
+      if(cadence==='bimonthly' || cadence==='quarterly' || cadence==='biannual'){
         const pN = CADENCE_PERIOD_LEN[cadence];
         if(!isPeriodEndMonth(ym, pN)){
           return `<td onclick="${click}" style="${cellBase(isCur)};color:var(--txt2)">${disp}${memoIcon}</td>`;
