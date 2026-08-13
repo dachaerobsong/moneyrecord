@@ -882,6 +882,13 @@ body { padding-bottom:88px; }
       <div id="mo-overspend-rank"></div>
     </section>
 
+    <!-- [v16 추가] 덕질·비상금은 통장+카드를 섞어 쓰고, 목적 자체가 "잘 지켰나"가 아니라
+         "얼마 규모로 어디에 썼나"라서 예산 판정 대상에서 뺐다. 대신 규모만 조용히 추적한다. -->
+    <section class="card" id="mo-purpose-scale-card" style="padding:16px 18px;display:none">
+      <h2 class="card-title" style="margin-bottom:2px">📊 규모만 추적 중 <small style="font-size:11px;color:var(--txt3);font-weight:500">판정 없이 얼마·어디에 썼는지만</small></h2>
+      <div id="mo-purpose-scale"></div>
+    </section>
+
     <section class="card" id="mo-income-card" style="padding:16px 18px"><div class="card-title" onclick="budToggleSection('bud-income','sec-in')" style="cursor:pointer"><span>💰 수입 내역 <span id="sec-in" style="color:var(--blue);font-size:13px">▾</span></span><span id="bud-h-in" style="font-size:12px;font-weight:600;color:var(--txt3)"></span></div><div id="bud-income"></div></section>
 
     <section class="card" id="mo-save-card" style="padding:16px 18px"><div class="card-title" onclick="budToggleSection('bud-save','sec-save')" style="cursor:pointer"><span>🏦 저축 · 이동 내역 <span id="sec-save" style="color:var(--blue);font-size:13px">▾</span></span><span id="bud-h-save" style="font-size:12px;font-weight:600;color:var(--txt3)"></span></div><div id="bud-save"></div></section>
@@ -1100,6 +1107,18 @@ body { padding-bottom:88px; }
     <section class="card">
       <div class="card-title">투자 종합 현황</div>
       <div id="inv-summary"><div style="text-align:center;color:var(--txt3);padding:14px;font-size:13px">거래를 입력하면 자동 집계됩니다</div></div>
+    </section>
+    <!-- [v17 추가] 종목별 현황 — 평가금액·수익률로 정렬해서 볼 수 있게 -->
+    <section class="card" id="inv-stock-card" style="display:none">
+      <div class="card-title">
+        <span>📈 종목별 현황</span>
+        <select id="inv-sort" onchange="renderInvestByStock()" style="font-size:12px;padding:5px 9px;border:1px solid #E5E8EB;border-radius:99px;background:#FFF;color:var(--txt2)">
+          <option value="eval">평가금액순</option>
+          <option value="pct">수익률순</option>
+        </select>
+      </div>
+      <div id="inv-by-stock"></div>
+      <div style="font-size:10.5px;color:var(--txt3);margin-top:8px;line-height:1.5">현재가는 시트 [투자_보유종목] 시트의 값을 그대로 읽어요 · 수식(자동조회)이면 티커만, 아니면 가격을 직접 고칠 수 있어요</div>
     </section>
     <section class="card">
       <div class="card-title">
@@ -1746,6 +1765,99 @@ function applyRedesignIA(){
 //  action: pf_addTx(기록) / pf_entries(전체 읽기) / pf_deleteTx(삭제) — 시트 쪽 Apps Script 기존 액션 재사용
 // ════════════════════════════════════════════════════════════
 let pfTx = [];          // 시트에서 불러온 주식 거래내역 캐시
+let pfHoldings = [];    // 시트 [투자_보유종목]에서 불러온 현재가·티커 캐시 (가격만 여기서 옴)
+
+// ══════════════════════════════════════════════════════════════════
+//  [v17 추가] 종목별 보유 현황 — 항상 거래내역에서 다시 계산한다(스냅샷 아님).
+//  이동평균법: 매수하면 평단가 재계산, 매도해도 남은 수량의 평단가는 안 바뀜.
+//  실현손익은 판 시점의 평단가 기준으로 그 자리에서 확정해 누적한다.
+// ══════════════════════════════════════════════════════════════════
+function computeHoldings(){
+  const map = {};
+  const key = (t) => t.name + '|' + t.account;
+  pfTx.slice().sort((a,b)=>String(a.date).localeCompare(String(b.date))).forEach(t=>{
+    if(!t.name) return;
+    const k = key(t);
+    if(!map[k]) map[k] = { name:t.name, account:t.account, qty:0, avgPrice:0, costBasis:0, realizedPnl:0, dividend:0, buyTotal:0, sellTotal:0 };
+    const h = map[k];
+    if(t.type==='매수' || t.type==='재투자'){
+      const addCost = (t.qty*t.price) + (Number(t.fee)||0);
+      h.costBasis += addCost;
+      h.qty += t.qty;
+      h.avgPrice = h.qty>0 ? h.costBasis/h.qty : 0;
+      h.buyTotal += addCost;
+    } else if(t.type==='매도'){
+      const sellQty = Math.min(t.qty, h.qty);
+      const costOfSold = h.avgPrice * sellQty;
+      const proceeds = (t.qty*t.price) - (Number(t.fee)||0) - (Number(t.tax)||0);
+      h.realizedPnl += proceeds - costOfSold;
+      h.costBasis = Math.max(0, h.costBasis - costOfSold);
+      h.qty = Math.max(0, h.qty - sellQty);
+      h.sellTotal += proceeds;
+      // 평단가는 그대로 — 남은 보유분의 원가 수준은 안 바뀐다
+    } else if(t.type==='분배금' || t.type==='이자'){
+      h.dividend += Math.abs(Number(t.amount)||0);
+    }
+  });
+  return Object.values(map).filter(h => h.qty > 0.0001 || h.realizedPnl !== 0 || h.dividend !== 0);
+}
+
+// 종목별 계산(항상 최신) + 시트의 현재가/티커(가격만 시트 전용) 병합
+function mergedHoldings(){
+  const computed = computeHoldings();
+  const byKey = {};
+  pfHoldings.forEach(h=>{ byKey[h.name+'|'+h.account] = h; });
+  return computed.map(h=>{
+    const sheetRow = byKey[h.name+'|'+h.account];
+    const curPrice = sheetRow ? sheetRow.curPrice : 0;
+    const hasPrice = !!(sheetRow && curPrice > 0);
+    const evalAmt = hasPrice ? h.qty*curPrice : h.costBasis; // 현재가 없으면 원가로 대체(0원 방지)
+    return Object.assign({}, h, {
+      curPrice, hasPrice, evalAmt,
+      unrealizedPnl: hasPrice ? evalAmt - h.costBasis : 0,
+      unrealizedPct: hasPrice && h.costBasis>0 ? Math.round((evalAmt-h.costBasis)/h.costBasis*1000)/10 : null,
+      ticker: sheetRow ? sheetRow.ticker : '',
+      asOfDate: sheetRow ? sheetRow.asOfDate : '',
+      curPriceIsFormula: sheetRow ? sheetRow.curPriceIsFormula : false
+    });
+  });
+}
+
+function loadPfHoldings(cb){
+  const url = getUrl();
+  if(!url){ if(cb) cb(); return; }
+  fetch(url + '?action=pf_holdings')
+    .then(r=>r.json())
+    .then(d=>{ if(d && d.ok && d.data) pfHoldings = d.data; })
+    .catch(()=>{})
+    .finally(()=>{ if(cb) cb(); });
+}
+
+// 거래내역이 바뀔 때마다 계산 결과(수량·평단가·원가·실현손익·배당)를 시트에도 남긴다.
+// 현재가·티커·기준일(G·M·N열)은 이 호출이 절대 안 건드린다 — GAS 쪽에서도 한 번 더 막아둠.
+function syncHoldingsToSheet(){
+  const url = getUrl();
+  if(!url) return;
+  const holdings = computeHoldings().map(h=>({ name:h.name, account:h.account, qty:h.qty, avgPrice:h.avgPrice, costBasis:h.costBasis, realizedPnl:h.realizedPnl, dividend:h.dividend }));
+  if(!holdings.length) return;
+  fetch(url, { method:'POST', headers:{'Content-Type':'text/plain'}, body: JSON.stringify({ action:'pf_syncHoldings', holdings }) }).catch(()=>{});
+}
+
+function invSetTicker(name, account, ticker){
+  const url = getUrl(); if(!url){ showToast('⚙️ 시트 연동이 필요해요'); return; }
+  showToast('⏳ 티커 반영 중...');
+  fetch(url, { method:'POST', headers:{'Content-Type':'text/plain'}, body: JSON.stringify({ action:'pf_setTicker', name, account, ticker }) })
+    .then(()=>{ showToast('✅ 티커 반영 — 시트 수식이 현재가를 채워요'); setTimeout(()=>loadPfHoldings(renderInvestByStock), 800); })
+    .catch(()=> showToast('⚠️ 전송 시도됨 (no-cors)'));
+}
+function invSetPrice(name, account, price){
+  const url = getUrl(); if(!url){ showToast('⚙️ 시트 연동이 필요해요'); return; }
+  showToast('⏳ 가격 반영 중...');
+  fetch(url, { method:'POST', headers:{'Content-Type':'text/plain'}, body: JSON.stringify({ action:'pf_setPrice', name, account, price }) })
+    .then(()=>{ showToast('✅ 현재가 반영'); loadPfHoldings(renderInvestByStock); })
+    .catch(()=> showToast('⚠️ 전송 시도됨 (no-cors)'));
+}
+
 let _pfLoading = false;
 
 function invToggleFields(){
@@ -1782,7 +1894,8 @@ function loadPfData(silent){
       })).sort((a,b)=>String(b.date).localeCompare(String(a.date)));
       savePfCache();
       if(!silent) showToast('✅ 주식 거래 ' + pfTx.length + '건 동기화 완료');
-      renderInvestSummary(); renderInvestHistory();
+      // [v17 추가] 종목별 카드가 현재가(시트)를 같이 써야 하니, 렌더 전에 보유종목 시트도 당겨온다.
+      loadPfHoldings(()=>{ renderInvestSummary(); renderInvestHistory(); syncHoldingsToSheet(); });
       // 종목명 자동완성 채우기
       const dl = document.getElementById('inv-name-list');
       if(dl){ const names=[...new Set(pfTx.map(r=>r.name).filter(Boolean))].sort(); dl.innerHTML = names.map(n=>`<option>${n}</option>`).join(''); }
@@ -1836,25 +1949,96 @@ function invDel(rowIndex){
     .catch(()=> showToast('⚠️ 삭제 시도됨 (no-cors)'));
 }
 
-// ── 투자 종합 현황 (원금/실현손익/배당 — 시트 거래내역 기반, 평가금액은 추후 스냅샷 기능에서 추가 예정) ──
+// ── 투자 종합 현황 (순수 투입금은 '스냅샷' 방식 — 보유원가+미투자현금. 매번 다시 계산되므로 놓칠 일이 없다) ──
 function renderInvestSummary(){
   const el=document.getElementById('inv-summary'); if(!el) return;
   if(!pfTx.length){ el.innerHTML='<div style="text-align:center;color:var(--txt3);padding:14px;font-size:13px">거래를 입력하면 자동 집계됩니다</div>'; return; }
   const sum=t=>pfTx.filter(x=>x.type===t).reduce((s,x)=>s+Math.abs(Number(x.amount)||0),0);
-  const principal = sum('입금') - sum('출금');
+  const depositIn = sum('입금'), depositOut = sum('출금');
   const divid = sum('분배금') + sum('이자');
   const fee = pfTx.reduce((s,x)=>s+Math.abs(Number(x.fee)||0)+Math.abs(Number(x.tax)||0),0);
   const buyAmt = sum('매수');
   const sellAmt = sum('매도');
+
+  const hs = mergedHoldings();
+  // [v17 수정] "순수 투입금"을 입금-출금 누적에서 스냅샷 방식으로 바꿨다.
+  //   수익까지 출금하면 누적 방식은 마이너스로 무너지는데, 이 방식은 항상 "지금 뭘
+  //   들고 있나"만 보므로 원금/수익 구분 없이도 늘 정확하다.
+  const heldCost = hs.reduce((s,h)=>s+h.costBasis,0);
+  const cashUninvested = Math.max(0, depositIn - depositOut - buyAmt + sellAmt);
+  const principalSnapshot = heldCost + cashUninvested;
+  const evalTotal = hs.reduce((s,h)=>s+h.evalAmt,0);
+  const unrealizedTotal = hs.reduce((s,h)=>s+h.unrealizedPnl,0);
+  const realizedTotal = hs.reduce((s,h)=>s+h.realizedPnl,0);
+  const totalReturn = unrealizedTotal + realizedTotal + divid;
+  const totalReturnPct = principalSnapshot>0 ? Math.round(totalReturn/principalSnapshot*1000)/10 : null;
+
   const row=(name,val,color,big)=>`<div class="item-row"><div class="item-left"><span class="item-name">${name}</span></div><div class="item-right" style="${color?`color:${color};`:''}${big?'font-size:19px;':''}">${val}</div></div>`;
   el.innerHTML =
-    row('총 투입 원금 <span style="font-size:10px;color:var(--txt3)">입금−출금</span>', principal.toLocaleString('ko-KR')+'원', null, true) +
-    row('누적 매수', buyAmt.toLocaleString('ko-KR')+'원') +
-    row('누적 매도', sellAmt.toLocaleString('ko-KR')+'원') +
-    row('분배금·이자 (누적)', '+'+divid.toLocaleString('ko-KR')+'원', 'var(--green)') +
-    row('수수료·세금 (누적)', '−'+fee.toLocaleString('ko-KR')+'원', 'var(--txt3)') +
-    row('거래 건수', pfTx.length+'건') +
-    `<div style="font-size:11px;color:var(--txt3);margin-top:8px;line-height:1.5">* 실현손익·평가금액·수익률은 계좌별 평가 스냅샷 기능 추가 후 표시 예정 — 지금은 입력/내역으로 숫자만 우선 확인</div>`;
+    row('총평가금액', won(evalTotal), null, true) +
+    row('총수익 <span style="font-size:10px;color:var(--txt3)">평가+실현+배당</span>', `${totalReturn>=0?'+':''}${won(totalReturn)}${totalReturnPct!==null?` (${totalReturnPct>=0?'+':''}${totalReturnPct}%)`:''}`, totalReturn>=0?'var(--red)':'var(--blue)') +
+    `<div style="border-top:1px solid #F2F4F6;margin:6px 0"></div>` +
+    row('순수 투입금 <span style="font-size:10px;color:var(--txt3)">보유원가+미투자현금</span>', won(principalSnapshot)) +
+    row('평가수익(미실현)', `${unrealizedTotal>=0?'+':''}${won(unrealizedTotal)}`, unrealizedTotal>=0?'var(--red)':'var(--blue)') +
+    row('실현손익', `${realizedTotal>=0?'+':''}${won(realizedTotal)}`, realizedTotal>=0?'var(--red)':'var(--blue)') +
+    row('분배금·이자 (누적)', '+'+won(divid), 'var(--red)') +
+    `<div style="border-top:1px solid #F2F4F6;margin:6px 0"></div>` +
+    `<div style="font-size:11px;color:var(--txt3);padding:4px 2px">누적 입출금 이력 <span style="color:var(--txt2)">입금 ${won(depositIn)} · 출금 ${won(depositOut)}</span> — 참고용, 순수 투입금 계산엔 원금/수익 구분 없이 반영됨</div>` +
+    row('수수료·세금 (누적)', '−'+won(fee), 'var(--txt3)') +
+    row('거래 건수', pfTx.length+'건');
+  renderInvestByStock();
+}
+
+// [v17 추가] 종목별 카드 — 판정 없이 규모·현재가·수익률만 보여준다
+function renderInvestByStock(){
+  const card = document.getElementById('inv-stock-card');
+  const el = document.getElementById('inv-by-stock');
+  if(!card || !el) return;
+  const hs = mergedHoldings().filter(h=>h.qty>0.0001);
+  if(!hs.length){ card.style.display='none'; return; }
+  card.style.display='';
+  const sortBy = document.getElementById('inv-sort')?.value || 'eval';
+  hs.sort((a,b)=> sortBy==='pct' ? (b.unrealizedPct??-999)-(a.unrealizedPct??-999) : b.evalAmt-a.evalAmt);
+
+  const today = new Date();
+  el.innerHTML = hs.map(h=>{
+    const stale = h.asOfDate ? Math.floor((today - new Date(h.asOfDate)) / 86400000) : null;
+    const priceLine = !h.hasPrice
+      ? `<span style="color:var(--txt3)">현재가 미입력 · 원가로 표시 중</span>`
+      : h.curPriceIsFormula
+        ? `현재가 ${won(h.curPrice)} · <span style="color:var(--txt3)">실시간(수식)</span>`
+        : `현재가 ${won(h.curPrice)} · <span style="color:${stale!==null&&stale>=7?'var(--warning)':'var(--txt3)'}">${h.asOfDate||'기준일 없음'}${stale!==null&&stale>=7?` · ${stale}일 전`:''}</span>`;
+    const editBtn = h.curPriceIsFormula
+      ? `<button onclick="invPromptTicker('${jq(h.name)}','${jq(h.account)}','${jq(h.ticker)}')" style="font-size:10px;padding:2px 8px;border:1px dashed var(--blue);border-radius:99px;background:none;color:var(--blue);cursor:pointer">티커 수정</button>`
+      : `<button onclick="invPromptPrice('${jq(h.name)}','${jq(h.account)}')" style="font-size:10px;padding:2px 8px;border:1px dashed var(--blue);border-radius:99px;background:none;color:var(--blue);cursor:pointer">가격 수정</button>`;
+    return `<div style="border-top:1px solid #F2F4F6;padding:10px 0">
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <span style="font-size:14px;font-weight:700;color:var(--txt)">${h.name} <span style="font-size:10.5px;color:var(--txt3);font-weight:400">${h.account}</span></span>
+        <span style="font-size:14px;font-weight:800;color:var(--txt)">${won(h.evalAmt)}</span>
+      </div>
+      <div style="font-size:11px;color:var(--txt3);margin-top:2px">보유 ${h.qty.toLocaleString('ko-KR')}${Number.isInteger(h.qty)?'':''} · 평단 ${won(h.avgPrice)}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px">
+        <span style="font-size:11px">${priceLine}</span>
+        ${h.hasPrice ? `<span style="font-size:12px;font-weight:700;color:${h.unrealizedPnl>=0?'var(--red)':'var(--blue)'}">${h.unrealizedPnl>=0?'+':''}${won(h.unrealizedPnl)} (${h.unrealizedPct>=0?'+':''}${h.unrealizedPct}%)</span>` : ''}
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
+        <span style="font-size:10.5px;color:var(--txt3)">${h.dividend>0?`배당 누적 ${won(h.dividend)}`:''}</span>
+        ${editBtn}
+      </div>
+    </div>`;
+  }).join('');
+}
+function invPromptTicker(name, account, curTicker){
+  const t = prompt(`${name}의 티커를 입력하세요 (예: 005930, AAPL)`, curTicker||'');
+  if(t===null) return;
+  invSetTicker(name, account, t.trim());
+}
+function invPromptPrice(name, account){
+  const p = prompt(`${name}의 현재가를 입력하세요 (원)`, '');
+  if(p===null) return;
+  const n = parseFloat(String(p).replace(/[^0-9.]/g,''));
+  if(!n){ showToast('⚠️ 숫자를 입력해주세요'); return; }
+  invSetPrice(name, account, n);
 }
 
 // ── 거래 내역 (계좌별 그룹 · 접기/펼치기) ──
@@ -6804,8 +6988,14 @@ function txGroupedDetailHtml(major, txs, idPrefix){
     return sb-sa;
   });
   const promote = txGroupIsTagBased(major) ? order.filter(sn=>groups[sn].length>=3 && sn!=='(메모 없음)') : [];
+  // [v16 추가] 기타는 예산 판정 대신 "미분류 비율"이 건강 지표다. 태그(메모 앞 단어)조차
+  //   안 붙은 순수 '뭔지 모를 지출'의 비중 — 이게 줄어드는 게 좋은 방향이고, 늘면
+  //   요즘 기록을 대충 하고 있다는 신호다.
+  const unclassified = txGroupIsTagBased(major) ? (groups['(메모 없음)']||[]).reduce((s,t)=>s+(Number(t.amount)||0),0) : 0;
+  const totalAmt = txs.reduce((s,t)=>s+(Number(t.amount)||0),0);
+  const unclassPct = txGroupIsTagBased(major) && totalAmt>0 ? Math.round(unclassified/totalAmt*100) : null;
   const tagNote = txGroupIsTagBased(major)
-    ? `<div style="font-size:10px;color:var(--txt3);padding:2px 0 4px 14px">메모 앞 단어로 자동 묶었어요${promote.length?` · <b style="color:var(--blue)">${promote.join(', ')}</b>는 3번 넘게 나와서 소분류로 만들어도 좋아요`:''}</div>` : '';
+    ? `<div style="font-size:10px;color:var(--txt3);padding:2px 0 4px 14px">메모 앞 단어로 자동 묶었어요${promote.length?` · <b style="color:var(--blue)">${promote.join(', ')}</b>는 3번 넘게 나와서 소분류로 만들어도 좋아요`:''}${unclassPct!==null?` · 미분류 비율 <b style="color:${unclassPct>40?'var(--warning)':'var(--txt2)'}">${unclassPct}%</b>(메모 없는 지출)`:''}</div>` : '';
   const rows = order.map((sn,gi)=>{
     const items = groups[sn];
     const subTotal = items.reduce((s,t)=>s+(Number(t.amount)||0),0);
@@ -6832,6 +7022,74 @@ function txGroupToggle(gid){
   if(typeof TX_GROUP_RERENDER === 'function') TX_GROUP_RERENDER();
 }
 let TX_GROUP_RERENDER = null; // 클릭 직전에 각 렌더 함수가 자기 자신을 재호출하도록 등록해둔다
+
+// [v16 추가] 덕질·비상금 "규모만 추적" 카드 — 예산 대비 판정 없이, 이번 달 얼마를
+//   어느 결제수단으로 어디에 썼는지만 보여준다. 목적통장 등록(rawPresets) + 이름 자동
+//   인식(비상금·덕질)을 그대로 재활용한다.
+function renderPurposeScale(){
+  const card = document.getElementById('mo-purpose-scale-card');
+  const el = document.getElementById('mo-purpose-scale');
+  if(!card || !el) return;
+  const ym = (typeof BUD_MONTH!=='undefined' && BUD_MONTH) || currentMonthStr();
+  const prevYm = (function(){ let y=parseInt(ym.slice(0,4)), m=parseInt(ym.slice(5,7))-1; if(m<1){m=12;y--;} return y+'-'+String(m).padStart(2,'0'); })();
+
+  // 추적 대상 — 목적통장에 등록된 것 + 계좌 이름에 비상금·덕질이 들어간 것(자동 인식)
+  const acctsAll = (CFG.accounts||[]).map(a=>a.key);
+  const list = rawPresets().slice();
+  acctsAll.filter(k=>/비상금|덕질/.test(k)).forEach(k=>{
+    const nm = k.replace(/^케이-?/,'').trim() || k;
+    if(list.some(p=>(p.accounts||[]).indexOf(k)>=0)) return;
+    // [v16 수정] 계좌만 보면 카드로 낸 덕질 지출을 놓친다(그 결제는 케이-덕질 계좌를
+    //   안 거치니까). "덕질" 계좌는 문화생활›덕 소분류도 같이 잡아서 카드 결제도 포함한다.
+    const subs = /덕질/.test(k) ? ['덕'] : [];
+    list.push({ name:nm, accounts:[k], majors:[], subs });
+  });
+  if(!list.length){ card.style.display='none'; return; }
+
+  const allTx = (STATE.transactions.length ? STATE.transactions : DEMO).filter(t=>!isRemovedTx(t));
+  const monthOf = (list2, ym2) => {
+    const acc = (list2.accounts||[]).map(String);
+    const majs = (list2.majors||[]).map(normBudgetKey);
+    const subs = (list2.subs||[]).map(String);
+    return allTx.filter(t=>{
+      if(String(t.date).slice(0,7)!==ym2) return false;
+      const a = String(t.account||t.outAcct||t.inAcct||'');
+      if(acc.indexOf(a)>=0) return true;
+      if(majs.length && majs.indexOf(normBudgetKey(t.major||''))>=0) return true;
+      if(subs.length && subs.indexOf(String(t.category||t.sub||''))>=0) return true;
+      return false;
+    });
+  };
+
+  const blocks = list.map(p=>{
+    const txs = monthOf(p, ym).filter(t=>t.type==='지출');
+    if(!txs.length) return null;
+    const total = txs.reduce((s,t)=>s+(Number(t.amount)||0),0);
+    const prevTotal = monthOf(p, prevYm).filter(t=>t.type==='지출').reduce((s,t)=>s+(Number(t.amount)||0),0);
+    const acc = (p.accounts||[]);
+    const cardAmt = txs.filter(t=>GRP_DEBT.indexOf(String(t.account||t.outAcct||''))>=0).reduce((s,t)=>s+(Number(t.amount)||0),0);
+    const acctAmt = total - cardAmt;
+    // 상위 태그(메모 첫 단어 또는 소분류) 3개
+    const groups = {};
+    txs.forEach(t=>{ const k = String(t.category||'').trim() || String(t.memo||'').trim().split(/[\s\/\-·:(]/)[0] || '기타'; groups[k]=(groups[k]||0)+(Number(t.amount)||0); });
+    const top = Object.keys(groups).sort((a,b)=>groups[b]-groups[a]).slice(0,3);
+    const trend = prevTotal>0 ? Math.round((total-prevTotal)/prevTotal*100) : null;
+    return { name:p.name||acc.join(','), total, cardAmt, acctAmt, top, groups, trend };
+  }).filter(Boolean);
+
+  if(!blocks.length){ card.style.display='none'; return; }
+  card.style.display='';
+
+  el.innerHTML = blocks.map(b=>`
+    <div style="border-top:1px solid #F2F4F6;padding:10px 0">
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <span style="font-size:13px;font-weight:700;color:var(--txt)">${b.name}</span>
+        <span style="font-size:14px;font-weight:800;color:var(--txt)">${won(b.total)}${b.trend!==null?` <span style="font-size:10.5px;font-weight:600;color:var(--txt3)">${b.trend>=0?'▲':'▼'}${Math.abs(b.trend)}%</span>`:''}</span>
+      </div>
+      <div style="font-size:11px;color:var(--txt3);margin-top:2px">통장 ${won(b.acctAmt)} · 카드 ${won(b.cardAmt)}</div>
+      <div style="font-size:11px;color:var(--txt2);margin-top:4px">${b.top.map(k=>`${k} ${won(b.groups[k])}`).join(' · ')}</div>
+    </div>`).join('') + `<div style="font-size:10px;color:var(--txt3);margin-top:8px">판정(초록/빨강) 없이 규모만 보여드려요 · 설정 › 🎯 목적 통장 별도 관리에서 추적 대상을 바꿀 수 있어요</div>`;
+}
 
 function budCatRowHtml(c){
   const label = CAT_OUT_LABELS[c.major]||c.major;
@@ -7367,6 +7625,7 @@ function renderBudgetHome(){
   if(typeof renderCashPlan==='function') renderCashPlan();
   if(typeof renderOverspendReason==='function') renderOverspendReason(BUD_MONTH);
   if(typeof renderOverspendTeaser==='function') renderOverspendTeaser();
+  if(typeof renderPurposeScale==='function') renderPurposeScale();
   if(typeof renderSpendCalendar==='function') renderSpendCalendar();
   if(typeof renderMonthPivot==='function') renderMonthPivot();
 }
@@ -10287,13 +10546,42 @@ function renderOverspendTeaser(){
     </div>`;
   };
 
+  // [v15 추가] "매달 예산 이하로 쓰는 항목은 예산 조정 후보로 보여줘야 한다"는 요청.
+  //   3개월 연속 예산의 70% 미만으로 쓴 카테고리를 모아, 초과 목록과는 별개로
+  //   "판단"이 아니라 "제안"으로 아래에 조용히 붙인다.
+  const underCands = (function(){
+    const out = [];
+    Object.keys(CAT_OUT_LABELS).forEach(major=>{
+      if(catCadence(major)==='event') return;
+      const subs = CAT_OUT_SUBS[major] || (STATE.catMap['지출'] && STATE.catMap['지출'][major]) || [];
+      const months = [0,1,2].map(i=>{
+        const y=parseInt(ym.slice(0,4)); const m=parseInt(ym.slice(5,7))-i;
+        const pym=(m<=0?y-1:y)+'-'+String(m<=0?m+12:m).padStart(2,'0');
+        const bud = budgetOf(major, subs, pym);
+        if(!(bud>0)) return null;
+        const sp = allTx.filter(t=>String(t.date).slice(0,7)===pym).filter(outCatPred(major)).reduce((s,t)=>s+(Number(t.amount)||0),0);
+        return { pct: sp/bud, bud };
+      });
+      if(months.every(m=>m && m.pct < 0.7)){
+        const avgPct = Math.round(months.reduce((s,m)=>s+m.pct,0)/3*100);
+        out.push({ label: CAT_OUT_LABELS[major]||major, avgPct, bud: months[0].bud });
+      }
+    });
+    return out;
+  })();
+  const underHtml = underCands.length ? `<div style="font-size:11.5px;color:var(--txt3);background:var(--green-bg);border-radius:10px;padding:9px 11px;margin-top:10px;line-height:1.6">
+    💡 <b style="color:var(--txt2)">예산 재조정 후보</b> — 최근 3개월 연속 예산을 크게 안 썼어요. 이 예산, 낮춰도 괜찮을 수 있어요.<br>
+    ${underCands.map(c=>`${c.label} 평균 ${c.avgPct}% (예산 ${won(c.bud)})`).join(' · ')}
+  </div>` : '';
+
   el.innerHTML = `
     <div style="font-size:11px;color:var(--txt3);line-height:1.6;margin-bottom:8px">
       위 게이지의 고정비·변동비 색이 왜 그런지 여기서 바로 확인해요 ·
       <b style="color:var(--red)">예산 +</b>는 예산 초과액, <b style="color:var(--warning)">평소 +</b>는 최근 6개월 평균 초과액 · 줄을 누르면 내역과 메모
     </div>
     ${group(false)}
-    ${group(true)}`;
+    ${group(true)}
+    ${underHtml}`;
 }
 // "전체 랭킹 보기" — 예전엔 연간 리포트 탭으로 이동시켰는데, 이제 월간 리포트 안에서 바로 펼쳐 보여줌
 function moExpandOverspend(ym){
@@ -10945,6 +11233,14 @@ function rptJudgeMonth(ym){
   //    자기 예산을 크게 넘으면 그건 "잘 썼다"가 아니라 "어디선가 새고 다른 데서 메웠다"는 뜻이다.
   //    합계만 보던 기존 판정에서는 이런 경우가 100점으로 나왔다. 예산의 절반 이상(50%p) &
   //    3만원 이상 넘은 경우만 잡아서, 몇천 원 오차 같은 노이즈에는 반응하지 않는다.
+  // [v15 수정] "총예산 안에서 썼으면 그게 대원칙이고, 카테고리 하나가 이번 달만 튄 건
+  //   그 자체로 심각한 게 아니다. 몇 달째 반복돼야 진짜 문제"라는 지적을 반영한다.
+  //   지난 2개월도 같은 카테고리가 초과였는지 봐서, 반복되는 것만 빨강 후보로 올리고
+  //   이번 달만 튄 건 노랑(참고)까지만 준다 — 총액이 아무리 커도 1회성이면 빨강 안 감.
+  const prevYms = [1,2].map(i=>{
+    const y=parseInt(ym.slice(0,4)); const m=parseInt(ym.slice(5,7))-i;
+    return (m<=0?y-1:y)+'-'+String(m<=0?m+12:m).padStart(2,'0');
+  });
   const blowouts = [];
   Object.keys(CAT_OUT_LABELS).forEach(major=>{
     if(catCadence(major)==='event') return; // 이벤트성(경조사·문화생활·기타)은 별도 관리 중이라 제외
@@ -10954,19 +11250,25 @@ function rptJudgeMonth(ym){
     const sp = tx.filter(outCatPred(major)).reduce((s,t)=>s+(Number(t.amount)||0),0);
     const over = sp - bud;
     if(over > 30000 && over > bud*0.5){
-      blowouts.push({ label: CAT_OUT_LABELS[major]||major, pct: Math.round(sp/bud*100), over });
+      const recurCount = prevYms.filter(pym=>{
+        const pBud = budgetOf(major, subs, pym);
+        if(!(pBud>0)) return false;
+        const pSp = allTx.filter(t=>String(t.date).slice(0,7)===pym && !isRemovedTx(t)).filter(outCatPred(major)).reduce((s,t)=>s+(Number(t.amount)||0),0);
+        return (pSp-pBud) > 30000 && (pSp-pBud) > pBud*0.5;
+      }).length;
+      blowouts.push({ label: CAT_OUT_LABELS[major]||major, pct: Math.round(sp/bud*100), over, recurring: recurCount>0 });
     }
   });
   blowouts.sort((a,b)=>b.over-a.over);
   const blowoutTotal = blowouts.reduce((s,b)=>s+b.over,0);
-  // [v9 수정] "카테고리 2개 이상이면 무조건 빨강"은 초과 금액이 작아도(예: 총 9만원) 다른 항목
-  //   전부 좋은 달을 통째로 빨강으로 끌어내렸다. 이제 총 초과 금액이 실제로 클 때만(15만원↑)
-  //   또는 카테고리가 3개 이상 겹칠 때만 빨강이고, 그 아래는 노랑으로 낮춘다.
+  const recurring = blowouts.filter(b=>b.recurring);
+  // "빨강"은 반복되는 카테고리가 있을 때만 후보가 된다. 반복 없이 이번 달만 튄 거면
+  // 총액이 커도 노랑까지만 — 그 자체로 "심각"은 아니라는 원칙을 그대로 반영.
   const blowoutCheck = blowouts.length ? {
     label:'카테고리 초과', val: blowouts.length+'개',
-    d: (blowoutTotal > 150000 || blowouts.length>=3) ? 'red' : 'yellow',
-    basis: blowouts.slice(0,3).map(b=>`${b.label} ${b.pct}% (+${won(b.over)})`).join(' · ') + (blowouts.length>3?' 등':'') + ` · 총 초과 ${won(blowoutTotal)}`,
-    crit:'변동비 합계는 예산 안이어도, 한 카테고리가 자기 예산을 3만원 이상 & 50%p 이상 넘으면 따로 잡아요 · 총 초과액 15만원 미만 & 2개 이하면 노랑' } : null;
+    d: (recurring.length && (blowoutTotal > 150000 || blowouts.length>=3)) ? 'red' : 'yellow',
+    basis: blowouts.slice(0,3).map(b=>`${b.label} ${b.pct}%${b.recurring?' · 반복':' · 이번 달만'} (+${won(b.over)})`).join(' · ') + (blowouts.length>3?' 등':'') + ` · 총 초과 ${won(blowoutTotal)}`,
+    crit:'한 카테고리가 예산을 3만원 & 50%p 이상 넘으면 잡아요 · 지난 2개월도 반복 초과인 경우에만 빨강, 이번 달만 튄 거면 노랑까지만' } : null;
 
   const dotC = { green:'var(--green)', yellow:'var(--warning)', red:'var(--red)', gray:'var(--txt3)' };
   const checks = [ incomeCheck, fixedCheck, varCheck, saveCheck ];
