@@ -2000,8 +2000,19 @@ function renderInvestByStock(){
   const sortBy = document.getElementById('inv-sort')?.value || 'eval';
   hs.sort((a,b)=> sortBy==='pct' ? (b.unrealizedPct??-999)-(a.unrealizedPct??-999) : b.evalAmt-a.evalAmt);
 
+  // [v18 수정] 종목 카드가 계좌 구분 없이 한 줄로 쭉 나열돼서 "다 합쳐진 것처럼" 보였다.
+  //   ISA·일반·IRP처럼 계좌마다 성격이 다르니, 거래내역 탭과 같은 방식으로 계좌별로
+  //   먼저 묶고 그 안에서 종목을 정렬한다. 계산 자체는 원래도 계좌별로 나뉘어 있었고
+  //   여기선 "보여주는 순서"만 바꾼다.
+  const byAcct = {};
+  hs.forEach(h=>{ const k=h.account||'(계좌 미지정)'; (byAcct[k]=byAcct[k]||[]).push(h); });
+  const acctKeys = Object.keys(byAcct).sort((a,b)=>{
+    const sa = byAcct[a].reduce((s,h)=>s+h.evalAmt,0), sb = byAcct[b].reduce((s,h)=>s+h.evalAmt,0);
+    return sb-sa;
+  });
+
   const today = new Date();
-  el.innerHTML = hs.map(h=>{
+  const stockRow = h=>{
     const stale = h.asOfDate ? Math.floor((today - new Date(h.asOfDate)) / 86400000) : null;
     const priceLine = !h.hasPrice
       ? `<span style="color:var(--txt3)">현재가 미입력 · 원가로 표시 중</span>`
@@ -2011,12 +2022,12 @@ function renderInvestByStock(){
     const editBtn = h.curPriceIsFormula
       ? `<button onclick="invPromptTicker('${jq(h.name)}','${jq(h.account)}','${jq(h.ticker)}')" style="font-size:10px;padding:2px 8px;border:1px dashed var(--blue);border-radius:99px;background:none;color:var(--blue);cursor:pointer">티커 수정</button>`
       : `<button onclick="invPromptPrice('${jq(h.name)}','${jq(h.account)}')" style="font-size:10px;padding:2px 8px;border:1px dashed var(--blue);border-radius:99px;background:none;color:var(--blue);cursor:pointer">가격 수정</button>`;
-    return `<div style="border-top:1px solid #F2F4F6;padding:10px 0">
+    return `<div style="border-top:1px solid #F2F4F6;padding:10px 0 10px 4px">
       <div style="display:flex;justify-content:space-between;align-items:baseline">
-        <span style="font-size:14px;font-weight:700;color:var(--txt)">${h.name} <span style="font-size:10.5px;color:var(--txt3);font-weight:400">${h.account}</span></span>
+        <span style="font-size:14px;font-weight:700;color:var(--txt)">${h.name}</span>
         <span style="font-size:14px;font-weight:800;color:var(--txt)">${won(h.evalAmt)}</span>
       </div>
-      <div style="font-size:11px;color:var(--txt3);margin-top:2px">보유 ${h.qty.toLocaleString('ko-KR')}${Number.isInteger(h.qty)?'':''} · 평단 ${won(h.avgPrice)}</div>
+      <div style="font-size:11px;color:var(--txt3);margin-top:2px">보유 ${h.qty.toLocaleString('ko-KR')} · 평단 ${won(h.avgPrice)}</div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px">
         <span style="font-size:11px">${priceLine}</span>
         ${h.hasPrice ? `<span style="font-size:12px;font-weight:700;color:${h.unrealizedPnl>=0?'var(--red)':'var(--blue)'}">${h.unrealizedPnl>=0?'+':''}${won(h.unrealizedPnl)} (${h.unrealizedPct>=0?'+':''}${h.unrealizedPct}%)</span>` : ''}
@@ -2025,6 +2036,22 @@ function renderInvestByStock(){
         <span style="font-size:10.5px;color:var(--txt3)">${h.dividend>0?`배당 누적 ${won(h.dividend)}`:''}</span>
         ${editBtn}
       </div>
+    </div>`;
+  };
+
+  el.innerHTML = acctKeys.map(ak=>{
+    const list = byAcct[ak];
+    const acctTotal = list.reduce((s,h)=>s+h.evalAmt,0);
+    const acctPnl = list.reduce((s,h)=>s+h.unrealizedPnl,0);
+    return `<div style="margin-bottom:4px">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:9px 10px;background:var(--card2);border-radius:12px;margin-top:8px">
+        <span style="font-size:13px;font-weight:700;color:var(--txt)">${ak} <span style="font-size:10.5px;color:var(--txt3);font-weight:400">${list.length}종목</span></span>
+        <span style="text-align:right">
+          <div style="font-size:13px;font-weight:700;color:var(--txt)">${won(acctTotal)}</div>
+          <div style="font-size:10.5px;color:${acctPnl>=0?'var(--red)':'var(--blue)'}">${acctPnl>=0?'+':''}${won(acctPnl)}</div>
+        </span>
+      </div>
+      <div style="padding:0 4px">${list.map(stockRow).join('')}</div>
     </div>`;
   }).join('');
 }
