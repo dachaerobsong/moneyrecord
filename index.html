@@ -224,6 +224,14 @@ body { padding-bottom:88px; }
 .inv-comp-legend .dot{ width:6px; height:6px; border-radius:50%; flex:none; }
 .inv-collapsed-row{ display:flex; justify-content:space-between; align-items:center; padding:9px 2px; border-top:1px solid #F2F4F6; cursor:pointer; color:var(--txt3); font-size:11.5px; }
 .inv-collapsed-row .arrow{ transition:transform .15s; display:inline-block; }
+/* [v23] 계좌 리스트 — 넓은 화면(태블릿·데스크톱)에서 한 줄에 쭉 늘어지며 가운데가 비는 문제.
+   각 계좌를 독립된 타일로 감싸고, 폭이 넉넉하면 2열로 흘려보낸다(그리드 아님 — 계좌마다
+   펼침 높이가 달라서 그리드로 하면 옆 칸에 새 여백이 또 생긴다. 다단 컬럼으로 높이 독립). */
+.inv-acct-tile{ border:1px solid #EEF0F3; border-radius:14px; padding:10px 14px 12px; margin-bottom:10px; }
+@media (min-width:660px){
+  .inv-acct-list{ column-count:2; column-gap:14px; }
+  .inv-acct-tile{ break-inside:avoid; -webkit-column-break-inside:avoid; }
+}
 .gauge-wrap{ flex:none; position:relative; width:150px; height:88px; }
 .gauge-num{ position:absolute; bottom:0; left:0; right:0; text-align:center; }
 .gauge-num .v{ font-size:26px; font-weight:800; }
@@ -1141,7 +1149,7 @@ body { padding-bottom:88px; }
           <span id="inv-acct-toggle-all" onclick="invHoldToggleAll()" style="font-size:11.5px;color:var(--txt3);cursor:pointer;padding:5px 2px;white-space:nowrap">전체펼침</span>
         </div>
       </div>
-      <div id="inv-by-acct"></div>
+      <div id="inv-by-acct" class="inv-acct-list"></div>
       <div style="font-size:10.5px;color:var(--txt3);margin-top:10px;line-height:1.5">평가금액·손익·수익률은 시트 [보유종목] 탭 값을 그대로 읽어와요 — 앱은 아무것도 안 고치는 읽기 전용입니다.</div>
     </section>
     <section class="card">
@@ -2138,8 +2146,8 @@ function renderInvestByAccount(hs){
       </div>
       <div style="display:${zeroOpen?'block':'none'}">${zero.map(stockRow).join('')}</div>` : '';
     return `
-    <div style="${i>0?'border-top:1px solid #F2F4F6':''}">
-      <div onclick="invHoldToggle('${kEsc}')" style="display:flex;justify-content:space-between;align-items:center;padding:10px 2px;cursor:pointer">
+    <div class="inv-acct-tile">
+      <div onclick="invHoldToggle('${kEsc}')" style="display:flex;justify-content:space-between;align-items:center;padding:8px 2px;cursor:pointer">
         <span style="font-size:14px;font-weight:700;color:var(--txt);display:flex;align-items:center;gap:5px"><span style="color:var(--txt3);font-size:10px;transition:transform .15s;display:inline-block;transform:rotate(${open?90:0}deg)">▸</span>${k} <span style="font-size:10.5px;font-weight:400;color:var(--txt3)">${a.n}종목</span></span>
         <span style="text-align:right"><div style="font-size:14px;font-weight:800;color:var(--txt)">${won(a.eval)}</div><div style="font-size:11px;font-weight:600;color:${a.pnl>=0?'var(--red)':'var(--blue)'}">${wonSigned(a.pnl)}${pct!==null?` (${pct>=0?'+':''}${pct}%)`:''}</div></span>
       </div>
