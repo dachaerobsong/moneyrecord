@@ -1103,11 +1103,9 @@ body { padding-bottom:88px; }
 
   <!-- 주식 2) 내역 화면 (요약 + 계좌별 그룹) -->
   <div id="sub-invest-history" class="invest-sub-panel">
-    <!-- 투자 요약 (구글시트 [보유종목/거래내역] 기반 자동 집계) -->
-    <section class="card">
-      <div class="card-title">투자 종합 현황</div>
-      <div id="inv-summary"><div style="text-align:center;color:var(--txt3);padding:14px;font-size:13px">거래를 입력하면 자동 집계됩니다</div></div>
-    </section>
+    <!-- [v21 재설계] 숫자만 늘어놓지 않는다 — 잘 되고 있는지 한 줄로 먼저 말하고,
+         뭐가 끌어올리고 끌어내리는지 칩으로 보여준다. 가계부 히어로 카드와 같은 언어. -->
+    <section class="dash-hero" id="inv-hero"></section>
     <!-- [v20 추가] 계좌별 소계 — 총합 밑에, 종목 상세 없이 계좌 단위 요약만 -->
     <section class="card" id="inv-acct-card" style="display:none">
       <div class="card-title">🏦 계좌별 현황</div>
@@ -1927,8 +1925,12 @@ function invDel(rowIndex){
 //   요청대로, 총합 → 계좌별 소계(요약만) → 종목 전체 리스트(계좌 태그만 붙여서 평탄하게)
 //   세 단으로 나눈다. 숫자는 전부 보유종목 시트(H·I·J열)를 그대로 믿는다.
 function renderInvestSummary(){
-  const el=document.getElementById('inv-summary'); if(!el) return;
-  if(!pfTx.length && !pfHoldings.length){ el.innerHTML='<div style="text-align:center;color:var(--txt3);padding:14px;font-size:13px">거래를 입력하면 자동 집계됩니다</div>'; return; }
+  const el=document.getElementById('inv-hero'); if(!el) return;
+  if(!pfTx.length && !pfHoldings.length){
+    el.innerHTML = `<div style="width:100%;text-align:center;color:rgba(255,255,255,0.7);padding:10px;font-size:13px">거래를 입력하면 자동 집계돼요</div>`;
+    renderInvestByAccount([]); renderInvestByStock([]);
+    return;
+  }
   const sum=t=>pfTx.filter(x=>x.type===t).reduce((s,x)=>s+Math.abs(Number(x.amount)||0),0);
   const depositIn = sum('입금'), depositOut = sum('출금');
   const divid = sum('분배금') + sum('이자');
@@ -1938,19 +1940,46 @@ function renderInvestSummary(){
   const evalTotal = hs.reduce((s,h)=>s+h.evalAmt,0);
   const pnlTotal = hs.reduce((s,h)=>s+h.unrealizedPnl,0);
   const costTotal = hs.reduce((s,h)=>s+h.costBasis,0);
-  // 순수 투입금(스냅샷) = 보유원가 + 미투자 현금 — 거래내역이 없어도(시트만 있어도) 원가 합계로 대체
   const cashUninvested = pfTx.length ? Math.max(0, depositIn - depositOut - buyAmt + sellAmt) : 0;
   const principalSnapshot = costTotal + cashUninvested;
   const pnlPct = principalSnapshot>0 ? Math.round(pnlTotal/principalSnapshot*1000)/10 : null;
 
-  const row=(name,val,color,big)=>`<div class="item-row"><div class="item-left"><span class="item-name">${name}</span></div><div class="item-right" style="${color?`color:${color};`:''}${big?'font-size:19px;':''}">${val}</div></div>`;
-  el.innerHTML =
-    row('총평가금액', won(evalTotal), null, true) +
-    row('평가손익', `${wonSigned(pnlTotal)}${pnlPct!==null?` (${pnlPct>=0?'+':''}${pnlPct}%)`:''}`, pnlTotal>=0?'var(--red)':'var(--blue)') +
-    (pfTx.length ? `<div style="border-top:1px solid #F2F4F6;margin:6px 0"></div>` +
-      row('순수 투입금 <span style="font-size:10px;color:var(--txt3)">보유원가+미투자현금</span>', won(principalSnapshot)) +
-      row('분배금·이자 (누적)', '+'+won(divid), 'var(--red)') : '') +
-    `<div style="font-size:10.5px;color:var(--txt3);margin-top:8px">종목별 평가금액·손익·수익률은 보유종목 시트 값을 그대로 가져와요</div>`;
+  // [v21 추가] "뭐가 끌어올리고 끌어내리는지" — 종목 단위로 가장 잘한 것/못한 것을 뽑는다.
+  //   숫자 총합만 보여주면 "그래서 뭐가 문제인데"에 답을 못 한다.
+  const withPct = hs.filter(h=>h.hasPrice && h.unrealizedPct!==null);
+  const best = withPct.length ? withPct.reduce((a,b)=>b.unrealizedPct>a.unrealizedPct?b:a) : null;
+  const worst = withPct.length ? withPct.reduce((a,b)=>b.unrealizedPct<a.unrealizedPct?b:a) : null;
+  const upCount = withPct.filter(h=>h.unrealizedPct>0).length;
+  const downCount = withPct.filter(h=>h.unrealizedPct<0).length;
+  const noPriceCount = hs.length - withPct.length;
+
+  let headline;
+  if(!withPct.length){
+    headline = `현재가가 입력된 종목이 없어요 · 시트에서 현재가를 채우면 손익이 보여요`;
+  } else if(pnlTotal >= 0){
+    headline = best ? `전체적으로 플러스예요 — <b>${best.name}</b>가 견인 중` : '전체적으로 플러스예요';
+  } else {
+    headline = worst ? `전체적으로 마이너스예요 — <b>${worst.name}</b>이(가) 발목` : '전체적으로 마이너스예요';
+  }
+
+  const chip = (label,color)=>`<span class="hero-chip" style="background:rgba(255,255,255,0.12);color:#fff;border-radius:99px;padding:5px 12px;font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:5px"><span style="width:7px;height:7px;border-radius:50%;background:${color};display:inline-block"></span>${label}</span>`;
+  const chips = [];
+  if(best)  chips.push(chip(`${best.name} ${best.unrealizedPct>=0?'+':''}${best.unrealizedPct}%`, 'var(--green-vivid)'));
+  if(worst && worst!==best) chips.push(chip(`${worst.name} ${worst.unrealizedPct>=0?'+':''}${worst.unrealizedPct}%`, 'var(--red-vivid)'));
+  if(withPct.length) chips.push(chip(`상승 ${upCount} · 하락 ${downCount}${noPriceCount?` · 미입력 ${noPriceCount}`:''}`, 'var(--warning-vivid)'));
+
+  el.innerHTML = `
+    <div style="flex:1;min-width:220px">
+      <div style="font-size:12px;color:rgba(255,255,255,0.6);margin-bottom:4px">투자 현황</div>
+      <div style="font-size:16px;font-weight:700;margin-bottom:10px;line-height:1.4">${headline}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">${chips.join('')}</div>
+    </div>
+    <div style="text-align:right;flex:none">
+      <div style="font-size:11px;color:rgba(255,255,255,0.6)">총평가금액</div>
+      <div style="font-size:26px;font-weight:800">${won(evalTotal)}</div>
+      <div style="font-size:14px;font-weight:700;color:${pnlTotal>=0?'#FF8A80':'#82B1FF'};margin-top:2px">${wonSigned(pnlTotal)}${pnlPct!==null?` (${pnlPct>=0?'+':''}${pnlPct}%)`:''}</div>
+      ${pfTx.length ? `<div style="font-size:10.5px;color:rgba(255,255,255,0.55);margin-top:6px">투입금 ${won(principalSnapshot)} · 배당 +${won(divid)}</div>` : ''}
+    </div>`;
 
   renderInvestByAccount(hs);
   renderInvestByStock(hs);
@@ -2055,7 +2084,12 @@ function setInvestSub(subName, el){
 
 function renderInvest(){
   const d=document.getElementById('inv-date'); if(d&&!d.value) d.value=new Date().toISOString().slice(0,10);
-  if(!pfTx.length) loadPfData(true); else { renderInvestSummary(); renderInvestHistory(); }
+  // [v21 수정] pfTx가 캐시에 있으면 바로 렌더하느라 pfHoldings(보유종목 시트)를 아예 안
+  //   불러왔다. 그래서 재방문할 때마다 계좌별·종목별 카드가 빈 채로 남았다 —
+  //   "아무것도 안 뜬다"의 정체. 이제 항상 보유종목을 새로 받아온 뒤에 그린다.
+  if(!pfTx.length){ loadPfData(true); return; }
+  renderInvestHistory();
+  loadPfHoldings(()=>{ renderInvestSummary(); });
 }
 
 
