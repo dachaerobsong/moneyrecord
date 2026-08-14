@@ -1097,18 +1097,23 @@ body { padding-bottom:88px; }
       </div>
       <div class="form-group"><label>메모</label><input type="text" id="inv-memo" placeholder=""></div>
       <button onclick="invAdd()" class="submit-btn">구글 시트에 기록</button>
-      <div style="font-size:11px;color:var(--txt3);margin-top:8px;line-height:1.5">* 가계부와 같은 구글시트의 <b>투자_거래내역</b> 탭에 실시간 기록됩니다. 시트에 탭이 없으면 첫 거래 입력 시 자동으로 만들어져요.</div>
+      <div style="font-size:11px;color:var(--txt3);margin-top:8px;line-height:1.5">* 가계부와 같은 구글시트의 <b>거래내역</b> 탭에 실시간 기록됩니다.</div>
     </section>
   </div>
 
   <!-- 주식 2) 내역 화면 (요약 + 계좌별 그룹) -->
   <div id="sub-invest-history" class="invest-sub-panel">
-    <!-- 투자 요약 (구글시트 [주식] 거래내역 기반 자동 계산) -->
+    <!-- 투자 요약 (구글시트 [보유종목/거래내역] 기반 자동 집계) -->
     <section class="card">
       <div class="card-title">투자 종합 현황</div>
       <div id="inv-summary"><div style="text-align:center;color:var(--txt3);padding:14px;font-size:13px">거래를 입력하면 자동 집계됩니다</div></div>
     </section>
-    <!-- [v17 추가] 종목별 현황 — 평가금액·수익률로 정렬해서 볼 수 있게 -->
+    <!-- [v20 추가] 계좌별 소계 — 총합 밑에, 종목 상세 없이 계좌 단위 요약만 -->
+    <section class="card" id="inv-acct-card" style="display:none">
+      <div class="card-title">🏦 계좌별 현황</div>
+      <div id="inv-by-acct"></div>
+    </section>
+    <!-- 종목별 현황 — 계좌에 안 묶고 평탄하게, 계좌는 이름 옆 태그로만 -->
     <section class="card" id="inv-stock-card" style="display:none">
       <div class="card-title">
         <span>📈 종목별 현황</span>
@@ -1118,7 +1123,7 @@ body { padding-bottom:88px; }
         </select>
       </div>
       <div id="inv-by-stock"></div>
-      <div style="font-size:10.5px;color:var(--txt3);margin-top:8px;line-height:1.5">현재가는 시트 [투자_보유종목] 시트의 값을 그대로 읽어요 · 수식(자동조회)이면 티커만, 아니면 가격을 직접 고칠 수 있어요</div>
+      <div style="font-size:10.5px;color:var(--txt3);margin-top:8px;line-height:1.5">평가금액·손익·수익률은 시트 [보유종목] 탭 값을 그대로 읽어와요 — 앱은 아무것도 안 고치는 읽기 전용이에요. 현재가는 그 시트에서 지금 쓰시는 수식/값 그대로 관리하시면 됩니다.</div>
     </section>
     <section class="card">
       <div class="card-title">
@@ -1803,24 +1808,17 @@ function computeHoldings(){
 }
 
 // 종목별 계산(항상 최신) + 시트의 현재가/티커(가격만 시트 전용) 병합
+// [v20 수정] "이미 시트에서 다 계산되고 있는데 왜 앱이 또 계산하냐"는 지적이 맞다.
+//   종목별 수량·평단가·평가금액·손익·수익률은 이제 보유종목 시트 값을 그대로 믿고 쓴다.
+//   거래내역 기반 계산(computeHoldings)은 그 시트에 없는 값(실현손익·배당 총액,
+//   순수 투입금 스냅샷)에만 쓴다 — 두 계산이 같은 숫자를 놓고 서로 다투지 않게.
 function mergedHoldings(){
-  const computed = computeHoldings();
-  const byKey = {};
-  pfHoldings.forEach(h=>{ byKey[h.name+'|'+h.account] = h; });
-  return computed.map(h=>{
-    const sheetRow = byKey[h.name+'|'+h.account];
-    const curPrice = sheetRow ? sheetRow.curPrice : 0;
-    const hasPrice = !!(sheetRow && curPrice > 0);
-    const evalAmt = hasPrice ? h.qty*curPrice : h.costBasis; // 현재가 없으면 원가로 대체(0원 방지)
-    return Object.assign({}, h, {
-      curPrice, hasPrice, evalAmt,
-      unrealizedPnl: hasPrice ? evalAmt - h.costBasis : 0,
-      unrealizedPct: hasPrice && h.costBasis>0 ? Math.round((evalAmt-h.costBasis)/h.costBasis*1000)/10 : null,
-      ticker: sheetRow ? sheetRow.ticker : '',
-      asOfDate: sheetRow ? sheetRow.asOfDate : '',
-      curPriceIsFormula: sheetRow ? sheetRow.curPriceIsFormula : false
-    });
-  });
+  return pfHoldings.filter(h=>h.name).map(h=>({
+    name: h.name, account: h.account, qty: h.qty, avgPrice: h.avgPrice, costBasis: h.costBasis,
+    curPrice: h.curPrice, hasPrice: h.curPrice>0,
+    evalAmt: h.evalAmt || (h.qty*h.curPrice) || h.costBasis,
+    unrealizedPnl: h.pnl, unrealizedPct: h.pnlRate ? Math.round(h.pnlRate*1000)/10 : null
+  }));
 }
 
 function loadPfHoldings(cb){
@@ -1831,31 +1829,6 @@ function loadPfHoldings(cb){
     .then(d=>{ if(d && d.ok && d.data) pfHoldings = d.data; })
     .catch(()=>{})
     .finally(()=>{ if(cb) cb(); });
-}
-
-// 거래내역이 바뀔 때마다 계산 결과(수량·평단가·원가·실현손익·배당)를 시트에도 남긴다.
-// 현재가·티커·기준일(G·M·N열)은 이 호출이 절대 안 건드린다 — GAS 쪽에서도 한 번 더 막아둠.
-function syncHoldingsToSheet(){
-  const url = getUrl();
-  if(!url) return;
-  const holdings = computeHoldings().map(h=>({ name:h.name, account:h.account, qty:h.qty, avgPrice:h.avgPrice, costBasis:h.costBasis, realizedPnl:h.realizedPnl, dividend:h.dividend }));
-  if(!holdings.length) return;
-  fetch(url, { method:'POST', headers:{'Content-Type':'text/plain'}, body: JSON.stringify({ action:'pf_syncHoldings', holdings }) }).catch(()=>{});
-}
-
-function invSetTicker(name, account, ticker){
-  const url = getUrl(); if(!url){ showToast('⚙️ 시트 연동이 필요해요'); return; }
-  showToast('⏳ 티커 반영 중...');
-  fetch(url, { method:'POST', headers:{'Content-Type':'text/plain'}, body: JSON.stringify({ action:'pf_setTicker', name, account, ticker }) })
-    .then(()=>{ showToast('✅ 티커 반영 — 시트 수식이 현재가를 채워요'); setTimeout(()=>loadPfHoldings(renderInvestByStock), 800); })
-    .catch(()=> showToast('⚠️ 전송 시도됨 (no-cors)'));
-}
-function invSetPrice(name, account, price){
-  const url = getUrl(); if(!url){ showToast('⚙️ 시트 연동이 필요해요'); return; }
-  showToast('⏳ 가격 반영 중...');
-  fetch(url, { method:'POST', headers:{'Content-Type':'text/plain'}, body: JSON.stringify({ action:'pf_setPrice', name, account, price }) })
-    .then(()=>{ showToast('✅ 현재가 반영'); loadPfHoldings(renderInvestByStock); })
-    .catch(()=> showToast('⚠️ 전송 시도됨 (no-cors)'));
 }
 
 let _pfLoading = false;
@@ -1895,7 +1868,7 @@ function loadPfData(silent){
       savePfCache();
       if(!silent) showToast('✅ 주식 거래 ' + pfTx.length + '건 동기화 완료');
       // [v17 추가] 종목별 카드가 현재가(시트)를 같이 써야 하니, 렌더 전에 보유종목 시트도 당겨온다.
-      loadPfHoldings(()=>{ renderInvestSummary(); renderInvestHistory(); syncHoldingsToSheet(); });
+      loadPfHoldings(()=>{ renderInvestSummary(); renderInvestHistory(); });
       // 종목명 자동완성 채우기
       const dl = document.getElementById('inv-name-list');
       if(dl){ const names=[...new Set(pfTx.map(r=>r.name).filter(Boolean))].sort(); dl.innerHTML = names.map(n=>`<option>${n}</option>`).join(''); }
@@ -1949,123 +1922,82 @@ function invDel(rowIndex){
     .catch(()=> showToast('⚠️ 삭제 시도됨 (no-cors)'));
 }
 
-// ── 투자 종합 현황 (순수 투입금은 '스냅샷' 방식 — 보유원가+미투자현금. 매번 다시 계산되므로 놓칠 일이 없다) ──
+// ── 투자 대시보드 — 총합 → 계좌별 소계 → 종목별 리스트(따로) ──
+// [v20 재설계] 종목별 카드를 계좌 아래 중첩시켰던 걸 걷어냈다. "종목은 따로 보고 싶다"는
+//   요청대로, 총합 → 계좌별 소계(요약만) → 종목 전체 리스트(계좌 태그만 붙여서 평탄하게)
+//   세 단으로 나눈다. 숫자는 전부 보유종목 시트(H·I·J열)를 그대로 믿는다.
 function renderInvestSummary(){
   const el=document.getElementById('inv-summary'); if(!el) return;
-  if(!pfTx.length){ el.innerHTML='<div style="text-align:center;color:var(--txt3);padding:14px;font-size:13px">거래를 입력하면 자동 집계됩니다</div>'; return; }
+  if(!pfTx.length && !pfHoldings.length){ el.innerHTML='<div style="text-align:center;color:var(--txt3);padding:14px;font-size:13px">거래를 입력하면 자동 집계됩니다</div>'; return; }
   const sum=t=>pfTx.filter(x=>x.type===t).reduce((s,x)=>s+Math.abs(Number(x.amount)||0),0);
   const depositIn = sum('입금'), depositOut = sum('출금');
   const divid = sum('분배금') + sum('이자');
-  const fee = pfTx.reduce((s,x)=>s+Math.abs(Number(x.fee)||0)+Math.abs(Number(x.tax)||0),0);
-  const buyAmt = sum('매수');
-  const sellAmt = sum('매도');
+  const buyAmt = sum('매수'), sellAmt = sum('매도');
 
   const hs = mergedHoldings();
-  // [v17 수정] "순수 투입금"을 입금-출금 누적에서 스냅샷 방식으로 바꿨다.
-  //   수익까지 출금하면 누적 방식은 마이너스로 무너지는데, 이 방식은 항상 "지금 뭘
-  //   들고 있나"만 보므로 원금/수익 구분 없이도 늘 정확하다.
-  const heldCost = hs.reduce((s,h)=>s+h.costBasis,0);
-  const cashUninvested = Math.max(0, depositIn - depositOut - buyAmt + sellAmt);
-  const principalSnapshot = heldCost + cashUninvested;
   const evalTotal = hs.reduce((s,h)=>s+h.evalAmt,0);
-  const unrealizedTotal = hs.reduce((s,h)=>s+h.unrealizedPnl,0);
-  const realizedTotal = hs.reduce((s,h)=>s+h.realizedPnl,0);
-  const totalReturn = unrealizedTotal + realizedTotal + divid;
-  const totalReturnPct = principalSnapshot>0 ? Math.round(totalReturn/principalSnapshot*1000)/10 : null;
+  const pnlTotal = hs.reduce((s,h)=>s+h.unrealizedPnl,0);
+  const costTotal = hs.reduce((s,h)=>s+h.costBasis,0);
+  // 순수 투입금(스냅샷) = 보유원가 + 미투자 현금 — 거래내역이 없어도(시트만 있어도) 원가 합계로 대체
+  const cashUninvested = pfTx.length ? Math.max(0, depositIn - depositOut - buyAmt + sellAmt) : 0;
+  const principalSnapshot = costTotal + cashUninvested;
+  const pnlPct = principalSnapshot>0 ? Math.round(pnlTotal/principalSnapshot*1000)/10 : null;
 
   const row=(name,val,color,big)=>`<div class="item-row"><div class="item-left"><span class="item-name">${name}</span></div><div class="item-right" style="${color?`color:${color};`:''}${big?'font-size:19px;':''}">${val}</div></div>`;
   el.innerHTML =
     row('총평가금액', won(evalTotal), null, true) +
-    row('총수익 <span style="font-size:10px;color:var(--txt3)">평가+실현+배당</span>', `${totalReturn>=0?'+':''}${won(totalReturn)}${totalReturnPct!==null?` (${totalReturnPct>=0?'+':''}${totalReturnPct}%)`:''}`, totalReturn>=0?'var(--red)':'var(--blue)') +
-    `<div style="border-top:1px solid #F2F4F6;margin:6px 0"></div>` +
-    row('순수 투입금 <span style="font-size:10px;color:var(--txt3)">보유원가+미투자현금</span>', won(principalSnapshot)) +
-    row('평가수익(미실현)', `${unrealizedTotal>=0?'+':''}${won(unrealizedTotal)}`, unrealizedTotal>=0?'var(--red)':'var(--blue)') +
-    row('실현손익', `${realizedTotal>=0?'+':''}${won(realizedTotal)}`, realizedTotal>=0?'var(--red)':'var(--blue)') +
-    row('분배금·이자 (누적)', '+'+won(divid), 'var(--red)') +
-    `<div style="border-top:1px solid #F2F4F6;margin:6px 0"></div>` +
-    `<div style="font-size:11px;color:var(--txt3);padding:4px 2px">누적 입출금 이력 <span style="color:var(--txt2)">입금 ${won(depositIn)} · 출금 ${won(depositOut)}</span> — 참고용, 순수 투입금 계산엔 원금/수익 구분 없이 반영됨</div>` +
-    row('수수료·세금 (누적)', '−'+won(fee), 'var(--txt3)') +
-    row('거래 건수', pfTx.length+'건');
-  renderInvestByStock();
+    row('평가손익', `${wonSigned(pnlTotal)}${pnlPct!==null?` (${pnlPct>=0?'+':''}${pnlPct}%)`:''}`, pnlTotal>=0?'var(--red)':'var(--blue)') +
+    (pfTx.length ? `<div style="border-top:1px solid #F2F4F6;margin:6px 0"></div>` +
+      row('순수 투입금 <span style="font-size:10px;color:var(--txt3)">보유원가+미투자현금</span>', won(principalSnapshot)) +
+      row('분배금·이자 (누적)', '+'+won(divid), 'var(--red)') : '') +
+    `<div style="font-size:10.5px;color:var(--txt3);margin-top:8px">종목별 평가금액·손익·수익률은 보유종목 시트 값을 그대로 가져와요</div>`;
+
+  renderInvestByAccount(hs);
+  renderInvestByStock(hs);
 }
 
-// [v17 추가] 종목별 카드 — 판정 없이 규모·현재가·수익률만 보여준다
-function renderInvestByStock(){
+// 계좌별 소계 — 종목 상세 없이 요약만. "총 합 밑에 계좌별로 보이면 좋겠다"는 요청.
+function renderInvestByAccount(hs){
+  hs = hs || mergedHoldings();
+  const card = document.getElementById('inv-acct-card');
+  const el = document.getElementById('inv-by-acct');
+  if(!card || !el) return;
+  if(!hs.length){ card.style.display='none'; return; }
+  card.style.display='';
+  const byAcct = {};
+  hs.forEach(h=>{ const k=h.account||'(계좌 미지정)'; (byAcct[k]=byAcct[k]||{eval:0,pnl:0,n:0}); byAcct[k].eval+=h.evalAmt; byAcct[k].pnl+=h.unrealizedPnl; byAcct[k].n++; });
+  const keys = Object.keys(byAcct).sort((a,b)=>byAcct[b].eval-byAcct[a].eval);
+  el.innerHTML = keys.map(k=>{
+    const a = byAcct[k];
+    const pct = (a.eval-a.pnl)>0 ? Math.round(a.pnl/(a.eval-a.pnl)*1000)/10 : null;
+    return `<div class="item-row"><div class="item-left"><span class="item-name">${k} <span style="font-size:10px;color:var(--txt3)">${a.n}종목</span></span></div>
+      <div class="item-right"><div>${won(a.eval)}</div><div style="font-size:11px;font-weight:600;color:${a.pnl>=0?'var(--red)':'var(--blue)'}">${wonSigned(a.pnl)}${pct!==null?` (${pct>=0?'+':''}${pct}%)`:''}</div></div>
+    </div>`;
+  }).join('');
+}
+
+// 종목별 리스트 — 계좌에 중첩하지 않고 평탄하게, 계좌는 태그로만 붙인다
+function renderInvestByStock(hs){
+  hs = (hs || mergedHoldings()).slice();
   const card = document.getElementById('inv-stock-card');
   const el = document.getElementById('inv-by-stock');
   if(!card || !el) return;
-  const hs = mergedHoldings().filter(h=>h.qty>0.0001);
   if(!hs.length){ card.style.display='none'; return; }
   card.style.display='';
   const sortBy = document.getElementById('inv-sort')?.value || 'eval';
   hs.sort((a,b)=> sortBy==='pct' ? (b.unrealizedPct??-999)-(a.unrealizedPct??-999) : b.evalAmt-a.evalAmt);
 
-  // [v18 수정] 종목 카드가 계좌 구분 없이 한 줄로 쭉 나열돼서 "다 합쳐진 것처럼" 보였다.
-  //   ISA·일반·IRP처럼 계좌마다 성격이 다르니, 거래내역 탭과 같은 방식으로 계좌별로
-  //   먼저 묶고 그 안에서 종목을 정렬한다. 계산 자체는 원래도 계좌별로 나뉘어 있었고
-  //   여기선 "보여주는 순서"만 바꾼다.
-  const byAcct = {};
-  hs.forEach(h=>{ const k=h.account||'(계좌 미지정)'; (byAcct[k]=byAcct[k]||[]).push(h); });
-  const acctKeys = Object.keys(byAcct).sort((a,b)=>{
-    const sa = byAcct[a].reduce((s,h)=>s+h.evalAmt,0), sb = byAcct[b].reduce((s,h)=>s+h.evalAmt,0);
-    return sb-sa;
-  });
-
-  const today = new Date();
-  const stockRow = h=>{
-    const stale = h.asOfDate ? Math.floor((today - new Date(h.asOfDate)) / 86400000) : null;
-    const priceLine = !h.hasPrice
-      ? `<span style="color:var(--txt3)">현재가 미입력 · 원가로 표시 중</span>`
-      : h.curPriceIsFormula
-        ? `현재가 ${won(h.curPrice)} · <span style="color:var(--txt3)">실시간(수식)</span>`
-        : `현재가 ${won(h.curPrice)} · <span style="color:${stale!==null&&stale>=7?'var(--warning)':'var(--txt3)'}">${h.asOfDate||'기준일 없음'}${stale!==null&&stale>=7?` · ${stale}일 전`:''}</span>`;
-    const editBtn = h.curPriceIsFormula
-      ? `<button onclick="invPromptTicker('${jq(h.name)}','${jq(h.account)}','${jq(h.ticker)}')" style="font-size:10px;padding:2px 8px;border:1px dashed var(--blue);border-radius:99px;background:none;color:var(--blue);cursor:pointer">티커 수정</button>`
-      : `<button onclick="invPromptPrice('${jq(h.name)}','${jq(h.account)}')" style="font-size:10px;padding:2px 8px;border:1px dashed var(--blue);border-radius:99px;background:none;color:var(--blue);cursor:pointer">가격 수정</button>`;
-    return `<div style="border-top:1px solid #F2F4F6;padding:10px 0 10px 4px">
-      <div style="display:flex;justify-content:space-between;align-items:baseline">
-        <span style="font-size:14px;font-weight:700;color:var(--txt)">${h.name}</span>
-        <span style="font-size:14px;font-weight:800;color:var(--txt)">${won(h.evalAmt)}</span>
+  el.innerHTML = hs.map(h=>`
+    <div style="border-top:1px solid #F2F4F6;padding:9px 0">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+        <span style="font-size:14px;font-weight:700;color:var(--txt);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h.name} <span style="font-size:10px;font-weight:400;color:var(--txt3)">${h.account}</span></span>
+        <span style="font-size:14px;font-weight:800;color:var(--txt);flex:none">${won(h.evalAmt)}</span>
       </div>
-      <div style="font-size:11px;color:var(--txt3);margin-top:2px">보유 ${h.qty.toLocaleString('ko-KR')} · 평단 ${won(h.avgPrice)}</div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px">
-        <span style="font-size:11px">${priceLine}</span>
-        ${h.hasPrice ? `<span style="font-size:12px;font-weight:700;color:${h.unrealizedPnl>=0?'var(--red)':'var(--blue)'}">${h.unrealizedPnl>=0?'+':''}${won(h.unrealizedPnl)} (${h.unrealizedPct>=0?'+':''}${h.unrealizedPct}%)</span>` : ''}
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:3px">
+        <span style="font-size:11px;color:var(--txt3)">보유 ${h.qty.toLocaleString('ko-KR')} · 평단 ${won(h.avgPrice)}${h.hasPrice?` · 현재 ${won(h.curPrice)}`:''}</span>
+        ${h.hasPrice ? `<span style="font-size:12px;font-weight:700;color:${h.unrealizedPnl>=0?'var(--red)':'var(--blue)'}">${wonSigned(h.unrealizedPnl)} (${h.unrealizedPct>=0?'+':''}${h.unrealizedPct}%)</span>` : `<span style="font-size:10.5px;color:var(--txt3)">현재가 미입력</span>`}
       </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
-        <span style="font-size:10.5px;color:var(--txt3)">${h.dividend>0?`배당 누적 ${won(h.dividend)}`:''}</span>
-        ${editBtn}
-      </div>
-    </div>`;
-  };
-
-  el.innerHTML = acctKeys.map(ak=>{
-    const list = byAcct[ak];
-    const acctTotal = list.reduce((s,h)=>s+h.evalAmt,0);
-    const acctPnl = list.reduce((s,h)=>s+h.unrealizedPnl,0);
-    return `<div style="margin-bottom:4px">
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:9px 10px;background:var(--card2);border-radius:12px;margin-top:8px">
-        <span style="font-size:13px;font-weight:700;color:var(--txt)">${ak} <span style="font-size:10.5px;color:var(--txt3);font-weight:400">${list.length}종목</span></span>
-        <span style="text-align:right">
-          <div style="font-size:13px;font-weight:700;color:var(--txt)">${won(acctTotal)}</div>
-          <div style="font-size:10.5px;color:${acctPnl>=0?'var(--red)':'var(--blue)'}">${acctPnl>=0?'+':''}${won(acctPnl)}</div>
-        </span>
-      </div>
-      <div style="padding:0 4px">${list.map(stockRow).join('')}</div>
-    </div>`;
-  }).join('');
-}
-function invPromptTicker(name, account, curTicker){
-  const t = prompt(`${name}의 티커를 입력하세요 (예: 005930, AAPL)`, curTicker||'');
-  if(t===null) return;
-  invSetTicker(name, account, t.trim());
-}
-function invPromptPrice(name, account){
-  const p = prompt(`${name}의 현재가를 입력하세요 (원)`, '');
-  if(p===null) return;
-  const n = parseFloat(String(p).replace(/[^0-9.]/g,''));
-  if(!n){ showToast('⚠️ 숫자를 입력해주세요'); return; }
-  invSetPrice(name, account, n);
+    </div>`).join('');
 }
 
 // ── 거래 내역 (계좌별 그룹 · 접기/펼치기) ──
