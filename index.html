@@ -1824,7 +1824,12 @@ function loadPfHoldings(cb){
   if(!url){ if(cb) cb(); return; }
   fetch(url + '?action=pf_holdings')
     .then(r=>r.json())
-    .then(d=>{ if(d && d.ok && d.data) pfHoldings = d.data; })
+    .then(d=>{
+      if(d && d.ok && d.data) pfHoldings = d.data;
+      // [v22 추가] 시트 탭을 못 찾으면 GAS가 이제 실제 탭 이름까지 담아서 에러를 준다.
+      //   조용히 넘기지 않고 바로 화면에 띄워서, 편집기·실행 로그 없이도 원인이 보이게 한다.
+      else if(d && d.ok===false) showToast('⚠️ 보유종목 못 불러옴: ' + String(d.error||'').slice(0,120));
+    })
     .catch(()=>{})
     .finally(()=>{ if(cb) cb(); });
 }
