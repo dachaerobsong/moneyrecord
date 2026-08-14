@@ -1106,22 +1106,22 @@ body { padding-bottom:88px; }
     <!-- [v21 재설계] 숫자만 늘어놓지 않는다 — 잘 되고 있는지 한 줄로 먼저 말하고,
          뭐가 끌어올리고 끌어내리는지 칩으로 보여준다. 가계부 히어로 카드와 같은 언어. -->
     <section class="dash-hero" id="inv-hero"></section>
-    <!-- [v20 추가] 계좌별 소계 — 총합 밑에, 종목 상세 없이 계좌 단위 요약만 -->
-    <section class="card" id="inv-acct-card" style="display:none">
-      <div class="card-title">🏦 계좌별 현황</div>
-      <div id="inv-by-acct"></div>
-    </section>
-    <!-- 종목별 현황 — 계좌에 안 묶고 평탄하게, 계좌는 이름 옆 태그로만 -->
-    <section class="card" id="inv-stock-card" style="display:none">
-      <div class="card-title">
-        <span>📈 종목별 현황</span>
-        <select id="inv-sort" onchange="renderInvestByStock()" style="font-size:12px;padding:5px 9px;border:1px solid #E5E8EB;border-radius:99px;background:#FFF;color:var(--txt2)">
-          <option value="eval">평가금액순</option>
-          <option value="pct">수익률순</option>
-        </select>
+    <!-- [v22 재설계] 계좌별 소계와 종목별 상세를 한 카드의 아코디언으로 합쳤다.
+         "계좌별 총합 열면 아래 접기로 종목 나오면" 요청 반영 — 카드 두 개, 여백 두 배를
+         만들던 구조를 없애고 계좌 헤더를 누르면 그 안의 종목이 펼쳐지는 구조로 통일. -->
+    <section class="card" id="inv-acct-card" style="display:none;padding:16px">
+      <div class="card-title" style="margin-bottom:10px">
+        <span>🏦 보유 현황</span>
+        <div style="display:flex;align-items:center;gap:6px">
+          <select id="inv-sort" onchange="renderInvestByAccount()" style="font-size:11.5px;padding:5px 8px;border:1px solid #E5E8EB;border-radius:99px;background:#FFF;color:var(--txt2)">
+            <option value="eval">평가금액순</option>
+            <option value="pct">수익률순</option>
+          </select>
+          <span id="inv-acct-toggle-all" onclick="invHoldToggleAll()" style="font-size:11.5px;color:var(--txt3);cursor:pointer;padding:5px 2px;white-space:nowrap">전체펼침</span>
+        </div>
       </div>
-      <div id="inv-by-stock"></div>
-      <div style="font-size:10.5px;color:var(--txt3);margin-top:8px;line-height:1.5">평가금액·손익·수익률은 시트 [보유종목] 탭 값을 그대로 읽어와요 — 앱은 아무것도 안 고치는 읽기 전용이에요. 현재가는 그 시트에서 지금 쓰시는 수식/값 그대로 관리하시면 됩니다.</div>
+      <div id="inv-by-acct"></div>
+      <div style="font-size:10.5px;color:var(--txt3);margin-top:10px;line-height:1.5">평가금액·손익·수익률은 시트 [보유종목] 탭 값을 그대로 읽어와요 — 앱은 아무것도 안 고치는 읽기 전용입니다.</div>
     </section>
     <section class="card">
       <div class="card-title">
@@ -1933,7 +1933,7 @@ function renderInvestSummary(){
   const el=document.getElementById('inv-hero'); if(!el) return;
   if(!pfTx.length && !pfHoldings.length){
     el.innerHTML = `<div style="width:100%;text-align:center;color:rgba(255,255,255,0.7);padding:10px;font-size:13px">거래를 입력하면 자동 집계돼요</div>`;
-    renderInvestByAccount([]); renderInvestByStock([]);
+    renderInvestByAccount([]);
     return;
   }
   const sum=t=>pfTx.filter(x=>x.type===t).reduce((s,x)=>s+Math.abs(Number(x.amount)||0),0);
@@ -1987,51 +1987,78 @@ function renderInvestSummary(){
     </div>`;
 
   renderInvestByAccount(hs);
-  renderInvestByStock(hs);
 }
 
-// 계좌별 소계 — 종목 상세 없이 요약만. "총 합 밑에 계좌별로 보이면 좋겠다"는 요청.
+// [v22] 계좌별 소계(헤더) + 종목별 상세(아코디언 내부)를 한 리스트로 합쳤다.
+// 계좌 헤더를 누르면 그 계좌의 보유 종목이 펼쳐진다. 카드 하나, 여백 한 번.
+let INV_HOLD_OPEN = (()=>{ try{ return JSON.parse(LS.get('invHoldOpenV1'))||{}; }catch(e){ return {}; } })();
+function invHoldToggle(key){
+  INV_HOLD_OPEN[key] = !INV_HOLD_OPEN[key];
+  try{ LS.set('invHoldOpenV1', JSON.stringify(INV_HOLD_OPEN)); }catch(e){}
+  renderInvestByAccount();
+}
+function invHoldToggleAll(){
+  const hs = mergedHoldings();
+  const keys = [...new Set(hs.map(h=>h.account||'(계좌 미지정)'))];
+  const allOpen = keys.length>0 && keys.every(k=>INV_HOLD_OPEN[k]);
+  keys.forEach(k=> INV_HOLD_OPEN[k] = !allOpen);
+  try{ LS.set('invHoldOpenV1', JSON.stringify(INV_HOLD_OPEN)); }catch(e){}
+  renderInvestByAccount();
+}
 function renderInvestByAccount(hs){
-  hs = hs || mergedHoldings();
+  hs = (hs || mergedHoldings()).slice();
   const card = document.getElementById('inv-acct-card');
   const el = document.getElementById('inv-by-acct');
   if(!card || !el) return;
   if(!hs.length){ card.style.display='none'; return; }
   card.style.display='';
+  const sortBy = document.getElementById('inv-sort')?.value || 'eval';
+
   const byAcct = {};
-  hs.forEach(h=>{ const k=h.account||'(계좌 미지정)'; (byAcct[k]=byAcct[k]||{eval:0,pnl:0,n:0}); byAcct[k].eval+=h.evalAmt; byAcct[k].pnl+=h.unrealizedPnl; byAcct[k].n++; });
-  const keys = Object.keys(byAcct).sort((a,b)=>byAcct[b].eval-byAcct[a].eval);
-  el.innerHTML = keys.map(k=>{
+  hs.forEach(h=>{ const k=h.account||'(계좌 미지정)'; (byAcct[k]=byAcct[k]||{eval:0,pnl:0,n:0,stocks:[]}); byAcct[k].eval+=h.evalAmt; byAcct[k].pnl+=h.unrealizedPnl; byAcct[k].n++; byAcct[k].stocks.push(h); });
+  const keys = Object.keys(byAcct);
+  keys.sort((a,b)=>{
+    if(sortBy==='pct'){
+      const pa=(byAcct[a].eval-byAcct[a].pnl)>0 ? byAcct[a].pnl/(byAcct[a].eval-byAcct[a].pnl) : -999;
+      const pb=(byAcct[b].eval-byAcct[b].pnl)>0 ? byAcct[b].pnl/(byAcct[b].eval-byAcct[b].pnl) : -999;
+      return pb-pa;
+    }
+    return byAcct[b].eval-byAcct[a].eval;
+  });
+
+  // 처음 방문(저장된 펼침 상태가 없음)이면 가장 비중 큰 계좌 하나만 기본으로 열어둔다 —
+  // 전부 접혀서 화면이 텅 비어 보이는 걸 막는 최소한의 배려.
+  if(Object.keys(INV_HOLD_OPEN).length===0 && keys.length){ INV_HOLD_OPEN[keys[0]] = true; }
+
+  const toggleAllBtn = document.getElementById('inv-acct-toggle-all');
+  if(toggleAllBtn){ toggleAllBtn.textContent = keys.length>0 && keys.every(k=>INV_HOLD_OPEN[k]) ? '전체접기' : '전체펼침'; }
+
+  el.innerHTML = keys.map((k,i)=>{
     const a = byAcct[k];
     const pct = (a.eval-a.pnl)>0 ? Math.round(a.pnl/(a.eval-a.pnl)*1000)/10 : null;
-    return `<div class="item-row"><div class="item-left"><span class="item-name">${k} <span style="font-size:10px;color:var(--txt3)">${a.n}종목</span></span></div>
-      <div class="item-right"><div>${won(a.eval)}</div><div style="font-size:11px;font-weight:600;color:${a.pnl>=0?'var(--red)':'var(--blue)'}">${wonSigned(a.pnl)}${pct!==null?` (${pct>=0?'+':''}${pct}%)`:''}</div></div>
+    const open = !!INV_HOLD_OPEN[k];
+    const kEsc = k.replace(/'/g, "\\'");
+    const stocks = a.stocks.slice().sort((x,y)=> sortBy==='pct' ? (y.unrealizedPct??-999)-(x.unrealizedPct??-999) : y.evalAmt-x.evalAmt);
+    const stockRows = stocks.map(h=>`
+      <div style="padding:8px 0 8px 14px;border-top:1px solid #F2F4F6">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+          <span style="font-size:13px;font-weight:600;color:var(--txt);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h.name}</span>
+          <span style="font-size:13px;font-weight:700;color:var(--txt);flex:none">${won(h.evalAmt)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px">
+          <span style="font-size:10.5px;color:var(--txt3)">보유 ${h.qty.toLocaleString('ko-KR')} · 평단 ${won(h.avgPrice)}${h.hasPrice?` · 현재 ${won(h.curPrice)}`:''}</span>
+          ${h.hasPrice ? `<span style="font-size:11px;font-weight:700;color:${h.unrealizedPnl>=0?'var(--red)':'var(--blue)'}">${wonSigned(h.unrealizedPnl)} (${h.unrealizedPct>=0?'+':''}${h.unrealizedPct}%)</span>` : `<span style="font-size:10px;color:var(--txt3)">현재가 미입력</span>`}
+        </div>
+      </div>`).join('');
+    return `
+    <div style="${i>0?'border-top:1px solid #F2F4F6':''}">
+      <div onclick="invHoldToggle('${kEsc}')" style="display:flex;justify-content:space-between;align-items:center;padding:10px 2px;cursor:pointer">
+        <span style="font-size:14px;font-weight:700;color:var(--txt);display:flex;align-items:center;gap:5px"><span style="color:var(--txt3);font-size:10px;transition:transform .15s;display:inline-block;transform:rotate(${open?90:0}deg)">▸</span>${k} <span style="font-size:10.5px;font-weight:400;color:var(--txt3)">${a.n}종목</span></span>
+        <span style="text-align:right"><div style="font-size:14px;font-weight:800;color:var(--txt)">${won(a.eval)}</div><div style="font-size:11px;font-weight:600;color:${a.pnl>=0?'var(--red)':'var(--blue)'}">${wonSigned(a.pnl)}${pct!==null?` (${pct>=0?'+':''}${pct}%)`:''}</div></span>
+      </div>
+      <div style="display:${open?'block':'none'}">${stockRows}</div>
     </div>`;
   }).join('');
-}
-
-// 종목별 리스트 — 계좌에 중첩하지 않고 평탄하게, 계좌는 태그로만 붙인다
-function renderInvestByStock(hs){
-  hs = (hs || mergedHoldings()).slice();
-  const card = document.getElementById('inv-stock-card');
-  const el = document.getElementById('inv-by-stock');
-  if(!card || !el) return;
-  if(!hs.length){ card.style.display='none'; return; }
-  card.style.display='';
-  const sortBy = document.getElementById('inv-sort')?.value || 'eval';
-  hs.sort((a,b)=> sortBy==='pct' ? (b.unrealizedPct??-999)-(a.unrealizedPct??-999) : b.evalAmt-a.evalAmt);
-
-  el.innerHTML = hs.map(h=>`
-    <div style="border-top:1px solid #F2F4F6;padding:9px 0">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
-        <span style="font-size:14px;font-weight:700;color:var(--txt);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h.name} <span style="font-size:10px;font-weight:400;color:var(--txt3)">${h.account}</span></span>
-        <span style="font-size:14px;font-weight:800;color:var(--txt);flex:none">${won(h.evalAmt)}</span>
-      </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:3px">
-        <span style="font-size:11px;color:var(--txt3)">보유 ${h.qty.toLocaleString('ko-KR')} · 평단 ${won(h.avgPrice)}${h.hasPrice?` · 현재 ${won(h.curPrice)}`:''}</span>
-        ${h.hasPrice ? `<span style="font-size:12px;font-weight:700;color:${h.unrealizedPnl>=0?'var(--red)':'var(--blue)'}">${wonSigned(h.unrealizedPnl)} (${h.unrealizedPct>=0?'+':''}${h.unrealizedPct}%)</span>` : `<span style="font-size:10.5px;color:var(--txt3)">현재가 미입력</span>`}
-      </div>
-    </div>`).join('');
 }
 
 // ── 거래 내역 (계좌별 그룹 · 접기/펼치기) ──
