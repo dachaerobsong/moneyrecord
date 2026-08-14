@@ -1097,7 +1097,7 @@ body { padding-bottom:88px; }
       </div>
       <div class="form-group"><label>메모</label><input type="text" id="inv-memo" placeholder=""></div>
       <button onclick="invAdd()" class="submit-btn">구글 시트에 기록</button>
-      <div style="font-size:11px;color:var(--txt3);margin-top:8px;line-height:1.5">* 가계부와 같은 구글시트(설정의 Apps Script URL)의 [주식] 거래내역 탭에 실시간 기록됩니다.</div>
+      <div style="font-size:11px;color:var(--txt3);margin-top:8px;line-height:1.5">* 가계부와 같은 구글시트의 <b>투자_거래내역</b> 탭에 실시간 기록됩니다. 시트에 탭이 없으면 첫 거래 입력 시 자동으로 만들어져요.</div>
     </section>
   </div>
 
@@ -2643,6 +2643,9 @@ function fetchFromSheet(silent) {
         renderBudgetHome();
         populateAcctDatalist();
         if(typeof restoreLastView==='function') restoreLastView(); // 새로고침 전 보고 있던 탭(리포트/현금계획 등)도 새 데이터로 갱신
+        // [v18 추가] 예전엔 투자 거래가 이 버튼으로 안 딸려와서, 투자 탭에 들어가야만
+        //   (또는 그 안의 작은 새로고침을 눌러야만) 갱신됐다. 이제 가계부와 같이 새로 온다.
+        if(typeof loadPfData==='function') loadPfData(true);
       }catch(rerr){
         console.error('시트는 받았는데 화면 그리기 실패:', rerr);
         showToast('⚠️ 데이터는 받았어요 · 화면 그리기 오류: ' + String((rerr&&rerr.message)||rerr).slice(0,80));
