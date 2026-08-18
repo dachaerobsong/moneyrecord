@@ -1706,13 +1706,52 @@ function cardPerfPendingFixed(ym, cards, fixItems){
     const name = String(t.category||t.sub||'').trim() || txCatKey(t);
     last[name] = (last[name]||0) + ((typeof cardPerfAmount==='function') ? cardPerfAmount(t) : (Number(t.amount)||0));
   });
+  // [v43] 전기·가스처럼 매달 금액이 달라지는 건 지난달 값이 어림값일 뿐이다.
+  //   현금흐름 › 고정지출에 금액을 적어뒀으면 그 숫자를 우선 쓴다. 거기서 고치면 여기 바로 반영된다.
+  const planAmt = {};
+  try{
+    ((typeof CASH_PLAN==='object' && CASH_PLAN && CASH_PLAN.items) || []).forEach(it=>{
+      const nm = stripSp(it.name); const a = Math.abs(Number(it.amount)||0);
+      if(nm && a) planAmt[nm] = a;
+    });
+  }catch(e){}
+
   const pending = [];
   Object.keys(last).forEach(name=>{
     if(fixItems[name] !== undefined) return;   // 이번 달에 이미 나갔다
-    pending.push({ name, amount: last[name] });
+    const planned = planAmt[stripSp(name)];
+    pending.push({ name,
+      amount: (planned !== undefined) ? -planned : last[name],
+      src: (planned !== undefined) ? 'plan' : 'last' });
   });
   pending.sort((a,b)=>Math.abs(b.amount)-Math.abs(a.amount));
   return pending;
+}
+
+// [v44] 결제 현황 헤더용 — 발급사 단위 실적 진행 상황.
+//   결제 현황의 '예산'은 카드별 예산의 합이라 카드사 실적 목표(예: 30만)와 무관했다.
+//   실적은 카드사 단위 조건이므로, 여기서도 실적 기준으로 보여준다.
+//   구성은 고정비 / 비고정비 / 실적 미인정(세금·상품권 등) 셋으로 가른다.
+function cardPerfHeaderInfo(ym, cards, issuerLabel){
+  const tx = ((typeof STATE!=='undefined' && STATE.transactions) || [])
+    .filter(t => String(t.date).slice(0,7)===ym && t.type==='지출'
+              && (typeof isRemovedTx!=='function' || !isRemovedTx(t))
+              && cards.indexOf(t.account)>=0);
+  let perf=0, fixed=0, vari=0, excluded=0;
+  tx.forEach(t=>{
+    const v = cardPerfAmount(t);
+    const raw = Math.abs(Number(t.amount)||0);
+    perf += v;
+    if(v <= 0){ excluded += raw; return; }
+    if(isFixedTx(t)) fixed += v; else vari += v;
+  });
+  let target = 0;
+  try{
+    const grp = (typeof cardPerfGroups==='function' ? cardPerfGroups() : [])
+      .find(g=>String(g.label)===String(issuerLabel));
+    if(grp && typeof cfgPerfTarget==='function') target = cfgPerfTarget(grp.label, grp.accts, perf);
+  }catch(e){}
+  return { perf, target, fixed, vari, excluded };
 }
 
 function cardPerfDetailHtml(bd, target, perf, ym, cards){
@@ -1722,9 +1761,9 @@ function cardPerfDetailHtml(bd, target, perf, ym, cards){
   if(total <= 0 && !pending.length) return '';
 
   const paid = Object.entries(bd.fixItems).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]));
-  const line = (label, amt, done) => `
+  const line = (label, amt, done, src) => `
     <div style="display:flex;justify-content:space-between;gap:8px;padding:2.5px 0;font-size:10.5px">
-      <span style="color:${done?'var(--txt2)':'var(--txt3)'}">${done?'✓':'·'} ${label}${done?'':' <span style="font-size:9.5px">예정</span>'}</span>
+      <span style="color:${done?'var(--txt2)':'var(--txt3)'}">${done?'✓':'·'} ${label}${done?'':` <span style="font-size:9.5px">예정${src==='plan'?' · 지정':''}</span>`}</span>
       <span style="font-variant-numeric:tabular-nums;color:${done?'var(--txt2)':'var(--txt3)'};font-weight:${done?'700':'400'}">${won(amt)}</span>
     </div>`;
 
@@ -1735,8 +1774,15 @@ function cardPerfDetailHtml(bd, target, perf, ym, cards){
     <div style="margin-top:8px;padding:9px 11px;background:var(--card2);border-radius:10px">
       <div style="font-size:10.5px;font-weight:700;color:var(--txt2);margin-bottom:3px">고정비 ${won(expectFixed)} 예상</div>
       ${paid.map(([n,v])=>line(n, v, true)).join('')}
-      ${pending.map(p=>line(p.name, p.amount, false)).join('')}
-      ${pending.length ? `<div style="font-size:10px;color:var(--txt3);margin-top:4px;padding-top:4px;border-top:1px solid #E5E8EB">예정 ${won(pendSum)}은 지난달 이 카드로 나간 금액으로 잡았어요</div>` : ''}
+      ${pending.map(p=>line(p.name, p.amount, false, p.src)).join('')}
+      ${pending.length ? (()=>{
+        const nPlan = pending.filter(p=>p.src==='plan').length;
+        const nLast = pending.length - nPlan;
+        const bits = [];
+        if(nPlan) bits.push(`${nPlan}건은 현금흐름 › 고정지출에 적어둔 금액`);
+        if(nLast) bits.push(`${nLast}건은 지난달 이 카드로 나간 금액`);
+        return `<div style="font-size:10px;color:var(--txt3);margin-top:4px;padding-top:4px;border-top:1px solid #E5E8EB">예정 ${won(pendSum)} — ${bits.join(' · ')}으로 잡았어요</div>`;
+      })() : ''}
     </div>
     <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:10.5px;margin-top:6px;line-height:1.6">
       <span style="color:var(--txt3)">변동비 <b style="color:var(--txt2)">${won(bd.vari)}</b></span>
@@ -1830,19 +1876,45 @@ function renderCardList(container, useObj, budObj, prefix, catByCard){
   const isOpen=(detId)=> (detId in CARD_OPEN) ? CARD_OPEN[detId] : openAll;
   container.innerHTML = groups.map((g,gi)=>{
     const detId=prefix+'-det-'+gi, carId=prefix+'-car-'+gi;
-    const over=g.bud>0&&g.used>g.bud;
-    const subLine = g.bud>0
-      ? `<div style="font-size:10.5px;color:var(--txt3);margin-top:1px">예산 ${won(g.bud)} · <span style="font-weight:700;color:${over?'var(--red)':'var(--green)'}">${over?'+'+won(g.used-g.bud)+' 초과':won(g.bud-g.used)+' 남음'}</span></div>`
-      : '';
+    // [v44] 예산(카드별 합) 대신 실적 기준으로 보여준다
+    const info = cardPerfHeaderInfo(CARD_MONTH, g.cards, g.issuer);
+    const done = info.target>0 && info.perf>=info.target;
+    const pct  = info.target>0 ? Math.round(info.perf/info.target*100) : 0;
+    const left = Math.max(0, info.target - info.perf);
+    // [v45] 위는 실적 현황, 아래는 결제·예산. 성격이 다른 두 숫자를 한 줄에 겹쳐 놓으면
+    //   "이 금액이 실적인지 빠져나갈 돈인지"가 매번 헷갈린다.
+    const headAmt = info.target>0 ? info.perf : g.used;
+    const subLine = info.target>0
+      ? `<div style="font-size:10.5px;color:var(--txt3);margin-top:1px">목표 ${won(info.target)} · <span style="font-weight:700;color:${done?'var(--green)':'var(--blue)'}">${done?'달성':won(left)+' 남음'}</span></div>`
+      : (g.bud>0 ? `<div style="font-size:10.5px;color:var(--txt3);margin-top:1px">예산 ${won(g.bud)}</div>` : '');
+    const perfBar = info.target>0 ? `
+      <div style="padding:0 14px 10px;background:var(--card2)">
+        <div style="height:5px;border-radius:99px;background:#E9ECEF;overflow:hidden">
+          <div style="height:100%;width:${Math.min(100,pct)}%;background:${done?'var(--green)':pct>=70?'var(--warning)':'var(--blue)'}"></div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;font-size:10px;color:var(--txt3);margin-top:5px;line-height:1.6">
+          <span>고정비 <b style="color:var(--txt2)">${won(info.fixed)}</b></span>
+          <span style="color:#D9DEE5">·</span>
+          <span>비고정비 <b style="color:var(--txt2)">${won(info.vari)}</b></span>
+          ${info.excluded>0 ? `<span style="color:#D9DEE5">·</span><span>실적 미인정 <b style="color:var(--txt2)">${won(info.excluded)}</b></span>` : ''}
+          ${left>0 ? `<span style="color:#D9DEE5">·</span><span style="color:var(--blue);font-weight:700">비고정비로 ${won(left)} 더 쓰면 달성</span>` : ''}
+        </div>
+      </div>` : '';
     return `<div style="margin-top:${gi===0?0:8}px;border:1px solid #EEE;border-radius:14px;overflow:hidden">
       <div onclick="cardToggleOne('${detId}','${carId}')" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;cursor:pointer;background:var(--card2)">
-        <span style="font-size:15px;font-weight:700;color:var(--blue)">${g.issuer} <span id="${carId}" style="font-size:11px;color:var(--txt3)">${isOpen(detId)?'▴':'▾'}</span></span>
+        <span style="font-size:15px;font-weight:700;color:var(--blue)">${g.issuer}${info.target>0?' <span style="font-size:10px;font-weight:600;color:var(--txt3)">실적</span>':''} <span id="${carId}" style="font-size:11px;color:var(--txt3)">${isOpen(detId)?'▴':'▾'}</span></span>
         <span style="text-align:right">
-          <div style="font-size:15px;font-weight:800;color:${over?'var(--red)':g.used>0?'var(--txt)':'var(--txt3)'}">${won(g.used)}</div>
+          <div style="font-size:15px;font-weight:800;color:${info.target>0?(done?'var(--green)':'var(--txt)'):(g.used>0?'var(--txt)':'var(--txt3)')}">${won(headAmt)}</div>
           ${subLine}
         </span>
       </div>
-      <div id="${detId}" style="display:${isOpen(detId)?'block':'none'};padding:2px 14px 8px">${cardDetailRows(g,useObj,budObj,catByCard)}
+      ${perfBar}
+      <div id="${detId}" style="display:${isOpen(detId)?'block':'none'};padding:2px 14px 8px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:8px 0 2px">
+          <span style="font-size:11px;font-weight:700;color:var(--txt2)">결제 예정 <span style="font-weight:400;color:var(--txt3)">예산 기준</span></span>
+          <span style="font-size:13px;font-weight:800;color:${g.bud>0&&g.used>g.bud?'var(--red)':'var(--txt)'}">${won(g.used)}${g.bud>0?`<span style="font-size:10px;font-weight:400;color:var(--txt3)"> / ${won(g.bud)}</span>`:''}</span>
+        </div>
+        ${cardDetailRows(g,useObj,budObj,catByCard)}
         ${'' /* [v32] 발급사 전체 납부 버튼 제거 — 합계 금액을 그 발급사의 첫 카드 앞으로
               달아버려서 계좌가 잘못 기록됐다. 이제 카드별 버튼이 각자 자기 금액으로 채운다. */}
       </div>
@@ -4635,6 +4707,17 @@ function isKnownOutMajor(major){
 function isFixedTx(t){
   const sub = stripSp(t.category||t.sub);
   if((STATE.fixedExceptions||[]).map(stripSp).indexOf(sub) >= 0) return false;
+
+  // [v43] 소분류를 다른 대분류로 옮겨도 옛 거래에는 옛 대분류가 그대로 남는다.
+  //   ('엄마건강'을 '엄마'에서 '엄마 2'로 옮겼는데 거래는 여전히 대분류 '엄마')
+  //   그러면 설정에서 고정비 체크를 껐는데도 옛 거래가 계속 고정비로 잡힌다.
+  //   소분류가 설정 트리에서 '한 대분류에만' 속해 있으면 그쪽을 진짜 소속으로 본다.
+  //   여러 대분류에 같은 이름이 있으면 majorOfSub가 ''를 돌려주므로 이 경로는 건너뛴다.
+  const owner = sub ? majorOfSub(sub) : '';
+  if(owner && normBudgetKey(owner) !== normBudgetKey(t.major) && isKnownOutMajor(owner)){
+    return isFixedMajor(owner);
+  }
+
   if(isFixedMajor(t.major)) return true;
   // ★ 소분류 역추적은 "대분류를 아예 못 읽는 행"에서만 쓴다.
   //   대분류가 멀쩡히 변동비로 적혀 있는데 소분류 이름이 우연히 고정비 쪽 소분류와
