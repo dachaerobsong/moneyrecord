@@ -1582,6 +1582,8 @@ function cardIssuerGroups(useObj, budObj){
 // [v6 추가] 카드 결제 현황에서 "납부 입력하기"를 누르면 거래내역 입력 폼으로 이동해서
 //   이동 / 카드납부 / 이번 달 사용액까지 미리 채워둔다. 어느 계좌에서 나가는지는 사람마다
 //   다르고 실수하면 잔고가 틀어지므로, 자동으로 저장하지 않고 확인 후 직접 저장 버튼을 누르게 한다.
+// [v34] 카드납부 메모 형식 — '전월카드결제_국카k-'
+function cardPayMemo(cardKey){ return '전월카드결제_' + String(cardKey||'').trim(); }
 function cardPayEntry(issuer, cardKey, amount){
   goToTab('ledger');
   setLedgerSub('input', document.querySelector('#p-ledger .sub-tab[data-sub="input"]'));
@@ -1603,6 +1605,10 @@ function cardPayEntry(issuer, cardKey, amount){
     const oa = document.getElementById('tx-out-acct'); if(oa) oa.value = ''; // 어느 계좌에서 낼지는 직접 선택
     const ae = document.getElementById('tx-amount'); if(ae) ae.value = amount;
     const de = document.getElementById('tx-date'); if(de) de.valueAsDate = new Date();
+    // [v34] 메모에 어느 카드값인지 남긴다 — 거래내역만 봐도 국카k와 국카k-를 구분할 수 있게.
+    //   같은 발급사 카드가 여러 장이면 계좌명만으로는 나중에 헷갈린다.
+    const mm = document.getElementById('tx-memo');
+    if(mm && !mm.value.trim()) mm.value = cardPayMemo(cardKey);
     showToast(`${issuer} 결제 예정 ${won(amount)}을 채워뒀어요 · 낼 계좌만 고르고 저장하세요`);
     oa && oa.focus();
   });
@@ -1627,6 +1633,27 @@ let CARD_EMPHASIZE = [];   // 실적 관리 대상 카드 (설정에서 지정)
 // 카드 밑에 보여줄 카테고리별 지출 한 줄 요약 (많이 쓴 순 · 최대 4개, 나머지는 "외 N")
 // [v32] 카드별 고정비·변동비 분해 결과 (renderMonthCards에서 채움)
 let CARD_FIX_SPLIT = {};
+// [v33] 카드별 납부 완료 금액 (renderMonthCards에서 채움)
+let CARD_PAID = {};
+function nextYmOf(ym){
+  const y = Number(String(ym).slice(0,4)), m = Number(String(ym).slice(5,7));
+  const d = new Date(y, m, 1);   // m은 1-based라 그대로 넣으면 다음 달
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+}
+// ym에 쓴 카드값이 얼마나 납부됐는지 — 같은 달(선결제) + 다음 달(정상 결제)의 카드납부 거래를 합친다
+function cardPaidMap(ym){
+  const want = [String(ym), nextYmOf(ym)];
+  const out = {};
+  (STATE.transactions||[]).forEach(t=>{
+    if(t.type!=='이동' && t.type!=='저축') return;
+    if(normBudgetKey(t.major)!=='카드납부') return;
+    if(want.indexOf(String(t.date).slice(0,7))<0) return;
+    const card = String(t.inAcct||'').trim();
+    if(!card) return;
+    out[card] = (out[card]||0) + Math.abs(Number(t.amount)||0);
+  });
+  return out;
+}
 function cardFixLine(card, bud){
   const f = CARD_FIX_SPLIT[card];
   if(!f || (f.fixed<=0 && f.vari<=0)) return '';
@@ -1641,6 +1668,30 @@ function cardFixLine(card, bud){
     ${bud>0 && left<=0 ? `<span style="color:#D9DEE5">·</span><span style="color:var(--txt3)">목표 달성</span>` : ''}
     ${fixPct>=60 ? `<span style="color:#D9DEE5">·</span><span style="color:var(--txt3)">고정비 비중 ${fixPct}%</span>` : ''}
   </div>`;
+}
+// [v33] 결제 예정 / 납부 완료 줄
+//   사용액 자체는 실적·예산 판정에 쓰이므로 건드리지 않고, '결제 예정'만 0원으로 떨어뜨린다.
+//   사용액까지 0으로 만들면 "이번 달 얼마 썼나"와 "예산 대비 초과인가"를 알 수 없게 된다.
+function cardPayLine(card, used, issuer){
+  if(used<=0) return '';
+  const paid = Number(CARD_PAID[card])||0;
+  const left = used - paid;
+  const settled = left <= Math.max(1000, used*0.01);   // 1% 또는 1,000원 이내면 완납으로 본다
+  if(paid>0 && settled){
+    return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:2px 0 6px;padding:6px 10px;background:var(--green-bg);border-radius:10px;font-size:11.5px">
+      <span style="color:var(--green);font-weight:700">✓ 납부 완료 · 결제 예정 ₩0</span>
+      <span style="color:var(--txt3)">낸 금액 ${won(paid)}</span>
+    </div>`;
+  }
+  if(paid>0){
+    return `<div style="margin:2px 0 4px">
+      <div style="font-size:11px;color:var(--txt3);padding:0 2px 4px">일부 납부 ${won(paid)} · 남은 결제 예정 <b style="color:var(--txt2)">${won(left)}</b></div>
+      <button onclick="event.stopPropagation();cardPayEntry('${jq(issuer)}','${jq(card)}',${Math.round(left)})"
+        style="width:100%;padding:7px 10px;border:1px solid #E5E8EB;border-radius:10px;background:#FFF;color:var(--txt2);font-size:11.5px;font-weight:600;cursor:pointer">💳 ${card} 잔액 납부 · ${won(left)}</button>
+    </div>`;
+  }
+  return `<button onclick="event.stopPropagation();cardPayEntry('${jq(issuer)}','${jq(card)}',${used})"
+    style="width:100%;margin:2px 0 4px;padding:7px 10px;border:1px solid #E5E8EB;border-radius:10px;background:#FFF;color:var(--txt2);font-size:11.5px;font-weight:600;cursor:pointer">💳 ${card} 납부 입력 · ${won(used)}</button>`;
 }
 function cardCatLine(card, catByCard){
   const catMap = (catByCard && catByCard[card]) || {};
@@ -1666,8 +1717,7 @@ function cardDetailRows(g, useObj, budObj, catByCard){
       </div>
       ${cardCatLine(c, catByCard)}
       ${cardFixLine(c, bud)}
-      ${used>0 ? `<button onclick="event.stopPropagation();cardPayEntry('${jq(g.issuer)}','${jq(c)}',${used})"
-        style="width:100%;margin:2px 0 4px;padding:7px 10px;border:1px solid #E5E8EB;border-radius:10px;background:#FFF;color:var(--txt2);font-size:11.5px;font-weight:600;cursor:pointer">💳 ${c} 납부 입력 · ${won(used)}</button>` : ''}
+      ${cardPayLine(c, used, g.issuer)}
     </div>`;
   }).join('') || '<div style="font-size:13px;color:var(--txt3);padding:7px 0">이번 달 사용 없음</div>';
 }
@@ -8507,12 +8557,11 @@ function renderCardStatus(){
       if(isFixedTx(t)) fixByCard[a].fixed += amt; else fixByCard[a].vari += amt;
     });
     CARD_FIX_SPLIT = fixByCard;
-    // 이번달에 납부된 카드비 (이동 타입 중 카드납부 대분류)
-    const paidThis = {};
-    tx.filter(t=>(t.type==='이동'||t.type==='저축')&&t.major==='카드납부').forEach(t=>{
-      const a = t.category||t.account||'';
-      paidThis[a] = (paidThis[a]||0) + (Number(t.amount)||0);
-    });
+    // [v33] 카드별 납부액 — 이 달 사용분은 보통 다음 달에 빠지므로 두 달을 같이 본다.
+    //   (선결제하면 같은 달에, 보통은 다음 달에 카드납부 거래가 찍힌다)
+    //   계좌 이름은 정규화하지 않고 그대로 비교한다 — '국카k-'와 '국카k'는 하이픈만 다른
+    //   서로 다른 카드라서, 하이픈을 지우고 맞추면 두 카드가 한 장으로 뭉개진다.
+    CARD_PAID = cardPaidMap(ym);
 
     // 집계 대상 카드 목록: 예산 설정된 카드 + 실제 사용한 카드 합집합
     const allCards = Array.from(new Set([...Object.keys(cardBudget), ...Object.keys(useThis)]));
@@ -8525,7 +8574,11 @@ function renderCardStatus(){
       const budcardBtn0 = document.getElementById('budcard-toggleall');
       if(budcardBtn0) budcardBtn0.style.display = '';
       // 다음달 결제 예정 총액 = 이번달 사용액(원금액) 합계
-      const totalNextMonth = allCards.reduce((s,c)=>s+(useThis[c]||0),0);
+      // [v33] 이미 납부한 카드는 결제 예정에서 뺀다 — 남은 부담만 보여야 잔고 경고가 맞는다
+      const totalNextMonth = allCards.reduce((s,c)=>{
+        const u = useThis[c]||0, pd = Number(CARD_PAID[c])||0;
+        return s + Math.max(0, u - pd);
+      }, 0);
       // 현재 현금성 잔고
       let cashTotal = 0;
       if(STATE.acctsDef && STATE.initBal){
