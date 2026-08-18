@@ -1740,6 +1740,20 @@ function cardPerfPendingFixed(ym, cards, fixItems){
 //   결제 현황의 '예산'은 카드별 예산의 합이라 카드사 실적 목표(예: 30만)와 무관했다.
 //   실적은 카드사 단위 조건이므로, 여기서도 실적 기준으로 보여준다.
 //   구성은 고정비 / 비고정비 / 실적 미인정(세금·상품권 등) 셋으로 가른다.
+// [v48] 카드별 실적 반영액 — 결제액과 나란히 놓으면 차이(미인정·할인 조정)가 한눈에 보인다.
+function cardPerfByCard(ym, cards){
+  const out = {};
+  cards.forEach(c=>{ out[c] = 0; });
+  ((typeof STATE!=='undefined' && STATE.transactions) || []).forEach(t=>{
+    if(t.type!=='지출') return;
+    if(String(t.date).slice(0,7)!==ym) return;
+    if(typeof isRemovedTx==='function' && isRemovedTx(t)) return;
+    if(!(t.account in out)) return;
+    out[t.account] += cardPerfAmount(t);
+  });
+  return out;
+}
+
 function cardPerfHeaderInfo(ym, cards, issuerLabel){
   const tx = ((typeof STATE!=='undefined' && STATE.transactions) || [])
     .filter(t => String(t.date).slice(0,7)===ym && t.type==='지출'
@@ -1848,23 +1862,87 @@ function cardCatLine(card, catByCard){
   return `<div style="font-size:10.5px;color:var(--txt3);padding:0 0 7px;line-height:1.6">${shown}${moreTxt}</div>`;
 }
 function cardDetailRows(g, useObj, budObj, catByCard){
-  return g.cards.map(c=>{
-    const used=useObj[c]||0, bud=budObj[c]||0, over=bud>0&&used>bud;
-    const emph = CARD_EMPHASIZE.indexOf(c)>=0;
-    const diffTag = bud>0
-      ? (emph && !over
-        ? ` <span style="font-size:11px;font-weight:800;color:#fff;background:var(--green);padding:2px 8px;border-radius:99px;margin-left:2px">${won(bud-used)+' 남음'}</span>`
-        : ` <span style="font-size:9.5px;font-weight:600;color:${over?'var(--red)':'var(--green)'}">${over?'+'+won(used-bud)+' 초과':won(bud-used)+' 남음'}</span>`)
-      : '';
-    return `<div style="padding:7px 0;border-top:1px solid #F2F4F6">
-      <div style="display:flex;justify-content:space-between;align-items:center;font-size:14px">
-        <span style="color:var(--txt2)">${c}${over?' <span style="color:var(--red)">⚠️</span>':''}</span>
-        <span style="text-align:right"><span style="font-weight:600;color:${over?'var(--red)':used>0?'var(--txt)':'var(--txt3)'}">${won(used)}</span>${bud>0?`<span style="font-size:10px;color:var(--txt3);font-weight:400"> / ${won(bud)}</span>`:''}${diffTag}</span>
-      </div>
-      ${cardPayLine(c, used, g.issuer)}
-    </div>`;
-  }).join('') || '<div style="font-size:13px;color:var(--txt3);padding:7px 0">이번 달 사용 없음</div>';
+  // [v49] 결제 · 실적 · 고정비 · 납부를 한 표로 합친다.
+  //   예전엔 결제 현황(예산)·실적·고정비 분해가 세 화면에 흩어져 있어서
+  //   "지금 뭘 얼마나 더 써야 하나"를 알려면 화면을 옮겨 다녀야 했다.
+  const perfBy = cardPerfByCard(CARD_MONTH, g.cards);
+  if(!g.cards.length) return '<div style="font-size:13px;color:var(--txt3);padding:7px 0">이번 달 사용 없음</div>';
+
+  // 카드별 고정비 항목 (나간 것 + 아직 안 나간 것)
+  const fixByCard = {};
+  g.cards.forEach(c=>{
+    const tx = ((typeof STATE!=='undefined' && STATE.transactions)||[])
+      .filter(t=>t.type==='지출' && String(t.date).slice(0,7)===CARD_MONTH
+                 && (typeof isRemovedTx!=='function' || !isRemovedTx(t)) && t.account===c);
+    const bd = cardPerfBreakdown(tx, [c]);
+    const pend = cardPerfPendingFixed(CARD_MONTH, [c], bd.fixItems);
+    fixByCard[c] = { bd, pend, settled: pend.settled || [] };
+  });
+
+  let tUsed=0, tPerf=0, tFixed=0, tPend=0, tGap=0;
+  const rows = g.cards.map(c=>{
+    const used = useObj[c] || 0;
+    const pf   = Number(perfBy[c]) || 0;
+    const off  = !!(((CFG.cards||{})[c]||{}).perfOff);
+    const F = fixByCard[c];
+    tUsed += used; tPerf += pf;
+    if(!off){ tFixed += F.bd.fixed; tPend += F.pend.reduce((s,x)=>s+x.amount,0); }
+    tGap += F.settled.reduce((s,x)=>s+x.diff,0);
+
+    const paidAmt = cardPaidAmt(c);
+    const settledPay = paidAmt>0 && (used - paidAmt) <= Math.max(1000, used*0.01);
+    const payCell = used<=0 ? '<span style="font-size:11px;color:var(--txt3)">—</span>'
+      : settledPay
+        ? `<span style="font-size:10.5px;color:var(--green);font-weight:700">✓ ${cardPaidWhen(c)||'완료'}</span>`
+        : `<button onclick="event.stopPropagation();cardPayEntry('${jq(g.issuer)}','${jq(c)}',${Math.round(used - paidAmt)})" style="font-size:10.5px;padding:3px 8px;border:1px solid #E5E8EB;border-radius:8px;background:#FFF;color:var(--txt2);cursor:pointer;white-space:nowrap">납부</button>`;
+
+    const fixLines = [];
+    Object.entries(F.bd.fixItems).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1])).forEach(([n,v])=>{
+      const st = F.settled.find(x=>x.name===n);
+      const tag = (st && Math.abs(st.diff)>=1000)
+        ? ` <span style="color:${st.diff>0?'var(--blue)':'var(--warning)'}">예상 ${won(st.expect)} 대비 ${st.diff>0?'−':'+'}${won(Math.abs(st.diff))}</span>` : '';
+      fixLines.push(`✓ ${n} ${won(v)}${tag}`);
+    });
+    F.pend.forEach(x=>fixLines.push(`· ${n_esc(x.name)} <span style="color:var(--txt3)">예정${x.src==='plan'?' · 지정':''}</span> ${won(x.amount)}`));
+
+    return `
+      <tr>
+        <td style="padding:8px 4px;border-top:1px solid #F2F4F6;font-size:13px;color:${off?'var(--txt3)':'var(--txt2)'};overflow:hidden;text-overflow:ellipsis">${c}${off?' <span style="font-size:9.5px">실적 제외</span>':''}</td>
+        <td style="padding:8px 4px;border-top:1px solid #F2F4F6;text-align:right;font-size:13px;font-weight:600;color:${used>0?'var(--txt)':'var(--txt3)'};font-variant-numeric:tabular-nums">${won(used)}</td>
+        <td style="padding:8px 4px;border-top:1px solid #F2F4F6;text-align:right;font-size:13px;color:${pf>0?'var(--blue)':'var(--txt3)'};font-variant-numeric:tabular-nums">${pf>0?won(pf):'—'}</td>
+        <td style="padding:8px 4px;border-top:1px solid #F2F4F6;text-align:right">${payCell}</td>
+      </tr>
+      ${fixLines.length ? `<tr><td colspan="4" style="padding:0 4px 6px 16px;font-size:10.5px;color:var(--txt3);line-height:1.7">${fixLines.join('<br>')}</td></tr>` : ''}`;
+  }).join('');
+
+  const gapV = tUsed - tPerf;
+  const target = (()=>{ try{ return cardPerfHeaderInfo(CARD_MONTH, g.cards, g.issuer).target; }catch(e){ return 0; } })();
+  const need = target>0 ? target - tPerf - tPend : 0;
+
+  return `<table style="width:100%;border-collapse:collapse;table-layout:fixed">
+    <colgroup><col><col style="width:84px"><col style="width:84px"><col style="width:62px"></colgroup>
+    <thead><tr>
+      <th style="text-align:left;font-size:10px;font-weight:600;color:var(--txt3);padding:6px 4px 2px">카드</th>
+      <th style="text-align:right;font-size:10px;font-weight:600;color:var(--txt3);padding:6px 4px 2px">결제</th>
+      <th style="text-align:right;font-size:10px;font-weight:600;color:var(--txt3);padding:6px 4px 2px">실적</th>
+      <th style="text-align:right;font-size:10px;font-weight:600;color:var(--txt3);padding:6px 4px 2px">납부</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+    <tfoot><tr>
+      <td style="padding:9px 4px;border-top:1.5px solid #E5E8EB;font-size:12px;font-weight:700;color:var(--txt2)">합계</td>
+      <td style="padding:9px 4px;border-top:1.5px solid #E5E8EB;text-align:right;font-size:13px;font-weight:800;font-variant-numeric:tabular-nums">${won(tUsed)}</td>
+      <td style="padding:9px 4px;border-top:1.5px solid #E5E8EB;text-align:right;font-size:13px;font-weight:800;color:var(--blue);font-variant-numeric:tabular-nums">${won(tPerf)}</td>
+      <td style="padding:9px 4px;border-top:1.5px solid #E5E8EB"></td>
+    </tr></tfoot>
+  </table>
+  ${target>0 ? `<div style="margin-top:9px;padding:8px 10px;border-radius:9px;background:var(--blue-bg);font-size:10.5px;color:var(--blue);line-height:1.6">
+    ${Math.abs(tGap)>=1000 ? `고정비가 예상보다 ${won(Math.abs(tGap))} ${tGap>0?'덜':'더'} 나왔어요 → ` : ''}${
+      need>0 ? `고정비 예정분까지 더하면 <b>비고정비로 ${won(need)} 더 쓰면 달성</b>` : `<b>예정 고정비만으로 달성돼요</b>`}
+  </div>` : ''}
+  ${gapV>0 ? `<div style="font-size:10px;color:var(--txt3);margin-top:5px;line-height:1.5">결제와 실적 차이 ${won(gapV)} — 실적 제외 카드, 세금·상품권, 할인·수수료 조정</div>` : ''}`;
 }
+function n_esc(v){ return String(v==null?'':v); }
+
 // 타일형 (2열 그리드 + 탭하면 아래로 세부)
 function renderCardTiles(container, useObj, budObj, prefix, catByCard){
   const groups=cardIssuerGroups(useObj, budObj);
@@ -1914,13 +1992,6 @@ function renderCardList(container, useObj, budObj, prefix, catByCard){
         <div style="height:5px;border-radius:99px;background:#E9ECEF;overflow:hidden">
           <div style="height:100%;width:${Math.min(100,pct)}%;background:${done?'var(--green)':pct>=70?'var(--warning)':'var(--blue)'}"></div>
         </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;font-size:10px;color:var(--txt3);margin-top:5px;line-height:1.6">
-          <span>고정비 <b style="color:var(--txt2)">${won(info.fixed)}</b></span>
-          <span style="color:#D9DEE5">·</span>
-          <span>비고정비 <b style="color:var(--txt2)">${won(info.vari)}</b></span>
-          ${info.excluded>0 ? `<span style="color:#D9DEE5">·</span><span>실적 미인정 <b style="color:var(--txt2)">${won(info.excluded)}</b></span>` : ''}
-          ${left>0 ? `<span style="color:#D9DEE5">·</span><span style="color:var(--blue);font-weight:700">비고정비로 ${won(left)} 더 쓰면 달성</span>` : ''}
-        </div>
       </div>` : '';
     return `<div style="margin-top:${gi===0?0:8}px;border:1px solid #EEE;border-radius:14px;overflow:hidden">
       <div onclick="cardToggleOne('${detId}','${carId}')" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;cursor:pointer;background:var(--card2)">
@@ -1932,10 +2003,6 @@ function renderCardList(container, useObj, budObj, prefix, catByCard){
       </div>
       ${perfBar}
       <div id="${detId}" style="display:${isOpen(detId)?'block':'none'};padding:2px 14px 8px">
-        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:8px 0 2px">
-          <span style="font-size:11px;font-weight:700;color:var(--txt2)">결제 예정 <span style="font-weight:400;color:var(--txt3)">예산 기준</span></span>
-          <span style="font-size:13px;font-weight:800;color:${g.bud>0&&g.used>g.bud?'var(--red)':'var(--txt)'}">${won(g.used)}${g.bud>0?`<span style="font-size:10px;font-weight:400;color:var(--txt3)"> / ${won(g.bud)}</span>`:''}</span>
-        </div>
         ${cardDetailRows(g,useObj,budObj,catByCard)}
         ${'' /* [v32] 발급사 전체 납부 버튼 제거 — 합계 금액을 그 발급사의 첫 카드 앞으로
               달아버려서 계좌가 잘못 기록됐다. 이제 카드별 버튼이 각자 자기 금액으로 채운다. */}
