@@ -7007,7 +7007,12 @@ function rawExportRun(i){
       const r = d.raw || {};
       const detail = (r.added!=null || r.updated!=null)
         ? ` (추가 ${r.added||0} · 갱신 ${r.updated||0})` : '';
+      // [v38] 자동 동기화가 아니라 수동이라, 언제 얼마나 보냈는지 남겨서
+      //   "그 뒤로 몇 건 늘었는지"를 화면에서 알려준다.
+      p.lastExport = { at: new Date().toISOString(), n: list.length };
+      try{ cfgSave(); }catch(e){}
       if(st) st.textContent = `[${tab}] 탭에 ${list.length}건 반영했어요${detail} · ${new Date().toLocaleTimeString('ko-KR')}`;
+      try{ renderCfgRawExport(); }catch(e){}
     })
     .catch(e=>{ if(st) st.textContent = '전송 실패: '+e.message; });
 }
@@ -7116,7 +7121,16 @@ function renderCfgRawExport(){
         </div>
       </div>
 
-      <div style="display:flex;gap:8px;align-items:center;margin-top:12px">
+      ${(()=>{
+        const le = p.lastExport;
+        if(!le || !le.at) return `<div style="font-size:11px;color:var(--txt3);margin-top:10px;line-height:1.5">아직 내보낸 적이 없어요 · 자동 반영이 아니라 버튼을 누를 때만 시트에 씁니다</div>`;
+        const d0 = new Date(le.at);
+        const stamp = `${d0.getMonth()+1}/${d0.getDate()} ${String(d0.getHours()).padStart(2,'0')}:${String(d0.getMinutes()).padStart(2,'0')}`;
+        const grew = n - (Number(le.n)||0);
+        return `<div style="font-size:11px;margin-top:10px;line-height:1.5;color:${grew>0?'var(--warning)':'var(--txt3)'}">
+          마지막 내보내기 ${stamp}${grew>0?` · 그 뒤로 <b>${grew}건</b> 늘었어요 (다시 눌러야 반영돼요)`:' · 최신 상태'}</div>`;
+      })()}
+      <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
         <span style="flex:1;font-size:11.5px;color:var(--txt3)">해당 내역 <b style="color:var(--txt)">${n}건</b></span>
         <button onclick="rawExportRun(${i})" ${ready?'':'disabled'}
           style="flex:none;padding:8px 16px;background:${ready?'var(--blue)':'var(--card2)'};color:${ready?'#fff':'var(--txt3)'};border:none;border-radius:10px;font-size:12.5px;font-weight:700;cursor:${ready?'pointer':'default'}">시트로 보내기</button>
