@@ -6991,7 +6991,8 @@ function rawExportRun(i){
   if(st) st.textContent = `${list.length}건 보내는 중…`;
   fetch(url, { method:'POST', headers:{'Content-Type':'text/plain'},
     body: JSON.stringify({ action:'syncRawExport', tab:tab, rows:rows,
-                           accounts:acc, acctBal:Math.round(acctBal) }) })
+                           accounts:acc, acctBal:Math.round(acctBal),
+                           tags:(p.tags||[]).map(x=>String(x).trim()).filter(Boolean) }) })
     .then(r=>r.json())
     .then(d=>{
       if(!d || d.ok !== true){
@@ -7007,18 +7008,30 @@ function rawExportRun(i){
       const r = d.raw || {};
       const detail = (r.added!=null || r.updated!=null)
         ? ` (추가 ${r.added||0} · 갱신 ${r.updated||0})` : '';
+      const sumTab = r.summary ? ` · 요약은 [${r.summary}] 탭에서 봐요` : '';
       // [v38] 자동 동기화가 아니라 수동이라, 언제 얼마나 보냈는지 남겨서
       //   "그 뒤로 몇 건 늘었는지"를 화면에서 알려준다.
       p.lastExport = { at: new Date().toISOString(), n: list.length };
       try{ cfgSave(); }catch(e){}
-      if(st) st.textContent = `[${tab}] 탭에 ${list.length}건 반영했어요${detail} · ${new Date().toLocaleTimeString('ko-KR')}`;
+      if(st) st.textContent = `[${tab}] 탭에 ${list.length}건 반영했어요${detail}${sumTab}`;
       try{ renderCfgRawExport(); }catch(e){}
     })
     .catch(e=>{ if(st) st.textContent = '전송 실패: '+e.message; });
 }
 
+// [v39] 행사 태그 — 시트에서 손으로 적으면 오타가 섞여 집계가 갈라진다.
+//   앱에서 목록을 관리하고, 시트에는 드롭다운(데이터 확인)으로 깔아서 고르게만 한다.
+function rawAddTag(i, val){
+  const v = String(val||'').trim();
+  if(!v) return;
+  const p = rawPresets()[i]; if(!p) return;
+  p.tags = p.tags || [];
+  if(p.tags.indexOf(v)>=0) return;
+  p.tags.push(v);
+  rawSavePresets();
+}
 function rawAddPreset(){
-  rawPresets().push({ name:'', tab:'', accounts:[], majors:[], subs:[], from:String(new Date().getFullYear())+'-01', to:'' });
+  rawPresets().push({ name:'', tab:'', accounts:[], majors:[], subs:[], tags:[], from:String(new Date().getFullYear())+'-01', to:'' });
   rawSavePresets();
 }
 function rawDelPreset(i){
@@ -7111,6 +7124,13 @@ function renderCfgRawExport(){
       <div style="font-size:11.5px;color:var(--txt3);margin-bottom:4px">이 돈으로 쓰는 항목</div>
       <div style="margin-bottom:10px">
         ${chips(i,'majors',p.majors)}${chips(i,'subs',p.subs)} ${picker(i, catOpts)}
+      </div>
+
+      <div style="font-size:11.5px;color:var(--txt3);margin-bottom:4px">행사 태그 <span style="font-size:10.5px">시트 J열에 드롭다운으로 깔려요 · 오타로 집계가 갈라지는 걸 막습니다</span></div>
+      <div style="margin-bottom:10px">
+        ${chips(i,'tags',p.tags)}
+        <input placeholder="+ 태그 입력 후 Enter" onkeydown="if(event.key==='Enter'){rawAddTag(${i}, this.value); this.value='';}"
+          style="margin-top:4px;width:100%;padding:6px 9px;border:1px solid #E5E8EB;border-radius:8px;font-size:11.5px;box-sizing:border-box">
       </div>
 
       <div style="display:grid;grid-template-columns:64px 1fr;gap:6px 8px;align-items:center;font-size:11.5px;color:var(--txt3)">
