@@ -1720,6 +1720,8 @@ function cardPerfPendingFixed(ym, cards, fixItems){
   Object.keys(last).forEach(name=>{
     const planned = planAmt[stripSp(name)];
     const expect = (planned !== undefined) ? planned : Math.abs(last[name]);
+    // [v50] 지난달에 0원으로 적힌 거래가 '예정 ₩0'으로 그대로 올라오던 걸 막는다
+    if(!(expect > 0) && fixItems[name] === undefined) return;
     if(fixItems[name] !== undefined){
       // [v47] 이미 나간 고정비 — 예상보다 덜 나왔으면 그만큼 비고정비로 더 써야 실적이 찬다.
       //   "고정비 5만 예상 → 가스비 5천 확정 → 비고정비로 4만5천 더" 흐름이 여기서 나온다.
@@ -1896,14 +1898,23 @@ function cardDetailRows(g, useObj, budObj, catByCard){
         ? `<span style="font-size:10.5px;color:var(--green);font-weight:700">✓ ${cardPaidWhen(c)||'완료'}</span>`
         : `<button onclick="event.stopPropagation();cardPayEntry('${jq(g.issuer)}','${jq(c)}',${Math.round(used - paidAmt)})" style="font-size:10.5px;padding:3px 8px;border:1px solid #E5E8EB;border-radius:8px;background:#FFF;color:var(--txt2);cursor:pointer;white-space:nowrap">납부</button>`;
 
+    // [v50] 고정비 항목도 표의 열에 맞춰 찍는다 — 금액이 실적 열 아래 세로로 정렬돼
+    //   위 실적 숫자와 바로 비교된다.
+    const fixRow = (label, amt, extra) => `
+      <tr>
+        <td style="padding:2px 4px 2px 18px;font-size:10.5px;color:var(--txt3);overflow:hidden;text-overflow:ellipsis">${label}${extra||''}</td>
+        <td></td>
+        <td style="padding:2px 4px;text-align:right;font-size:10.5px;color:var(--txt3);font-variant-numeric:tabular-nums">${won(amt)}</td>
+        <td></td>
+      </tr>`;
     const fixLines = [];
     Object.entries(F.bd.fixItems).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1])).forEach(([n,v])=>{
       const st = F.settled.find(x=>x.name===n);
       const tag = (st && Math.abs(st.diff)>=1000)
         ? ` <span style="color:${st.diff>0?'var(--blue)':'var(--warning)'}">예상 ${won(st.expect)} 대비 ${st.diff>0?'−':'+'}${won(Math.abs(st.diff))}</span>` : '';
-      fixLines.push(`✓ ${n} ${won(v)}${tag}`);
+      fixLines.push(fixRow('✓ ' + n, v, tag));
     });
-    F.pend.forEach(x=>fixLines.push(`· ${n_esc(x.name)} <span style="color:var(--txt3)">예정${x.src==='plan'?' · 지정':''}</span> ${won(x.amount)}`));
+    F.pend.forEach(x=>fixLines.push(fixRow('· ' + n_esc(x.name), x.amount, ` <span style="color:var(--txt3)">예정${x.src==='plan'?' · 지정':''}</span>`)));
 
     return `
       <tr>
@@ -1912,7 +1923,7 @@ function cardDetailRows(g, useObj, budObj, catByCard){
         <td style="padding:8px 4px;border-top:1px solid #F2F4F6;text-align:right;font-size:13px;color:${pf>0?'var(--blue)':'var(--txt3)'};font-variant-numeric:tabular-nums">${pf>0?won(pf):'—'}</td>
         <td style="padding:8px 4px;border-top:1px solid #F2F4F6;text-align:right">${payCell}</td>
       </tr>
-      ${fixLines.length ? `<tr><td colspan="4" style="padding:0 4px 6px 16px;font-size:10.5px;color:var(--txt3);line-height:1.7">${fixLines.join('<br>')}</td></tr>` : ''}`;
+      ${fixLines.join('')}`;
   }).join('');
 
   const gapV = tUsed - tPerf;
@@ -8985,7 +8996,13 @@ function renderCardPerf(){
       <div style="font-size:10.5px;color:${over?'var(--green)':'var(--txt3)'};margin-top:2px">${nextTxt}
         <span style="color:var(--txt3)">· ${typeof cardPerfRuleLabel==='function'?cardPerfRuleLabel(g.label):''}</span></div>
       ${reachedTxt?`<div style="font-size:10.5px;color:var(--green);margin-top:1px">${reachedTxt}</div>`:''}
-      ${cardPerfDetailHtml(cardPerfBreakdown(tx, g.cards), target, perf, ym, g.cards)}
+      ${(()=>{  // [v50] 결제 현황과 같은 통합 표를 쓴다 — 두 화면이 다른 모양이면 매번 다시 읽어야 한다
+        const useObj = {};
+        g.cards.forEach(c=>{ useObj[c] = tx.filter(t=>t.account===c).reduce((s,t)=>s+Math.abs(Number(t.amount)||0),0); });
+        const saveM = (typeof CARD_MONTH!=='undefined') ? CARD_MONTH : ym;
+        try{ CARD_MONTH = ym; return cardDetailRows({issuer:g.label, cards:g.cards}, useObj, {}, {}); }
+        finally{ CARD_MONTH = saveM; }
+      })()}
     </div>`;
   }).join('') + `<div style="font-size:10.5px;color:var(--txt3);margin-top:2px;line-height:1.5">* 위 카드결제현황과는 다른 숫자예요 — 여긴 혜택 실적 기준. 거래의 <b>할인·수수료</b> 필드를 카드사별 실적 산정 방식(설정 › 카드)대로 가감한 금액입니다.</div>`;
 }
