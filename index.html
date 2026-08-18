@@ -1646,61 +1646,75 @@ let CARD_PAID = {};
 function cardPerfBreakdown(txList, cards){
   const rows = txList.filter(t=>cards.indexOf(t.account)>=0);
   const cat = {}; let fixed=0, vari=0;
+  const fixItems = {};   // 고정비 항목별 실제 지출
   rows.forEach(t=>{
     const amt = (typeof cardPerfAmount==='function') ? cardPerfAmount(t) : (Number(t.amount)||0);
     const k = txCatKey(t);
     cat[k] = (cat[k]||0) + amt;
-    if(isFixedTx(t)) fixed += amt; else vari += amt;
+    if(isFixedTx(t)){
+      fixed += amt;
+      const name = String(t.category||t.sub||'').trim() || k;
+      fixItems[name] = (fixItems[name]||0) + amt;
+    } else vari += amt;
   });
-  return { cat, fixed, vari };
+  return { cat, fixed, vari, fixItems };
 }
-function cardPerfDetailHtml(bd, target, perf){
+
+// [v42] 아직 안 빠진 고정비 — 지난달에 이 카드로 나갔는데 이번 달엔 아직 없는 항목.
+//   "고정비가 앞으로 얼마 더 나갈 예정이고, 그래서 변동비로 얼마 쓰면 되는지"에 답하려면
+//   이미 나간 것만 세면 안 된다. 전기세처럼 매달 금액이 달라지는 것도 지난달 값으로 어림잡는다.
+function cardPerfPendingFixed(ym, cards, fixItems){
+  const prev = (()=>{ const y=+String(ym).slice(0,4), m=+String(ym).slice(5,7);
+    const d=new Date(y, m-2, 1); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); })();
+  const last = {};
+  ((typeof STATE!=='undefined' && STATE.transactions) || []).forEach(t=>{
+    if(t.type!=='지출') return;
+    if(String(t.date).slice(0,7)!==prev) return;
+    if(cards.indexOf(t.account)<0) return;
+    if(!isFixedTx(t)) return;
+    const name = String(t.category||t.sub||'').trim() || txCatKey(t);
+    last[name] = (last[name]||0) + ((typeof cardPerfAmount==='function') ? cardPerfAmount(t) : (Number(t.amount)||0));
+  });
+  const pending = [];
+  Object.keys(last).forEach(name=>{
+    if(fixItems[name] !== undefined) return;   // 이번 달에 이미 나갔다
+    pending.push({ name, amount: last[name] });
+  });
+  pending.sort((a,b)=>Math.abs(b.amount)-Math.abs(a.amount));
+  return pending;
+}
+
+function cardPerfDetailHtml(bd, target, perf, ym, cards){
   const total = bd.fixed + bd.vari;
-  if(total <= 0) return '';
-  const left = target>0 ? target - perf : 0;
-  const entries = Object.entries(bd.cat).sort((a,b)=>b[1]-a[1]);
-  const shown = entries.slice(0,5).map(([k,v])=>`${CAT_OUT_LABELS[k]||k} ${won(v)}`).join(' · ');
-  const more = entries.length>5 ? ` 외 ${entries.length-5}개` : '';
+  const pending = (ym && cards) ? cardPerfPendingFixed(ym, cards, bd.fixItems) : [];
+  const pendSum = pending.reduce((s,p)=>s+p.amount,0);
+  if(total <= 0 && !pending.length) return '';
+
+  const paid = Object.entries(bd.fixItems).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]));
+  const line = (label, amt, done) => `
+    <div style="display:flex;justify-content:space-between;gap:8px;padding:2.5px 0;font-size:10.5px">
+      <span style="color:${done?'var(--txt2)':'var(--txt3)'}">${done?'✓':'·'} ${label}${done?'':' <span style="font-size:9.5px">예정</span>'}</span>
+      <span style="font-variant-numeric:tabular-nums;color:${done?'var(--txt2)':'var(--txt3)'};font-weight:${done?'700':'400'}">${won(amt)}</span>
+    </div>`;
+
+  const expectFixed = bd.fixed + pendSum;
+  const need = target>0 ? target - (perf + pendSum) : 0;
+
   return `
-    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:10.5px;margin-top:4px;line-height:1.6">
-      <span style="color:var(--txt3)">고정비 <b style="color:var(--txt2)">${won(bd.fixed)}</b></span>
-      <span style="color:#D9DEE5">·</span>
-      <span style="color:var(--txt3)">변동비 <b style="color:var(--txt2)">${won(bd.vari)}</b></span>
-      ${left>0 ? `<span style="color:#D9DEE5">·</span><span style="color:var(--blue);font-weight:700">변동비로 ${won(left)} 더 쓰면 달성</span>` : ''}
+    <div style="margin-top:8px;padding:9px 11px;background:var(--card2);border-radius:10px">
+      <div style="font-size:10.5px;font-weight:700;color:var(--txt2);margin-bottom:3px">고정비 ${won(expectFixed)} 예상</div>
+      ${paid.map(([n,v])=>line(n, v, true)).join('')}
+      ${pending.map(p=>line(p.name, p.amount, false)).join('')}
+      ${pending.length ? `<div style="font-size:10px;color:var(--txt3);margin-top:4px;padding-top:4px;border-top:1px solid #E5E8EB">예정 ${won(pendSum)}은 지난달 이 카드로 나간 금액으로 잡았어요</div>` : ''}
     </div>
-    ${entries.length ? `<div style="font-size:10.5px;color:var(--txt3);margin-top:2px;line-height:1.6">${shown}${more}</div>` : ''}`;
+    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:10.5px;margin-top:6px;line-height:1.6">
+      <span style="color:var(--txt3)">변동비 <b style="color:var(--txt2)">${won(bd.vari)}</b></span>
+      ${target>0 ? (need>0
+        ? `<span style="color:#D9DEE5">·</span><span style="color:var(--blue);font-weight:700">고정비 예정분까지 더하면 변동비로 ${won(need)} 더 쓰면 달성</span>`
+        : `<span style="color:#D9DEE5">·</span><span style="color:var(--green);font-weight:700">예정 고정비만으로 달성돼요</span>`) : ''}
+    </div>`;
 }
-function nextYmOf(ym){
-  const y = Number(String(ym).slice(0,4)), m = Number(String(ym).slice(5,7));
-  const d = new Date(y, m, 1);   // m은 1-based라 그대로 넣으면 다음 달
-  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
-}
-// ym에 쓴 카드값이 얼마나 납부됐는지 — 다음 달에 찍힌 카드납부 거래만 센다.
-// [v35 정정] 예전엔 조회 중인 달의 납부까지 같이 셌다. 그런데 8월에 찍힌 카드납부는
-//   7월 사용분 결제라서, 아직 청구서도 안 나온 8월 사용분이 완납으로 떴다.
-//   규칙은 하나로 못 박는다 — M월에 쓴 값은 M+1월에 결제된다.
-function cardPaidMap(ym){
-  const want = nextYmOf(ym);
-  const out = {};
-  (STATE.transactions||[]).forEach(t=>{
-    if(t.type!=='이동' && t.type!=='저축') return;
-    if(normBudgetKey(t.major)!=='카드납부') return;
-    if(String(t.date).slice(0,7)!==want) return;
-    const card = String(t.inAcct||'').trim();
-    if(!card) return;
-    const rec = out[card] = out[card] || { amount:0, dates:[] };
-    rec.amount += Math.abs(Number(t.amount)||0);
-    const d = String(t.date).slice(0,10);
-    if(rec.dates.indexOf(d)<0) rec.dates.push(d);
-  });
-  return out;
-}
-function cardPaidAmt(card){ const r = CARD_PAID[card]; return r ? (Number(r.amount)||0) : 0; }
-function cardPaidWhen(card){
-  const r = CARD_PAID[card];
-  if(!r || !r.dates.length) return '';
-  return r.dates.sort().map(d=>Number(d.slice(5,7))+'/'+Number(d.slice(8,10))).join(', ');
-}
+
 // [v33] 결제 예정 / 납부 완료 줄
 //   사용액 자체는 실적·예산 판정에 쓰이므로 건드리지 않고, '결제 예정'만 0원으로 떨어뜨린다.
 //   사용액까지 0으로 만들면 "이번 달 얼마 썼나"와 "예산 대비 초과인가"를 알 수 없게 된다.
@@ -6867,7 +6881,9 @@ function buildReportRows(year){
       (c.subs||[]).forEach(sn=>{
         const vals = sumBy(t=>filterFn(t) && normBudgetKey(t.major||'')===key
           && String(t.category||t.sub||'').trim()===sn);
-        if(Object.values(vals).some(v=>v>0)) pushRow(kind, sn, 2, vals, {});
+        // [v40] 예전엔 v>0 이라, 환불처럼 음수만 있는 소분류가 통째로 사라졌다.
+        //   0이 아니면 보여준다.
+        if(Object.values(vals).some(v=>v!==0)) pushRow(kind, sn, 2, vals, {});
       });
     });
   };
@@ -6991,8 +7007,7 @@ function rawExportRun(i){
   if(st) st.textContent = `${list.length}건 보내는 중…`;
   fetch(url, { method:'POST', headers:{'Content-Type':'text/plain'},
     body: JSON.stringify({ action:'syncRawExport', tab:tab, rows:rows,
-                           accounts:acc, acctBal:Math.round(acctBal),
-                           tags:(p.tags||[]).map(x=>String(x).trim()).filter(Boolean) }) })
+                           accounts:acc, acctBal:Math.round(acctBal) }) })
     .then(r=>r.json())
     .then(d=>{
       if(!d || d.ok !== true){
@@ -7019,19 +7034,8 @@ function rawExportRun(i){
     .catch(e=>{ if(st) st.textContent = '전송 실패: '+e.message; });
 }
 
-// [v39] 행사 태그 — 시트에서 손으로 적으면 오타가 섞여 집계가 갈라진다.
-//   앱에서 목록을 관리하고, 시트에는 드롭다운(데이터 확인)으로 깔아서 고르게만 한다.
-function rawAddTag(i, val){
-  const v = String(val||'').trim();
-  if(!v) return;
-  const p = rawPresets()[i]; if(!p) return;
-  p.tags = p.tags || [];
-  if(p.tags.indexOf(v)>=0) return;
-  p.tags.push(v);
-  rawSavePresets();
-}
 function rawAddPreset(){
-  rawPresets().push({ name:'', tab:'', accounts:[], majors:[], subs:[], tags:[], from:String(new Date().getFullYear())+'-01', to:'' });
+  rawPresets().push({ name:'', tab:'', accounts:[], majors:[], subs:[], from:String(new Date().getFullYear())+'-01', to:'' });
   rawSavePresets();
 }
 function rawDelPreset(i){
@@ -7126,12 +7130,6 @@ function renderCfgRawExport(){
         ${chips(i,'majors',p.majors)}${chips(i,'subs',p.subs)} ${picker(i, catOpts)}
       </div>
 
-      <div style="font-size:11.5px;color:var(--txt3);margin-bottom:4px">행사 태그 <span style="font-size:10.5px">시트 J열에 드롭다운으로 깔려요 · 오타로 집계가 갈라지는 걸 막습니다</span></div>
-      <div style="margin-bottom:10px">
-        ${chips(i,'tags',p.tags)}
-        <input placeholder="+ 태그 입력 후 Enter" onkeydown="if(event.key==='Enter'){rawAddTag(${i}, this.value); this.value='';}"
-          style="margin-top:4px;width:100%;padding:6px 9px;border:1px solid #E5E8EB;border-radius:8px;font-size:11.5px;box-sizing:border-box">
-      </div>
 
       <div style="display:grid;grid-template-columns:64px 1fr;gap:6px 8px;align-items:center;font-size:11.5px;color:var(--txt3)">
         <span>시트 탭</span>${txt(i,'tab','예: 비상금정산')}
@@ -7837,6 +7835,15 @@ function transitYearVerdict(ym){
   }
   return { n, win, lose, pending };
 }
+// [v41] 실교통비 박스를 붙일 대분류 — 설정 › 기타의 '실교통비 카테고리' 값을 쓰고,
+//   안 정해두면 예전처럼 '교통비'로 동작한다. 이름을 코드에 박지 않기 위한 우회로.
+function transitTargetMajor(){
+  try{
+    const v = String((CFG.settings||{})['실교통비 카테고리']||'').trim();
+    if(v) return v;
+  }catch(e){}
+  return '교통비';
+}
 function transitRealBoxHtml(ym){
   const r = computeTransitReal(ym);
   if(r.pay<=0 && r.kpass<=0) return '';
@@ -7988,7 +7995,9 @@ function renderPurposeScale(){
     if(list.some(p=>(p.accounts||[]).indexOf(k)>=0)) return;
     // [v16 수정] 계좌만 보면 카드로 낸 덕질 지출을 놓친다(그 결제는 케이-덕질 계좌를
     //   안 거치니까). "덕질" 계좌는 문화생활›덕 소분류도 같이 잡아서 카드 결제도 포함한다.
-    const subs = /덕질/.test(k) ? ['덕'] : [];
+    // [v41] 예전엔 계좌 이름에 '덕질'이 들어가면 소분류 '덕'을 자동으로 붙였다.
+    //   내 데이터에만 맞는 규칙이라 걷어내고, 설정의 연동 카테고리만 쓴다.
+    const subs = [];
     list.push({ name:nm, accounts:[k], majors:[], subs });
   });
   if(!list.length){ card.style.display='none'; return; }
@@ -8181,8 +8190,13 @@ function budCatRowHtml(c){
     const idPrefix = 'budsub_' + key.replace(/\s+/g,'_');
     // [수정] 항목이 많은 카테고리(문화생활·기타)는 3줄짜리 박스에 다 안 들어가 스크롤이
     //   너무 빡빡했다. 대분류별로 평소 항목 수가 다르니 박스 높이도 다르게 준다.
-    const boxH = key==='식비' ? 216 : (key==='문화생활' || key==='기타') ? 180 : 96;
-    const transitBox = (key==='교통비' && typeof transitRealBoxHtml==='function') ? transitRealBoxHtml(BUD_MONTH) : '';
+    // [v41] 카테고리 이름으로 높이를 정하던 걸 항목 수 기준으로 바꿨다.
+    const nItems = txs.length;
+    const boxH = nItems >= 8 ? 216 : nItems >= 5 ? 180 : 96;
+    // [v41] '교통비' 이름을 박아두지 않고, 실교통비 기능이 이 카테고리를 대상으로
+    //   설정돼 있을 때만 붙인다.
+    const transitBox = (typeof transitRealBoxHtml==='function' && typeof transitTargetMajor==='function'
+      && normBudgetKey(c.major)===normBudgetKey(transitTargetMajor())) ? transitRealBoxHtml(BUD_MONTH) : '';
     detail = transitBox + `<div style="max-height:${boxH}px;overflow-y:auto;-webkit-overflow-scrolling:touch">
         ${txGroupedDetailHtml(c.major, txs, idPrefix)}
       </div>`;
@@ -8757,7 +8771,7 @@ function renderCardPerf(){
       <div style="font-size:10.5px;color:${over?'var(--green)':'var(--txt3)'};margin-top:2px">${nextTxt}
         <span style="color:var(--txt3)">· ${typeof cardPerfRuleLabel==='function'?cardPerfRuleLabel(g.label):''}</span></div>
       ${reachedTxt?`<div style="font-size:10.5px;color:var(--green);margin-top:1px">${reachedTxt}</div>`:''}
-      ${cardPerfDetailHtml(cardPerfBreakdown(tx, g.cards), target, perf)}
+      ${cardPerfDetailHtml(cardPerfBreakdown(tx, g.cards), target, perf, ym, g.cards)}
     </div>`;
   }).join('') + `<div style="font-size:10.5px;color:var(--txt3);margin-top:2px;line-height:1.5">* 위 카드결제현황과는 다른 숫자예요 — 여긴 혜택 실적 기준. 거래의 <b>할인·수수료</b> 필드를 카드사별 실적 산정 방식(설정 › 카드)대로 가감한 금액입니다.</div>`;
 }
@@ -9415,9 +9429,15 @@ function exportBudgetSheet(){
     {label:'고정비', isHeader:true},
     ...Object.keys(CAT_OUT_LABELS).filter(k=>isFixedMajor(k)).map(k=>({label:k,key:CAT_OUT_LABELS[k]||k,major:k,type:'지출',subs:exSubs(CAT_OUT_SUBS[k])})),
     {label:'변동비', isHeader:true},
-    ...Object.keys(CAT_OUT_LABELS).filter(k=>!isFixedMajor(k)).map(k=>({label:k,key:CAT_OUT_LABELS[k]||k,major:k,type:'지출',subs:exSubs(CAT_OUT_SUBS[k])})),
-    {label:'변동비2', isHeader:true},
-    ...['경조사','문화생활','기타'].map(k=>({label:k,key:CAT_OUT_LABELS[k]||k,major:k,type:'지출',subs:exSubs(CAT_OUT_SUBS[k])})),
+    ...Object.keys(CAT_OUT_LABELS).filter(k=>!isFixedMajor(k) && catCadence(k)!=='event')
+      .map(k=>({label:k,key:CAT_OUT_LABELS[k]||k,major:k,type:'지출',subs:exSubs(CAT_OUT_SUBS[k])})),
+    // [v41] 예전엔 ['경조사','문화생활','기타']를 이름으로 박아뒀다. 내 카테고리라 다른 사람에겐
+    //   맞지도 않고, 같은 항목이 변동비와 변동비2에 두 번 나오는 원인이기도 했다.
+    //   이제 설정 › 카테고리의 주기가 '이벤트누적'인 것만 여기로 온다. 없으면 머리글도 안 나온다.
+    ...(Object.keys(CAT_OUT_LABELS).filter(k=>!isFixedMajor(k) && catCadence(k)==='event').length
+      ? [{label:'변동비2', isHeader:true}] : []),
+    ...Object.keys(CAT_OUT_LABELS).filter(k=>!isFixedMajor(k) && catCadence(k)==='event')
+      .map(k=>({label:k,key:CAT_OUT_LABELS[k]||k,major:k,type:'지출',subs:exSubs(CAT_OUT_SUBS[k])})),
     {label:'수입', isHeader:true},
     ...Object.keys(CAT_IN_SUBS).map(k=>({label:k,key:k,major:k,type:'수입',subs:CAT_IN_SUBS[k]||[]})),
     // 저축/이동: 카드납부·계좌이체 제외 — 설정한 이동 대분류를 그대로 사용
