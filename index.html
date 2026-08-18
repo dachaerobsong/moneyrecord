@@ -1625,6 +1625,23 @@ function cardToggleAll(prefix){
 // 특히 자주 보는 카드 3개는 "남음" 표시를 더 눈에 띄게
 let CARD_EMPHASIZE = [];   // 실적 관리 대상 카드 (설정에서 지정)
 // 카드 밑에 보여줄 카테고리별 지출 한 줄 요약 (많이 쓴 순 · 최대 4개, 나머지는 "외 N")
+// [v32] 카드별 고정비·변동비 분해 결과 (renderMonthCards에서 채움)
+let CARD_FIX_SPLIT = {};
+function cardFixLine(card, bud){
+  const f = CARD_FIX_SPLIT[card];
+  if(!f || (f.fixed<=0 && f.vari<=0)) return '';
+  const total = f.fixed + f.vari;
+  const left = bud>0 ? bud - total : 0;
+  const fixPct = total>0 ? Math.round(f.fixed/total*100) : 0;
+  return `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:10.5px;padding:1px 0 7px;line-height:1.6">
+    <span style="color:var(--txt3)">고정비 <b style="color:var(--txt2)">${won(f.fixed)}</b></span>
+    <span style="color:#D9DEE5">·</span>
+    <span style="color:var(--txt3)">변동비 <b style="color:var(--txt2)">${won(f.vari)}</b></span>
+    ${bud>0 && left>0 ? `<span style="color:#D9DEE5">·</span><span style="color:var(--green);font-weight:700">변동비로 ${won(left)} 더 쓰면 채움</span>` : ''}
+    ${bud>0 && left<=0 ? `<span style="color:#D9DEE5">·</span><span style="color:var(--txt3)">목표 달성</span>` : ''}
+    ${fixPct>=60 ? `<span style="color:#D9DEE5">·</span><span style="color:var(--txt3)">고정비 비중 ${fixPct}%</span>` : ''}
+  </div>`;
+}
 function cardCatLine(card, catByCard){
   const catMap = (catByCard && catByCard[card]) || {};
   const entries = Object.entries(catMap).sort((a,b)=>b[1]-a[1]);
@@ -1648,6 +1665,9 @@ function cardDetailRows(g, useObj, budObj, catByCard){
         <span style="text-align:right"><span style="font-weight:600;color:${over?'var(--red)':used>0?'var(--txt)':'var(--txt3)'}">${won(used)}</span>${bud>0?`<span style="font-size:10px;color:var(--txt3);font-weight:400"> / ${won(bud)}</span>`:''}${diffTag}</span>
       </div>
       ${cardCatLine(c, catByCard)}
+      ${cardFixLine(c, bud)}
+      ${used>0 ? `<button onclick="event.stopPropagation();cardPayEntry('${jq(g.issuer)}','${jq(c)}',${used})"
+        style="width:100%;margin:2px 0 4px;padding:7px 10px;border:1px solid #E5E8EB;border-radius:10px;background:#FFF;color:var(--txt2);font-size:11.5px;font-weight:600;cursor:pointer">💳 ${c} 납부 입력 · ${won(used)}</button>` : ''}
     </div>`;
   }).join('') || '<div style="font-size:13px;color:var(--txt3);padding:7px 0">이번 달 사용 없음</div>';
 }
@@ -1697,8 +1717,8 @@ function renderCardList(container, useObj, budObj, prefix, catByCard){
         </span>
       </div>
       <div id="${detId}" style="display:${isOpen(detId)?'block':'none'};padding:2px 14px 8px">${cardDetailRows(g,useObj,budObj,catByCard)}
-        ${g.used>0 ? `<button onclick="cardPayEntry('${jq(g.issuer)}','${jq(g.cards[0])}',${g.used})"
-          style="width:100%;margin-top:8px;padding:8px;border:1px solid var(--blue);border-radius:10px;background:var(--blue-bg);color:var(--blue);font-size:12px;font-weight:700;cursor:pointer">💳 납부 입력하기</button>` : ''}
+        ${'' /* [v32] 발급사 전체 납부 버튼 제거 — 합계 금액을 그 발급사의 첫 카드 앞으로
+              달아버려서 계좌가 잘못 기록됐다. 이제 카드별 버튼이 각자 자기 금액으로 채운다. */}
       </div>
     </div>`;
   }).join('');
@@ -7019,7 +7039,7 @@ function renderCfgMisc(){
         <div style="font-size:11px;color:var(--txt3)">${hint}</div>
       </div>
       <input value="${CFG.settings[key]!=null?CFG.settings[key]:''}" inputmode="numeric"
-        oninput="CFG.settings['${key}']=Number(this.value.replace(/[^0-9]/g,''))||0; cfgSave()"
+        oninput="CFG.settings['${key}']=Number(this.value.replace(/[^0-9]/g,''))||0; cfgSaveLocal(); if('${key}'==='급여일') syncPaydayFromSettings();"
         style="${CT.num}width:100px;flex:none">
     </div>`;
   el.innerHTML = f('급여일','급여일','현금흐름 계산 기준일')
@@ -7226,11 +7246,18 @@ function cfgApply(){
 
     // ── 4-b) 카드별 결제일 · 실적 목표 ──
     if(CFG.cards && Object.keys(CFG.cards).length && typeof CASH_PLAN==='object' && CASH_PLAN){
-      CASH_PLAN.cardPayDays = CASH_PLAN.cardPayDays || {};
+      // [v31] 누적하지 않고 매번 새로 만든다. 예전엔 지운 카드의 발급사 키가 남아
+      //   '기타카드 결제'처럼 지정한 적 없는 항목이 계속 타임라인에 떴다.
+      const fresh = {};
+      const liveCards = new Set((CFG.accounts||[]).filter(a=>a.group==='debt').map(a=>a.key));
       Object.keys(CFG.cards).forEach(k=>{
+        if(liveCards.size && !liveCards.has(k)) return;   // 계좌 목록에 없는 카드는 건너뛴다
         const d = Number(CFG.cards[k].payDay)||0;
-        if(d>0) CASH_PLAN.cardPayDays[cardIssuer(k)] = d;
+        if(d>0) fresh[cardIssuer(k)] = d;
       });
+      const dropped = Object.keys(CASH_PLAN.cardPayDays||{}).filter(k=>!(k in fresh));
+      CASH_PLAN.cardPayDays = fresh;
+      if(dropped.length && typeof saveCashPlanObj==='function') saveCashPlanObj(CASH_PLAN);
     }
 
     // ── 5) 계좌 자동완성 datalist 갱신 ──
@@ -7405,7 +7432,13 @@ function cfgMergeFromSheet(config){
   }
   if(config.cardPerfRule) CFG.cardPerfRule = Object.assign({}, config.cardPerfRule);
   if(config.cardPerf && Object.keys(config.cardPerf).length) CFG.cardPerf = Object.assign({}, config.cardPerf);
-  if(config.settings && Object.keys(config.settings).length) CFG.settings = Object.assign({}, CFG.settings, config.settings);
+  // [v31] 아직 시트에 안 보낸 로컬 변경이 있으면 settings는 덮지 않는다.
+  //   예전엔 급여일을 바꿔도 다음 동기화에서 시트 값(25)으로 되돌아갔다.
+  if(config.settings && Object.keys(config.settings).length){
+    CFG.settings = dirty
+      ? Object.assign({}, config.settings, CFG.settings)   // 로컬 값이 이긴다
+      : Object.assign({}, CFG.settings, config.settings);  // 평소엔 시트 값이 최신
+  }
   cfgSave();
   cfgApply();
   renderAllSettings();
@@ -8461,12 +8494,19 @@ function renderCardStatus(){
     });
     // 카드별 · 카테고리별 지출 집계 — 카드 세부 펼쳤을 때 "이 카드로 뭘 썼는지" 보여주기 위함
     const catByCard = {};
+    // [v32] 카드별 고정비/변동비 — 전기세처럼 고정비가 적게 나온 달은 그만큼 변동비를
+    //   더 써야 실적을 채운다. 총액만 봐선 "얼마 더 써도 되는지"를 알 수 없어서 갈라둔다.
+    const fixByCard = {};
     tx.filter(t=>t.type==='지출' && isCardAccount(t.account)).forEach(t=>{
       const a = t.account;
       const k = txCatKey(t);
+      const amt = Number(t.amount)||0;
       catByCard[a] = catByCard[a] || {};
-      catByCard[a][k] = (catByCard[a][k]||0) + (Number(t.amount)||0);
+      catByCard[a][k] = (catByCard[a][k]||0) + amt;
+      fixByCard[a] = fixByCard[a] || { fixed:0, vari:0 };
+      if(isFixedTx(t)) fixByCard[a].fixed += amt; else fixByCard[a].vari += amt;
     });
+    CARD_FIX_SPLIT = fixByCard;
     // 이번달에 납부된 카드비 (이동 타입 중 카드납부 대분류)
     const paidThis = {};
     tx.filter(t=>(t.type==='이동'||t.type==='저축')&&t.major==='카드납부').forEach(t=>{
@@ -10179,7 +10219,27 @@ function cashQuickSplitPurpose(){
   renderCashPlan();
   showToast(`✅ ${guess.join('·')} 계좌를 목적통장으로 등록했어요 · 설정 › 🎯 목적 통장 별도 관리에서 확인·수정할 수 있어요`);
 }
-function cashEditPayday(val){ CASH_PLAN.payday=parseInt(val)||21; CASH_PLAN.paydayTouched=true; saveCashPlanObj(CASH_PLAN); renderCashPlan(); }
+// [v31] 급여일은 설정 탭과 현금흐름 두 곳에 있었고 서로 다른 값을 들고 있을 수 있었다.
+//   어느 쪽에서 바꾸든 두 곳을 같이 갱신해서 되돌아갈 여지를 없앤다.
+function cashEditPayday(val){
+  const d = Math.min(31, Math.max(1, parseInt(val)||25));
+  CASH_PLAN.payday = d; CASH_PLAN.paydayTouched = true;
+  saveCashPlanObj(CASH_PLAN);
+  try{
+    if(Number(CFG.settings['급여일']) !== d){ CFG.settings['급여일'] = d; cfgSaveLocal(); }
+  }catch(e){}
+  renderCashPlan();
+  try{ if(typeof renderCfgMisc==='function') renderCfgMisc(); }catch(e){}
+}
+// 설정 탭에서 급여일을 바꿨을 때 현금흐름 쪽도 같이 따라오게 한다
+function syncPaydayFromSettings(){
+  const d = Number(CFG.settings['급여일'])||0;
+  if(!d) return;
+  if(!CASH_PLAN) { try{ CASH_PLAN = loadCashPlan(); }catch(e){ return; } }
+  CASH_PLAN.payday = d; CASH_PLAN.paydayTouched = true;
+  saveCashPlanObj(CASH_PLAN);
+  try{ renderCashPlan(); }catch(e){}
+}
 function cashAddItem(){ CASH_PLAN.items.push({name:'새 항목', amount:0, day:1, source:'bank'}); saveCashPlanObj(CASH_PLAN); renderCashEdit(); }
 function cashDeleteItem(i){ CASH_PLAN.items.splice(i,1); saveCashPlanObj(CASH_PLAN); renderCashPlan(); renderCashEdit(); }
 // ── 이번 달만 다르게(월별 예외) ──
