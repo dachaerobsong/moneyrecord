@@ -1712,8 +1712,13 @@ function cardPerfPendingFixed(ym, cards, fixItems){
 
   const pending = [], settled = [];
   Object.keys(last).forEach(name=>{
+    // [v52] 설정(현금흐름 › 고정지출)에 적어둔 금액보다 실제로 지난달 이 카드에서
+    //   나간 금액(실제 청구 내역)을 우선한다 — 설정값은 갱신을 놓치면 금방 낡아서,
+    //   실사용 이력이 있는 한 그게 더 정확한 예상치다. 설정값은 실사용 이력이
+    //   없을 때(=이 name이 last에 없어 애초에 여기 오지 않는 케이스)의 참고용일 뿐이다.
+    const actualAmt = Math.abs(last[name]);
     const planned = planAmt[stripSp(name)];
-    const expect = (planned !== undefined) ? planned : Math.abs(last[name]);
+    const expect = actualAmt > 0 ? actualAmt : (planned !== undefined ? planned : 0);
     // [v50] 지난달에 0원으로 적힌 거래가 '예정 ₩0'으로 그대로 올라오던 걸 막는다
     if(!(expect > 0) && fixItems[name] === undefined) return;
     if(fixItems[name] !== undefined){
@@ -1724,7 +1729,7 @@ function cardPerfPendingFixed(ym, cards, fixItems){
     }
     // [v47] 예정 금액은 양수로 담는다. 음수로 담았더니 예상 고정비 합계와
     //   '더 써야 할 비고정비'가 반대 방향으로 계산됐다.
-    pending.push({ name, amount: expect, src: (planned !== undefined) ? 'plan' : 'last' });
+    pending.push({ name, amount: expect, src: actualAmt > 0 ? 'last' : 'plan' });
   });
   pending.sort((a,b)=>Math.abs(b.amount)-Math.abs(a.amount));
   settled.sort((a,b)=>Math.abs(b.diff)-Math.abs(a.diff));
@@ -1876,6 +1881,7 @@ function cardDetailRows(g, useObj, budObj, catByCard){
   });
 
   let tUsed=0, tPerf=0, tFixed=0, tPend=0, tGap=0;
+  const allSettled = []; // [v52] 카드별 합계만으론 "뭐가" 예상과 달랐는지 안 보여서, 항목명까지 모아둔다
   const rows = g.cards.map(c=>{
     const used = useObj[c] || 0;
     const pf   = Number(perfBy[c]) || 0;
@@ -1884,6 +1890,7 @@ function cardDetailRows(g, useObj, budObj, catByCard){
     tUsed += used; tPerf += pf;
     if(!off){ tFixed += F.bd.fixed; tPend += F.pend.reduce((s,x)=>s+x.amount,0); }
     tGap += F.settled.reduce((s,x)=>s+x.diff,0);
+    if(!off) F.settled.forEach(x=>allSettled.push(x));
 
     const paidAmt = cardPaidAmt(c);
     const settledPay = paidAmt>0 && (used - paidAmt) <= Math.max(1000, used*0.01);
@@ -1923,6 +1930,9 @@ function cardDetailRows(g, useObj, budObj, catByCard){
   const gapV = tUsed - tPerf;
   const target = (()=>{ try{ return cardPerfHeaderInfo(CARD_MONTH, g.cards, g.issuer).target; }catch(e){ return 0; } })();
   const need = target>0 ? target - tPerf - tPend : 0;
+  // [v52] 가장 크게 어긋난 항목 1~2개만 이름으로 짚어준다 — "고정비가 예상보다 4만5천 더
+  //   나왔어요"보다 "가스비 예상보다 4만5천 더 나왔어요"가 뭘 봐야 할지 바로 알려준다.
+  const gapTop = allSettled.filter(x=>Math.abs(x.diff)>=1000).sort((a,b)=>Math.abs(b.diff)-Math.abs(a.diff)).slice(0,2);
 
   return `<table style="width:100%;border-collapse:collapse;table-layout:fixed">
     <colgroup><col><col style="width:84px"><col style="width:84px"><col style="width:62px"></colgroup>
@@ -1941,7 +1951,7 @@ function cardDetailRows(g, useObj, budObj, catByCard){
     </tr></tfoot>
   </table>
   ${target>0 ? `<div style="margin-top:9px;padding:8px 10px;border-radius:9px;background:var(--blue-bg);font-size:10.5px;color:var(--blue);line-height:1.6">
-    ${Math.abs(tGap)>=1000 ? `고정비가 예상보다 ${won(Math.abs(tGap))} ${tGap>0?'덜':'더'} 나왔어요 → ` : ''}${
+    ${gapTop.length ? gapTop.map(x=>`${n_esc(x.name)} 예상보다 ${won(Math.abs(x.diff))} ${x.diff>0?'덜':'더'} 나왔어요`).join(' · ') + ' → ' : ''}${
       need>0 ? `고정비 예정분까지 더하면 <b>비고정비로 ${won(need)} 더 쓰면 달성</b>` : `<b>예정 고정비만으로 달성돼요</b>`}
   </div>` : ''}
   ${gapV>0 ? `<div style="font-size:10px;color:var(--txt3);margin-top:5px;line-height:1.5">결제와 실적 차이 ${won(gapV)} — 실적 제외 카드, 세금·상품권, 할인·수수료 조정</div>` : ''}`;
@@ -1992,9 +2002,11 @@ function renderCardList(container, useObj, budObj, prefix, catByCard){
     // [v51] 실적 카드를 없애고 여기 하나로 합쳤다. 목표·구간·산정 규칙까지 이 줄에서 다 보인다.
     const stTier = (typeof cfgTierStatus==='function') ? cfgTierStatus(g.issuer, info.perf) : null;
     const ruleTxt = (typeof cardPerfRuleLabel==='function') ? cardPerfRuleLabel(g.issuer) : '';
+    // [v52] "얼마 더 쓰면 달성"보다 목표 금액 자체를 나란히 보여줘야 지금 실적이
+    //   목표 대비 어디쯤인지 한눈에 잡힌다 — "목표 ₩300,000 - ₩125,000 남음" 형태.
     const nextTxt = stTier && stTier.next
       ? `${won(stTier.next.amount - info.perf)} 더 쓰면 ${won(stTier.next.amount)} 구간${stTier.next.benefit?` · ${stTier.next.benefit}`:''}`
-      : (done ? '실적 달성' : `${won(left)} 더 쓰면 달성`);
+      : (done ? `목표 ${won(info.target)} 달성` : `목표 ${won(info.target)} - ${won(left)} 남음`);
     const subLine = info.target>0
       ? `<div style="font-size:10.5px;color:var(--txt3);margin-top:1px"><span style="font-weight:700;color:${done?'var(--green)':'var(--blue)'}">${nextTxt}</span>${ruleTxt?` · ${ruleTxt}`:''}</div>`
       : (g.bud>0 ? `<div style="font-size:10.5px;color:var(--txt3);margin-top:1px">예산 ${won(g.bud)} · <span style="color:var(--warning)">실적 목표 미설정</span></div>` : '');
