@@ -1685,6 +1685,27 @@ function cardPerfBreakdown(txList, cards){
   return { cat, fixed, vari, fixItems };
 }
 
+// [v52] 예정 고정비 금액을 직접 고쳐 쓸 수 있게 하는 수동 보정값.
+//   자동 예상(지난달 실제 청구액)이 이번 달엔 다를 걸 미리 아는 경우(예: 보험료 인상 통보,
+//   이번 달만 임시로 더/덜 나가는 항목)에 카드 세부내역에서 숫자를 탭해서 바로 고칠 수 있다.
+//   비워두면 자동 계산(실제 청구 내역 → 설정값 순)으로 돌아간다.
+let CARD_PEND_OVERRIDE = (()=>{ try{ return JSON.parse(LS.get('cardPendOverrideV1'))||{}; }catch(e){ return {}; } })();
+function saveCardPendOverride(){ try{ LS.set('cardPendOverrideV1', JSON.stringify(CARD_PEND_OVERRIDE)); }catch(e){} }
+function cardPendOverrideGet(name){
+  const v = CARD_PEND_OVERRIDE[stripSp(name)];
+  return (v===undefined || v===null || v==='') ? undefined : Number(v);
+}
+function cardPendOverrideEdit(name){
+  const cur = cardPendOverrideGet(name);
+  const input = window.prompt(`"${name}" 예정 금액을 직접 입력하세요.\n비워두고 확인을 누르면 자동 계산(실제 청구 내역 기준)으로 되돌아가요.`, cur!=null ? String(cur) : '');
+  if(input===null) return; // 취소
+  const raw = String(input).replace(/[^0-9]/g,'');
+  if(raw===''){ delete CARD_PEND_OVERRIDE[stripSp(name)]; }
+  else { CARD_PEND_OVERRIDE[stripSp(name)] = Number(raw); }
+  saveCardPendOverride();
+  if(typeof renderCardStatus==='function') renderCardStatus();
+}
+
 // [v42] 아직 안 빠진 고정비 — 지난달에 이 카드로 나갔는데 이번 달엔 아직 없는 항목.
 //   "고정비가 앞으로 얼마 더 나갈 예정이고, 그래서 변동비로 얼마 쓰면 되는지"에 답하려면
 //   이미 나간 것만 세면 안 된다. 전기세처럼 매달 금액이 달라지는 것도 지난달 값으로 어림잡는다.
@@ -1712,13 +1733,12 @@ function cardPerfPendingFixed(ym, cards, fixItems){
 
   const pending = [], settled = [];
   Object.keys(last).forEach(name=>{
-    // [v52] 설정(현금흐름 › 고정지출)에 적어둔 금액보다 실제로 지난달 이 카드에서
-    //   나간 금액(실제 청구 내역)을 우선한다 — 설정값은 갱신을 놓치면 금방 낡아서,
-    //   실사용 이력이 있는 한 그게 더 정확한 예상치다. 설정값은 실사용 이력이
-    //   없을 때(=이 name이 last에 없어 애초에 여기 오지 않는 케이스)의 참고용일 뿐이다.
+    // [v52] 우선순위: ① 직접 수정한 보정값 → ② 지난달 이 카드로 실제 나간 금액(실제 청구 내역)
+    //   → ③ 현금흐름 › 고정지출에 적어둔 설정값. 설정값은 실사용 이력조차 없을 때만 쓰인다.
+    const overrideAmt = cardPendOverrideGet(name);
     const actualAmt = Math.abs(last[name]);
     const planned = planAmt[stripSp(name)];
-    const expect = actualAmt > 0 ? actualAmt : (planned !== undefined ? planned : 0);
+    const expect = overrideAmt != null ? overrideAmt : (actualAmt > 0 ? actualAmt : (planned !== undefined ? planned : 0));
     // [v50] 지난달에 0원으로 적힌 거래가 '예정 ₩0'으로 그대로 올라오던 걸 막는다
     if(!(expect > 0) && fixItems[name] === undefined) return;
     if(fixItems[name] !== undefined){
@@ -1729,7 +1749,7 @@ function cardPerfPendingFixed(ym, cards, fixItems){
     }
     // [v47] 예정 금액은 양수로 담는다. 음수로 담았더니 예상 고정비 합계와
     //   '더 써야 할 비고정비'가 반대 방향으로 계산됐다.
-    pending.push({ name, amount: expect, src: actualAmt > 0 ? 'last' : 'plan' });
+    pending.push({ name, amount: expect, src: overrideAmt != null ? 'override' : (actualAmt > 0 ? 'last' : 'plan') });
   });
   pending.sort((a,b)=>Math.abs(b.amount)-Math.abs(a.amount));
   settled.sort((a,b)=>Math.abs(b.diff)-Math.abs(a.diff));
@@ -1770,11 +1790,22 @@ function cardPerfHeaderInfo(ym, cards, issuerLabel){
   });
   let target = 0;
   try{
-    const grp = (typeof cardPerfGroups==='function' ? cardPerfGroups() : [])
-      .find(g=>String(g.label)===String(issuerLabel));
+    const grp = (typeof cardPerfFindGroup==='function') ? cardPerfFindGroup(issuerLabel, cards) : null;
     if(grp && typeof cfgPerfTarget==='function') target = cfgPerfTarget(grp.label, grp.accts, perf);
   }catch(e){}
   return { perf, target, fixed, vari, excluded };
+}
+// [v52] 카드결제 현황 화면은 "!", "-" 같은 변형 마커를 뗀 카드 단위(cardBaseName)로 묶어 보여주는데,
+//   설정 › 카드의 실적 그룹(cfgCardGroups)은 소분류(또는 카드 원래 이름) 단위로 나뉘어 있다.
+//   변형 카드에 소분류를 안 채워두면 두 그룹핑이 서로 다른 이름으로 갈라져서, 라벨을 정확히
+//   맞춰 찾는 방식으로는 목표 금액을 못 찾고 늘 0(=예산 화면으로 대체)이 되는 문제가 있었다.
+//   라벨이 정확히 같은 그룹을 우선 찾고, 없으면 카드 목록이 겹치는 그룹으로 대신 찾는다.
+function cardPerfFindGroup(issuerLabel, cards){
+  const groups = (typeof cardPerfGroups==='function' ? cardPerfGroups() : []);
+  let grp = groups.find(g=>String(g.label)===String(issuerLabel));
+  if(grp) return grp;
+  grp = groups.find(g=>(g.cards||[]).some(c=>(cards||[]).indexOf(c)>=0));
+  return grp || null;
 }
 
 function cardPerfDetailHtml(bd, target, perf, ym, cards){
@@ -1908,6 +1939,14 @@ function cardDetailRows(g, useObj, budObj, catByCard){
         <td style="padding:2px 4px;text-align:right;font-size:10.5px;color:var(--txt3);font-variant-numeric:tabular-nums">${won(amt)}</td>
         <td></td>
       </tr>`;
+    // [v52] '예정' 항목은 자동 예상치일 뿐이라 실제와 다를 수 있다 — 탭해서 직접 고칠 수 있게 한다.
+    const fixRowEdit = (label, amt, extra, name) => `
+      <tr onclick="event.stopPropagation();cardPendOverrideEdit('${jq(name)}')" style="cursor:pointer">
+        <td style="padding:2px 4px 2px 18px;font-size:10.5px;color:var(--txt3);overflow:hidden;text-overflow:ellipsis">${label}${extra||''}</td>
+        <td></td>
+        <td style="padding:2px 4px;text-align:right;font-size:10.5px;color:var(--blue);font-variant-numeric:tabular-nums;text-decoration:underline dotted;text-underline-offset:2px">${won(amt)} ✎</td>
+        <td></td>
+      </tr>`;
     const fixLines = [];
     Object.entries(F.bd.fixItems).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1])).forEach(([n,v])=>{
       const st = F.settled.find(x=>x.name===n);
@@ -1915,7 +1954,10 @@ function cardDetailRows(g, useObj, budObj, catByCard){
         ? ` <span style="color:${st.diff>0?'var(--blue)':'var(--warning)'}">예상 ${won(st.expect)} 대비 ${st.diff>0?'−':'+'}${won(Math.abs(st.diff))}</span>` : '';
       fixLines.push(fixRow('✓ ' + n, v, tag));
     });
-    F.pend.forEach(x=>fixLines.push(fixRow('· ' + n_esc(x.name), x.amount, ` <span style="color:var(--txt3)">예정${x.src==='plan'?' · 지정':''}</span>`)));
+    F.pend.forEach(x=>{
+      const srcTxt = x.src==='override' ? ' · 직접 수정' : (x.src==='plan' ? ' · 지정' : '');
+      fixLines.push(fixRowEdit('· ' + n_esc(x.name), x.amount, ` <span style="color:var(--txt3)">예정${srcTxt}</span>`, x.name));
+    });
 
     return `
       <tr>
@@ -1930,6 +1972,7 @@ function cardDetailRows(g, useObj, budObj, catByCard){
   const gapV = tUsed - tPerf;
   const target = (()=>{ try{ return cardPerfHeaderInfo(CARD_MONTH, g.cards, g.issuer).target; }catch(e){ return 0; } })();
   const need = target>0 ? target - tPerf - tPend : 0;
+  const tVari = tPerf - tFixed; // [v52] 지금까지 실적으로 잡힌 것 중 비고정비(변동비) 몫
   // [v52] 가장 크게 어긋난 항목 1~2개만 이름으로 짚어준다 — "고정비가 예상보다 4만5천 더
   //   나왔어요"보다 "가스비 예상보다 4만5천 더 나왔어요"가 뭘 봐야 할지 바로 알려준다.
   const gapTop = allSettled.filter(x=>Math.abs(x.diff)>=1000).sort((a,b)=>Math.abs(b.diff)-Math.abs(a.diff)).slice(0,2);
@@ -1951,8 +1994,8 @@ function cardDetailRows(g, useObj, budObj, catByCard){
     </tr></tfoot>
   </table>
   ${target>0 ? `<div style="margin-top:9px;padding:8px 10px;border-radius:9px;background:var(--blue-bg);font-size:10.5px;color:var(--blue);line-height:1.6">
-    ${gapTop.length ? gapTop.map(x=>`${n_esc(x.name)} 예상보다 ${won(Math.abs(x.diff))} ${x.diff>0?'덜':'더'} 나왔어요`).join(' · ') + ' → ' : ''}${
-      need>0 ? `고정비 예정분까지 더하면 <b>비고정비로 ${won(need)} 더 쓰면 달성</b>` : `<b>예정 고정비만으로 달성돼요</b>`}
+    ${gapTop.length ? gapTop.map(x=>`${n_esc(x.name)} 예상보다 ${won(Math.abs(x.diff))} ${x.diff>0?'덜':'더'} 나왔어요`).join(' · ') + ' → ' : ''}
+    변동비 <b>${won(tVari)}</b>${need>0 ? ` · 고정비 예정분까지 더하면 <b>비고정비로 ${won(need)} 더 쓰면 달성</b>` : ` · <b>예정 고정비만으로 목표 달성돼요</b>`}
   </div>` : ''}
   ${gapV>0 ? `<div style="font-size:10px;color:var(--txt3);margin-top:5px;line-height:1.5">결제와 실적 차이 ${won(gapV)} — 실적 제외 카드, 세금·상품권, 할인·수수료 조정</div>` : ''}`;
 }
