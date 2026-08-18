@@ -884,13 +884,7 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
         </div>
       </div>
       <div id="bud-card-unified"></div>
-      <div style="font-size:10.5px;color:var(--txt3);margin-top:10px;line-height:1.5">* 실제 결제/청구되는 원금액 그대로예요 (할인·환불·해외수수료 조정 없음) · 혜택 실적은 아래 별도 카드에서 확인하세요</div>
-    </section>
-    <!-- 카드 실적(혜택 기준) — 위 카드결제현황과 완전히 분리된 별도 계산 -->
-    <section class="card">
-      <div class="card-title" style="margin-bottom:10px">🎯 카드 실적 (혜택 기준)</div>
-      <div id="bud-card-perf"></div>
-      <div style="font-size:10.5px;color:var(--txt3);margin-top:8px;line-height:1.5">* 메모에 <code>할인:5000</code> <code>환불:3000</code> <code>해외수수료:1500</code> 형식으로 적으면 자동 반영돼요 (할인은 더하고, 환불·해외수수료는 빼요)</div>
+      <div style="font-size:10.5px;color:var(--txt3);margin-top:10px;line-height:1.5">* <b>결제</b>는 실제로 빠져나갈 원금액, <b>실적</b>은 혜택 산정 기준이에요 · 메모에 <code>할인:5000</code> <code>환불:3000</code> <code>해외수수료:1500</code> 형식으로 적으면 카드사별 산정 방식(설정 › 카드)대로 자동 반영돼요</div>
     </section>
   </div>
 
@@ -1995,20 +1989,29 @@ function renderCardList(container, useObj, budObj, prefix, catByCard){
     // [v45] 위는 실적 현황, 아래는 결제·예산. 성격이 다른 두 숫자를 한 줄에 겹쳐 놓으면
     //   "이 금액이 실적인지 빠져나갈 돈인지"가 매번 헷갈린다.
     const headAmt = info.target>0 ? info.perf : g.used;
+    // [v51] 실적 카드를 없애고 여기 하나로 합쳤다. 목표·구간·산정 규칙까지 이 줄에서 다 보인다.
+    const stTier = (typeof cfgTierStatus==='function') ? cfgTierStatus(g.issuer, info.perf) : null;
+    const ruleTxt = (typeof cardPerfRuleLabel==='function') ? cardPerfRuleLabel(g.issuer) : '';
+    const nextTxt = stTier && stTier.next
+      ? `${won(stTier.next.amount - info.perf)} 더 쓰면 ${won(stTier.next.amount)} 구간${stTier.next.benefit?` · ${stTier.next.benefit}`:''}`
+      : (done ? '실적 달성' : `${won(left)} 더 쓰면 달성`);
     const subLine = info.target>0
-      ? `<div style="font-size:10.5px;color:var(--txt3);margin-top:1px">목표 ${won(info.target)} · <span style="font-weight:700;color:${done?'var(--green)':'var(--blue)'}">${done?'달성':won(left)+' 남음'}</span></div>`
+      ? `<div style="font-size:10.5px;color:var(--txt3);margin-top:1px"><span style="font-weight:700;color:${done?'var(--green)':'var(--blue)'}">${nextTxt}</span>${ruleTxt?` · ${ruleTxt}`:''}</div>`
       : (g.bud>0 ? `<div style="font-size:10.5px;color:var(--txt3);margin-top:1px">예산 ${won(g.bud)} · <span style="color:var(--warning)">실적 목표 미설정</span></div>` : '');
+    const reachedTxt = stTier && stTier.reached
+      ? `현재 ${won(stTier.reached.amount)} 구간${stTier.reached.benefit?` · ${stTier.reached.benefit}`:''}` : '';
     const perfBar = info.target>0 ? `
       <div style="padding:0 14px 10px;background:var(--card2)">
         <div style="height:5px;border-radius:99px;background:#E9ECEF;overflow:hidden">
           <div style="height:100%;width:${Math.min(100,pct)}%;background:${done?'var(--green)':pct>=70?'var(--warning)':'var(--blue)'}"></div>
         </div>
+        ${reachedTxt?`<div style="font-size:10px;color:var(--green);margin-top:4px">${reachedTxt}</div>`:''}
       </div>` : '';
     return `<div style="margin-top:${gi===0?0:8}px;border:1px solid #EEE;border-radius:14px;overflow:hidden">
       <div onclick="cardToggleOne('${detId}','${carId}')" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;cursor:pointer;background:var(--card2)">
         <span style="font-size:15px;font-weight:700;color:var(--blue)">${g.issuer}${info.target>0?' <span style="font-size:10px;font-weight:600;color:var(--txt3)">실적</span>':''} <span id="${carId}" style="font-size:11px;color:var(--txt3)">${isOpen(detId)?'▴':'▾'}</span></span>
         <span style="text-align:right">
-          <div style="font-size:15px;font-weight:800;color:${info.target>0?(done?'var(--green)':'var(--txt)'):(g.used>0?'var(--txt)':'var(--txt3)')}">${won(headAmt)}</div>
+          <div style="font-size:15px;font-weight:800;color:${info.target>0?(done?'var(--green)':'var(--txt)'):(g.used>0?'var(--txt)':'var(--txt3)')}">${won(headAmt)}${info.target>0?`<span style="font-size:11px;font-weight:400;color:var(--txt3)"> / ${won(info.target)}</span>`:''}</div>
           ${subLine}
         </span>
       </div>
@@ -6791,7 +6794,6 @@ function cfgSetPerfRule(issuer, field, on){
   };
   cfgSave();
   renderCfgCards();
-  if(typeof renderCardPerf==='function') try{ renderCardPerf(); }catch(e){}
 }
 // 지금 실적이 어느 구간까지 왔는지
 function cfgTierStatus(issuer, perf){
@@ -8856,7 +8858,6 @@ function renderCardStatus(){
     const tx = (STATE.transactions.length ? STATE.transactions : DEMO).filter(t => String(t.date).slice(0,7) === ym && !isRemovedTx(t));
     const cardBudget = STATE.cardBudget || {};
     // 이번달 카드 사용 집계 — 실제 결제/청구 기준 원금액 그대로 (할인·환불·해외수수료 조정 없음)
-    // 조정된 "실적" 숫자는 아래 renderCardPerf()에서 카드결제현황과 완전히 분리해서 별도로 계산함
     const useThis = {};
     tx.filter(t=>t.type==='지출').forEach(t => {
       const a = t.account||'';
@@ -8918,7 +8919,6 @@ function renderCardStatus(){
       renderCardList(document.getElementById('budcard-inner'), useThis, cardBudget, 'budcard', catByCard);
     }
   }
-  renderCardPerf();
 }
 // ── 카드 실적(혜택 기준) — 카드결제현황(원금액)과는 완전히 분리된 별도 계산 ──
 // 실적 그룹: 설정 탭의 카드 계좌 단위 · 목표는 설정 › 기본값의 '카드실적목표'
@@ -8950,62 +8950,10 @@ function cardPerfToggleShow(label, on){
   CFG.cardPerfHide = CFG.cardPerfHide || {};
   if(on) delete CFG.cardPerfHide[label]; else CFG.cardPerfHide[label] = true;
   try{ cfgSave(); }catch(e){}
-  renderCardPerf();
 }
 let PERF_PICK_OPEN = false;
-function cardPerfTogglePicker(){ PERF_PICK_OPEN = !PERF_PICK_OPEN; renderCardPerf(); }
-function renderCardPerf(){
-  const el = document.getElementById('bud-card-perf');
-  if(!el) return;
-  const ym = CARD_MONTH;
-  const tx = (STATE.transactions.length ? STATE.transactions : DEMO).filter(t => String(t.date).slice(0,7) === ym && !isRemovedTx(t) && t.type==='지출');
-  const allGroups = cardPerfGroups();
-  if(!allGroups.length){ el.innerHTML = '<div style="font-size:12.5px;color:var(--txt3);padding:10px 0">설정 탭에서 성격이 \'카드\'인 계좌를 등록하면 실적이 표시돼요.</div>'; return; }
-  cardPerfSeedShow(allGroups.map(g=>g.label));
-  const groups = allGroups.filter(g=>!cardPerfHidden(g.label));
-  const hidden = allGroups.filter(g=>cardPerfHidden(g.label));
-  const picker = `
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:2px 0 10px">
-      <span style="font-size:11px;color:var(--txt3)">${hidden.length?`${hidden.length}개 카드사 숨김`:'전체 표시 중'}</span>
-      <button onclick="cardPerfTogglePicker()" style="font-size:11px;padding:3px 9px;border:1px solid #E5E8EB;border-radius:99px;background:#FFF;color:var(--txt2);cursor:pointer">${PERF_PICK_OPEN?'닫기':'표시 카드사 고르기'}</button>
-    </div>
-    ${PERF_PICK_OPEN ? `<div style="background:var(--card2);border-radius:12px;padding:8px 12px;margin-bottom:12px">
-      ${allGroups.map(g=>`<label style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12.5px;cursor:pointer">
-        <input type="checkbox" ${cardPerfHidden(g.label)?'':'checked'} onchange="cardPerfToggleShow('${String(g.label).replace(/'/g,"\\'")}',this.checked)" style="width:16px;height:16px;accent-color:var(--blue)">
-        <span>${g.label}</span><span style="color:var(--txt3);font-size:11px">${g.cards.length}장</span></label>`).join('')}
-    </div>` : ''}`;
-  if(!groups.length){ el.innerHTML = picker + '<div style="font-size:12.5px;color:var(--txt3);padding:6px 0">표시할 카드사를 하나도 안 고르셨어요.</div>'; return; }
-  el.innerHTML = picker + groups.map(g=>{
-    const perf = tx.filter(t=>g.cards.indexOf(t.account)>=0).reduce((s,t)=>s+cardPerfAmount(t),0);
-    const target = cfgPerfTarget(g.label, g.accts, perf);
-    const st = (typeof cfgTierStatus==='function') ? cfgTierStatus(g.label, perf) : null;
-    const over = perf >= target;
-    const pct = target>0 ? Math.round(perf/target*100) : 0;
-    const barC = over ? 'var(--green)' : pct>=70 ? 'var(--warning)' : 'var(--blue)';
-    // 구간을 쓰는 카드사면 "지금 받고 있는 혜택 / 다음 구간까지"를 보여준다
-    const reachedTxt = st && st.reached ? `현재 ${won(st.reached.amount)} 구간${st.reached.benefit?` · ${st.reached.benefit}`:''}` : '';
-    const nextTxt = st && st.next
-      ? `${won(st.next.amount - perf)} 더 쓰면 ${won(st.next.amount)} 구간${st.next.benefit?` · ${st.next.benefit}`:''}`
-      : (over ? '✅ 실적 달성' : `${won(target-perf)} 더 쓰면 달성`);
-    return `<div style="margin-bottom:12px">
-      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
-        <span style="font-weight:600;color:var(--txt)">${g.label}</span>
-        <span style="font-weight:700;color:${over?'var(--green)':'var(--txt2)'}">${won(perf)} <span style="font-size:11px;color:var(--txt3);font-weight:400">/ ${won(target)}</span></span>
-      </div>
-      <div class="progress-track" style="height:6px"><div class="progress-fill" style="width:${Math.min(100,pct)}%;background:${barC}"></div></div>
-      <div style="font-size:10.5px;color:${over?'var(--green)':'var(--txt3)'};margin-top:2px">${nextTxt}
-        <span style="color:var(--txt3)">· ${typeof cardPerfRuleLabel==='function'?cardPerfRuleLabel(g.label):''}</span></div>
-      ${reachedTxt?`<div style="font-size:10.5px;color:var(--green);margin-top:1px">${reachedTxt}</div>`:''}
-      ${(()=>{  // [v50] 결제 현황과 같은 통합 표를 쓴다 — 두 화면이 다른 모양이면 매번 다시 읽어야 한다
-        const useObj = {};
-        g.cards.forEach(c=>{ useObj[c] = tx.filter(t=>t.account===c).reduce((s,t)=>s+Math.abs(Number(t.amount)||0),0); });
-        const saveM = (typeof CARD_MONTH!=='undefined') ? CARD_MONTH : ym;
-        try{ CARD_MONTH = ym; return cardDetailRows({issuer:g.label, cards:g.cards}, useObj, {}, {}); }
-        finally{ CARD_MONTH = saveM; }
-      })()}
-    </div>`;
-  }).join('') + `<div style="font-size:10.5px;color:var(--txt3);margin-top:2px;line-height:1.5">* 위 카드결제현황과는 다른 숫자예요 — 여긴 혜택 실적 기준. 거래의 <b>할인·수수료</b> 필드를 카드사별 실적 산정 방식(설정 › 카드)대로 가감한 금액입니다.</div>`;
-}
+// [v51] renderCardPerf 제거 — 카드 실적 카드를 없애고 카드 결제 현황 하나로 합쳤다.
+//   실적 진행·구간·산정 규칙은 이제 결제 현황 카드사 헤더에서 보여준다.
 
 // ══════════════════════════════════════════════
 //  이번 달 탭 — 신규 위젯 (재무체크 / 카드결제예정 요약 / 소비캘린더 / 월간총평)
