@@ -1716,15 +1716,23 @@ function cardPerfPendingFixed(ym, cards, fixItems){
     });
   }catch(e){}
 
-  const pending = [];
+  const pending = [], settled = [];
   Object.keys(last).forEach(name=>{
-    if(fixItems[name] !== undefined) return;   // 이번 달에 이미 나갔다
     const planned = planAmt[stripSp(name)];
-    pending.push({ name,
-      amount: (planned !== undefined) ? -planned : last[name],
-      src: (planned !== undefined) ? 'plan' : 'last' });
+    const expect = (planned !== undefined) ? planned : Math.abs(last[name]);
+    if(fixItems[name] !== undefined){
+      // [v47] 이미 나간 고정비 — 예상보다 덜 나왔으면 그만큼 비고정비로 더 써야 실적이 찬다.
+      //   "고정비 5만 예상 → 가스비 5천 확정 → 비고정비로 4만5천 더" 흐름이 여기서 나온다.
+      settled.push({ name, actual: Math.abs(fixItems[name]), expect, diff: expect - Math.abs(fixItems[name]) });
+      return;
+    }
+    // [v47] 예정 금액은 양수로 담는다. 음수로 담았더니 예상 고정비 합계와
+    //   '더 써야 할 비고정비'가 반대 방향으로 계산됐다.
+    pending.push({ name, amount: expect, src: (planned !== undefined) ? 'plan' : 'last' });
   });
   pending.sort((a,b)=>Math.abs(b.amount)-Math.abs(a.amount));
+  settled.sort((a,b)=>Math.abs(b.diff)-Math.abs(a.diff));
+  pending.settled = settled;
   return pending;
 }
 
@@ -1768,12 +1776,21 @@ function cardPerfDetailHtml(bd, target, perf, ym, cards){
     </div>`;
 
   const expectFixed = bd.fixed + pendSum;
-  const need = target>0 ? target - (perf + pendSum) : 0;
+  const need = target>0 ? target - perf - pendSum : 0;
+  // 예상보다 덜 나온 고정비 (양수 = 그만큼 비고정비로 메워야 함)
+  const settled = pending.settled || [];
+  const gap = settled.reduce((s,x)=>s+x.diff, 0);
+  const gapTop = settled.filter(x=>Math.abs(x.diff)>=1000).slice(0,2);
 
   return `
     <div style="margin-top:8px;padding:9px 11px;background:var(--card2);border-radius:10px">
       <div style="font-size:10.5px;font-weight:700;color:var(--txt2);margin-bottom:3px">고정비 ${won(expectFixed)} 예상</div>
-      ${paid.map(([n,v])=>line(n, v, true)).join('')}
+      ${paid.map(([n,v])=>{
+        const st = settled.find(x=>x.name===n);
+        const tag = (st && Math.abs(st.diff)>=1000)
+          ? ` <span style="font-size:9.5px;color:${st.diff>0?'var(--blue)':'var(--warning)'}">예상 ${won(st.expect)} 대비 ${st.diff>0?'−':'+'}${won(Math.abs(st.diff))}</span>` : '';
+        return line(n + tag, v, true);
+      }).join('')}
       ${pending.map(p=>line(p.name, p.amount, false, p.src)).join('')}
       ${pending.length ? (()=>{
         const nPlan = pending.filter(p=>p.src==='plan').length;
@@ -1784,6 +1801,11 @@ function cardPerfDetailHtml(bd, target, perf, ym, cards){
         return `<div style="font-size:10px;color:var(--txt3);margin-top:4px;padding-top:4px;border-top:1px solid #E5E8EB">예정 ${won(pendSum)} — ${bits.join(' · ')}으로 잡았어요</div>`;
       })() : ''}
     </div>
+    ${gapTop.length && Math.abs(gap)>=1000 ? `
+    <div style="margin-top:6px;padding:7px 10px;border-radius:9px;background:${gap>0?'var(--blue-bg)':'var(--warn-bg)'};font-size:10.5px;line-height:1.6;color:${gap>0?'var(--blue)':'var(--warning)'}">
+      ${gapTop.map(x=>`${x.name} 예상보다 ${won(Math.abs(x.diff))} ${x.diff>0?'덜':'더'} 나왔어요`).join(' · ')}
+      ${gap>0 ? ` → 비고정비로 ${won(gap)} 더 써야 실적이 채워져요` : ` → 비고정비를 ${won(-gap)} 덜 써도 돼요`}
+    </div>` : ''}
     <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:10.5px;margin-top:6px;line-height:1.6">
       <span style="color:var(--txt3)">변동비 <b style="color:var(--txt2)">${won(bd.vari)}</b></span>
       ${target>0 ? (need>0
@@ -1886,7 +1908,7 @@ function renderCardList(container, useObj, budObj, prefix, catByCard){
     const headAmt = info.target>0 ? info.perf : g.used;
     const subLine = info.target>0
       ? `<div style="font-size:10.5px;color:var(--txt3);margin-top:1px">목표 ${won(info.target)} · <span style="font-weight:700;color:${done?'var(--green)':'var(--blue)'}">${done?'달성':won(left)+' 남음'}</span></div>`
-      : (g.bud>0 ? `<div style="font-size:10.5px;color:var(--txt3);margin-top:1px">예산 ${won(g.bud)}</div>` : '');
+      : (g.bud>0 ? `<div style="font-size:10.5px;color:var(--txt3);margin-top:1px">예산 ${won(g.bud)} · <span style="color:var(--warning)">실적 목표 미설정</span></div>` : '');
     const perfBar = info.target>0 ? `
       <div style="padding:0 14px 10px;background:var(--card2)">
         <div style="height:5px;border-radius:99px;background:#E9ECEF;overflow:hidden">
@@ -6632,7 +6654,10 @@ function cfgPerfTarget(issuer, cards, perf){
   // 예전 방식(카드별 목표)이 남아 있으면 그중 최댓값을 쓴다
   const legacy = (cards||[]).map(a=>Number(((CFG.cards||{})[a.key]||{}).target)||0).filter(v=>v>0);
   if(legacy.length) return Math.max(...legacy);
-  return Number(CFG.settings['카드실적목표'])||300000;
+  // [v46] 예전엔 아무것도 안 정했으면 30만원을 기본값으로 썼다. 내가 쓰는 숫자라 다른 사람에겐
+  //   "정한 적 없는 목표"가 생기고, 그 위에서 실적 판정이 돌아갔다. 이제 0을 돌려주고,
+  //   목표가 0이면 화면은 '목표 미설정'으로 두고 실적 판정을 아예 하지 않는다.
+  return Number(CFG.settings['카드실적목표'])||0;
 }
 function cfgSetPerfTarget(issuer, val){
   CFG.cardPerf = CFG.cardPerf || {};
@@ -6755,11 +6780,7 @@ function renderCfgCards(){
           </div>`).join('')}
         <button onclick="cfgAddTier('${jq(issuer)}')" style="${CT.add}margin-top:5px;padding:6px;font-size:12px">+ 구간 추가</button>
         ${tiers.filter(t=>Number(t.amount)>0).length ? '' : `
-        <div style="display:grid;grid-template-columns:1fr 100px;gap:6px;align-items:center;margin-top:8px">
-          <span style="font-size:11.5px;color:var(--txt2)">구간이 없을 때 쓸 실적 목표</span>
-          <input value="${(CFG.cardPerf||{})[issuer] ?? ''}" placeholder="${won(Number(CFG.settings['카드실적목표'])||300000)}" inputmode="numeric"
-            onchange="cfgSetPerfTarget('${jq(issuer)}',this.value)" style="${CT.num}">
-        </div>`}
+        <div style="font-size:10.5px;color:var(--txt3);margin-top:8px;line-height:1.5">실적 목표는 위 카드사 줄에서 정해요. 비워두면 실적 판정을 하지 않습니다.</div>`}
         <input value="${esc((CFG.cardMemo||{})[issuer])}" placeholder="참고 메모 (예: 핸드폰은 실적 포함, 자동결제 건수엔 미포함)"
           oninput="cfgSetCardMemo('${jq(issuer)}',this.value)"
           style="${CT.inp}font-size:12px;margin-top:9px;padding:7px 9px">
@@ -6770,7 +6791,19 @@ function renderCfgCards(){
         <span onclick="cfgCardToggle('${jq(issuer)}')" style="cursor:pointer;font-size:13.5px;font-weight:800;color:var(--txt)">
           <span style="color:var(--blue);font-size:11px">${open?'▾':'▸'}</span> 💳 ${issuer}</span>
         <span style="flex:1"></span>
-        <span style="font-size:10.5px;color:var(--txt3);text-align:right">${cards.filter(a=>!((CFG.cards||{})[a.key]||{}).perfOff).length}/${cards.length}장 합산 · ${tiers.filter(t=>Number(t.amount)>0).length?`${tiers.filter(t=>Number(t.amount)>0).length}구간 · 1차 ${won(cfgPerfTarget(issuer, cards))}`:`목표 ${won(cfgPerfTarget(issuer, cards))}`}<br>${cardPerfRuleLabel(issuer)}</span>
+        ${tiers.filter(t=>Number(t.amount)>0).length ? '' : `
+        <label style="display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--txt3);white-space:nowrap">
+          실적 목표
+          <input value="${(CFG.cardPerf||{})[issuer] ?? ''}" placeholder="미설정" inputmode="numeric"
+            onchange="cfgSetPerfTarget('${jq(issuer)}',this.value)"
+            style="${CT.num}width:96px;padding:4px 7px;font-size:11.5px">
+        </label>`}
+        <span style="font-size:10.5px;color:var(--txt3);text-align:right">${cards.filter(a=>!((CFG.cards||{})[a.key]||{}).perfOff).length}/${cards.length}장 합산${(()=>{
+          const nT = tiers.filter(t=>Number(t.amount)>0).length;
+          if(nT) return ` · ${nT}구간 · 1차 ${won(cfgPerfTarget(issuer, cards))}`;
+          const tg = cfgPerfTarget(issuer, cards);
+          return tg>0 ? ` · 목표 ${won(tg)}` : ' · <span style="color:var(--warning)">목표 미설정</span>';
+        })()}<br>${cardPerfRuleLabel(issuer)}</span>
       </div>
       ${(CFG.cardMemo||{})[issuer] ? `<div style="font-size:10.5px;color:var(--txt2);background:var(--card2);border-radius:7px;padding:5px 8px;margin-bottom:6px">${(CFG.cardMemo||{})[issuer]}</div>` : ''}
       <div style="display:grid;grid-template-columns:${KT_COLS};gap:5px;font-size:10px;color:var(--txt3);padding-bottom:2px;padding-left:12px">
