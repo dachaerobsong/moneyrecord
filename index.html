@@ -1137,6 +1137,7 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
   <nav class="sub-nav">
     <div class="sub-tab on" onclick="setInvestSub('history',this)">투자 현황</div>
     <div class="sub-tab" onclick="setInvestSub('holdings',this)">보유 종목</div>
+    <div class="sub-tab" onclick="setInvestSub('realized',this)">실현손익</div>
     <div class="sub-tab" onclick="setInvestSub('tx',this)">거래 내역</div>
     <div class="sub-tab" onclick="setInvestSub('input',this)">거래 입력</div>
   </nav>
@@ -1234,13 +1235,49 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
         </div>
       </div>
       <div id="inv-holdings-list"></div>
-      <div style="font-size:10.5px;color:var(--txt3);margin-top:12px;line-height:1.5">수량·평단가·현재가·평가금액·평가손익·수익률은 시트 <b>[투자_보유종목]</b> 값을 그대로 읽어와요 (읽기 전용) · 실현손익·배당은 거래내역에서 계산합니다</div>
+      <div id="inv-hold-note" style="font-size:10.5px;color:var(--txt3);margin-top:12px;line-height:1.5"></div>
     </section>
 
     <section class="card" id="inv-closed-card" style="display:none">
       <div class="card-title"><span>매도 완료 종목</span></div>
       <div id="inv-closed-list"></div>
       <div style="font-size:10.5px;color:var(--txt3);margin-top:12px;line-height:1.5">지금은 보유수량이 0이지만 실현손익·배당이 남아 있는 종목이에요</div>
+    </section>
+  </div>
+
+  <!-- [v31] 실현손익 — 확정된 돈만 모아 보는 화면 -->
+  <div id="sub-invest-realized" class="invest-sub-panel" style="display:none">
+    <section class="card" id="inv-real-sum-card">
+      <div class="card-title"><span>확정 수익 요약</span><span style="font-size:11px;font-weight:400;color:var(--txt3)">팔거나 받아서 이미 손에 들어온 돈</span></div>
+      <div id="inv-real-sum"></div>
+    </section>
+
+    <section class="card" id="inv-real-year-card" style="display:none">
+      <div class="card-title"><span>연도별</span></div>
+      <div id="inv-real-year"></div>
+    </section>
+
+    <section class="card" id="inv-real-name-card" style="display:none">
+      <div class="card-title" style="align-items:center;gap:8px;flex-wrap:wrap">
+        <span>종목별 실현손익</span>
+        <div class="inv2-toolbar">
+          <select id="inv-real-sort" class="inv2-mini-select" onchange="renderInvestRealized()">
+            <option value="pnl">실현손익순</option>
+            <option value="pct">수익률순</option>
+            <option value="div">배당순</option>
+            <option value="name">이름순</option>
+          </select>
+        </div>
+      </div>
+      <div id="inv-real-name"></div>
+    </section>
+
+    <section class="card" id="inv-real-trade-card" style="display:none">
+      <div class="card-title" style="align-items:center;gap:8px;flex-wrap:wrap">
+        <span>매도 건별 내역</span>
+        <button class="inv2-mini-btn" id="inv-real-trade-btn" onclick="invRealTradeToggle()">전체 보기</button>
+      </div>
+      <div id="inv-real-trade"></div>
     </section>
   </div>
 
@@ -2318,9 +2355,38 @@ function invLinkMap(){
   invLinkedAccts().forEach(k=>{ if(k) m[normAcctKey(k)] = k; });
   return m;
 }
-// 투자 시트에 적힌 계좌명을 가계부 표기로 통일 (미래ISA → 미래-ISA)
+// [v31] 계좌명 통일 — 예전엔 '가계부에 연동된 계좌'만 통일했다. 그래서 시트에 표기가
+//   바뀐 채로 적힌 계좌(미래ISA → 미래-ISA)가 연동 목록에 없으면 두 계좌로 쪼개져서,
+//   같은 종목이 'SK하이닉스 미래ISA 2주 / 미래-ISA 2주'처럼 두 줄로 갈라졌다.
+//   이제 연동 여부와 무관하게, 공백·하이픈만 다른 표기는 항상 한 이름으로 모은다.
+//   대표 이름은 가계부 표기 > 설정 계좌 > 시트에서 가장 많이 쓰인 표기 순으로 고른다.
+let _INV_ALIAS = null, _INV_ALIAS_SIG = '';
+function invAcctAliasMap(){
+  const sig = [pfTx.length, pfHoldings.length, invLinkedAccts().length,
+               ((typeof STATE!=='undefined' && STATE.acctsDef) || []).length].join('|');
+  if(_INV_ALIAS && _INV_ALIAS_SIG === sig) return _INV_ALIAS;
+  const count = {};
+  const bump = (name, w) => {
+    const nm = String(name||'').trim(); if(!nm) return;
+    const k = normAcctKey(nm); if(!k) return;
+    const c = count[k] || (count[k] = {});
+    c[nm] = (c[nm]||0) + w;
+  };
+  Object.values(invLinkMap()).forEach(n=>bump(n, 1e6));
+  ((typeof STATE!=='undefined' && STATE.acctsDef) || []).forEach(a=>bump(a && a.key, 1e5));
+  pfHoldings.forEach(h=>bump(h.account, 10));
+  pfTx.forEach(t=>bump(t.account, 1));
+  const out = {};
+  Object.keys(count).forEach(k=>{
+    out[k] = Object.keys(count[k]).sort((a,b)=>count[k][b]-count[k][a] || a.localeCompare(b,'ko'))[0];
+  });
+  _INV_ALIAS = out; _INV_ALIAS_SIG = sig;
+  return out;
+}
 function invCanonAcct(name){
-  return invLinkMap()[normAcctKey(name)] || String(name||'').trim();
+  const k = normAcctKey(name);
+  if(!k) return String(name||'').trim();
+  return invLinkMap()[k] || invAcctAliasMap()[k] || String(name||'').trim();
 }
 function invIsLinked(name){ return !!invLinkMap()[normAcctKey(name)]; }
 
@@ -2402,30 +2468,24 @@ function investAccountStats(){
     }
     else if(t.type==='이용료'){ a.div -= amt; a.usage += amt; }
   });
+  // [v31] mergedHoldings가 이제 거래내역 기준이라 '시트에 없는 종목'도 여기 다 들어온다.
+  //   그래서 예전 v28의 별도 보정(snap/calcCost)을 걷어냈다 — 그대로 두면 이중 계상된다.
+  //   현재가를 아는 종목만 평가금액·평가손익에 넣고, 현재가를 모르는 종목의 매입원가는
+  //   '평가 미등록 원금'으로 따로 센다(없는 평가금액을 지어내지 않는다).
   mergedHoldings().filter(h=>h.qty>0.0001).forEach(h=>{
-    const a = get(invCanonAcct(h.account));
-    a.evalAmt += Number(h.evalAmt)||0; a.pnl += Number(h.unrealizedPnl)||0;
-    a.cost += Number(h.costBasis)||0; a.n++; a.hasHold = true;
-  });
-  // [v28] 보유종목 시트에 행이 아예 없는 종목의 매입원가를 살린다.
-  //   IRP처럼 매수는 기록돼 있는데 시트 [투자_보유종목]에 행이 없는 계좌가 계산에서
-  //   통째로 사라지던 문제(매수한 만큼 현금이 깎여 총액이 0이 됨)를 막는다.
-  //   계좌 단위로 '거래내역 원가 − 시트 원가'를 빼면 시트 평단가의 반올림 차이가
-  //   유령 금액으로 남으므로, 종목 단위로 '시트에 없는 것'만 센다.
-  const snap = {};
-  pfHoldings.forEach(h=>{
-    if(!h.name || !(Number(h.qty)>0.0001)) return;
-    snap[String(h.name).trim() + '|' + invCanonAcct(h.account)] = true;
+    const a = get(h.account);
+    a.n++; a.hasHold = true;
+    if(h.hasPrice){
+      a.evalAmt += Number(h.evalAmt)||0;
+      a.pnl     += Number(h.unrealizedPnl)||0;
+      a.cost    += Number(h.costBasis)||0;
+    } else {
+      a.calcCost += Number(h.costBasis)||0;
+      a.noPrice   = (a.noPrice||0) + 1;
+    }
   });
   try{
-    computeHoldings().filter(h=>h.qty>0.0001).forEach(h=>{
-      const k = String(h.name).trim() + '|' + invCanonAcct(h.account);
-      if(snap[k]) return;                    // 시트에 이미 있으면 평가금액 쪽에서 이미 셌다
-      get(invCanonAcct(h.account)).calcCost += Number(h.costBasis)||0;
-    });
-  }catch(e){}
-  try{
-    computeHoldings().forEach(h=>{ get(invCanonAcct(h.account)).realized += Number(h.realizedPnl)||0; });
+    computeHoldings().forEach(h=>{ get(h.account).realized += Number(h.realizedPnl)||0; });
   }catch(e){}
   Object.values(st).forEach(a=>{
     a.tracked = a.traded || a.hasHold;
@@ -2464,8 +2524,9 @@ function computeHoldings(){
     const k = key(t);
     if(!map[k]) map[k] = { name:t.name, account:invCanonAcct(t.account), qty:0, avgPrice:0, costBasis:0, realizedPnl:0, dividend:0, buyTotal:0, sellTotal:0 };
     const h = map[k];
+    const gross = (t.qty*t.price) || Math.abs(Number(t.amount)||0);
     if(t.type==='매수' || t.type==='재투자'){
-      const addCost = (t.qty*t.price) + (Number(t.fee)||0);
+      const addCost = gross + (Number(t.fee)||0);
       h.costBasis += addCost;
       h.qty += t.qty;
       h.avgPrice = h.qty>0 ? h.costBasis/h.qty : 0;
@@ -2473,7 +2534,7 @@ function computeHoldings(){
     } else if(t.type==='매도'){
       const sellQty = Math.min(t.qty, h.qty);
       const costOfSold = h.avgPrice * sellQty;
-      const proceeds = (t.qty*t.price) - (Number(t.fee)||0) - (Number(t.tax)||0);
+      const proceeds = gross - (Number(t.fee)||0) - (Number(t.tax)||0);
       h.realizedPnl += proceeds - costOfSold;
       h.costBasis = Math.max(0, h.costBasis - costOfSold);
       h.qty = Math.max(0, h.qty - sellQty);
@@ -2486,34 +2547,83 @@ function computeHoldings(){
   return Object.values(map).filter(h => h.qty > 0.0001 || h.realizedPnl !== 0 || h.dividend !== 0);
 }
 
-// 종목별 계산(항상 최신) + 시트의 현재가/티커(가격만 시트 전용) 병합
-// [v20 수정] "이미 시트에서 다 계산되고 있는데 왜 앱이 또 계산하냐"는 지적이 맞다.
-//   종목별 수량·평단가·평가금액·손익·수익률은 이제 보유종목 시트 값을 그대로 믿고 쓴다.
-//   거래내역 기반 계산(computeHoldings)은 그 시트에 없는 값(실현손익·배당 총액,
-//   순수 투입금 스냅샷)에만 쓴다 — 두 계산이 같은 숫자를 놓고 서로 다투지 않게.
+// [v31 되돌림] 수량·평단가·원가·실현손익은 다시 '거래내역'에서 계산한다.
+//   v20에서 보유종목 시트 값을 그대로 믿게 바꿨는데, 그 시트는 실시간 수식이 아니라
+//   계좌별로 손으로 갱신되는 스냅샷이었다. 확인된 증상 세 가지:
+//   ① 전량 매도한 종목이 계속 보유 3주로 남는다(매도 행이 스냅샷에 안 들어감)
+//   ② 마이너스로 적힌 매수 수수료를 한 번 더 빼서 매입원가가 수수료만큼 깎인다
+//      (금현물 229,400 + 378 = 229,778이 맞는데 시트엔 229,022)
+//   ③ 시트에 행이 없는 종목(미래종합 SK하이닉스 등)이 화면에서 통째로 사라진다
+//   그래서 시트에서 가져오는 값은 '현재가'와 '섹터'로 좁힌다 — GOOGLEFINANCE라서
+//   시트가 유일한 출처인 값만. 나머지는 거래내역이 단일 진실이다.
+function invSheetPriceMap(){
+  const byKey = {}, byName = {};
+  pfHoldings.forEach(h=>{
+    if(!h.name) return;
+    const nm = String(h.name).trim(), acct = invCanonAcct(h.account);
+    const rec = { curPrice: Number(h.curPrice)||0, sector: h.sector||'', sheetQty: Number(h.qty)||0 };
+    const prev = byKey[nm+'|'+acct];
+    if(!prev || (rec.curPrice>0 && !(prev.curPrice>0))) byKey[nm+'|'+acct] = rec;
+    const pn = byName[nm];
+    if(!pn || (rec.curPrice>0 && !(pn.curPrice>0))) byName[nm] = rec;
+  });
+  return { byKey, byName };
+}
 function mergedHoldings(){
-  // [v25] 실현손익·배당은 보유종목 시트에 없는 값이라 거래내역에서 계산해 종목별로 붙인다.
-  //   계좌까지 일치하는 키를 우선 쓰고, 계좌 표기가 다르면 종목명만으로 한 번 더 맞춰본다.
-  const calc = {}, byName = {};
-  try{
-    computeHoldings().forEach(c=>{
-      calc[c.name+'|'+c.account] = c;
-      (byName[c.name] = byName[c.name] || {realizedPnl:0, dividend:0});
-      byName[c.name].realizedPnl += c.realizedPnl;
-      byName[c.name].dividend    += c.dividend;
-    });
-  }catch(e){}
-  return pfHoldings.filter(h=>h.name).map(h=>{
-    const acct = invCanonAcct(h.account);
-    const c = calc[h.name+'|'+acct] || byName[h.name] || {realizedPnl:0, dividend:0};
+  const { byKey, byName } = invSheetPriceMap();
+  let calc = [];
+  try{ calc = computeHoldings(); }catch(e){ calc = []; }
+  return calc.map(h=>{
+    const s = byKey[h.name+'|'+h.account] || byName[h.name] || { curPrice:0, sector:'', sheetQty:null };
+    const curPrice = Number(s.curPrice)||0;
+    const hasPrice = curPrice>0 && h.qty>0.0001;
+    const evalAmt  = hasPrice ? h.qty*curPrice : h.costBasis;
+    const pnl      = hasPrice ? evalAmt - h.costBasis : 0;
+    const sq = (s.sheetQty===null || s.sheetQty===undefined) ? null : s.sheetQty;
     return {
-      name: h.name, account: acct, sector: h.sector||'', qty: h.qty, avgPrice: h.avgPrice, costBasis: h.costBasis,
-      curPrice: h.curPrice, hasPrice: h.curPrice>0,
-      evalAmt: h.evalAmt || (h.qty*h.curPrice) || h.costBasis,
-      unrealizedPnl: h.pnl, unrealizedPct: h.pnlRate ? Math.round(h.pnlRate*1000)/10 : null,
-      realizedPnl: c.realizedPnl||0, dividend: c.dividend||0
+      name: h.name, account: h.account, sector: s.sector||'',
+      qty: h.qty, avgPrice: h.avgPrice, costBasis: h.costBasis,
+      curPrice, hasPrice, evalAmt,
+      unrealizedPnl: pnl,
+      unrealizedPct: (hasPrice && h.costBasis>0) ? Math.round(pnl/h.costBasis*1000)/10 : null,
+      realizedPnl: h.realizedPnl||0, dividend: h.dividend||0,
+      buyTotal: h.buyTotal||0, sellTotal: h.sellTotal||0,
+      sheetQty: sq,
+      sheetStale: (sq!==null && h.qty>0.0001) ? Math.abs(sq - h.qty) > 0.0001 : false
     };
   });
+}
+
+// [v31] 매도 1건 = 실현손익 1건. computeHoldings와 똑같은 이동평균법으로 다시 재생해서
+//   "언제 무엇을 팔아 얼마 남겼는지"를 거래 단위로 남긴다.
+function investRealizedTrades(){
+  const pos = {}, out = [];
+  pfTx.slice().sort((a,b)=>String(a.date).localeCompare(String(b.date))).forEach(t=>{
+    if(!t.name) return;
+    const k = t.name + '|' + invCanonAcct(t.account);
+    const p = pos[k] || (pos[k] = { qty:0, cost:0, avg:0 });
+    const gross = (t.qty*t.price) || Math.abs(Number(t.amount)||0);
+    if(t.type==='매수' || t.type==='재투자'){
+      p.cost += gross + (Number(t.fee)||0);
+      p.qty  += t.qty;
+      p.avg   = p.qty>0 ? p.cost/p.qty : 0;
+    } else if(t.type==='매도'){
+      const sq = Math.min(t.qty, p.qty);
+      const costOfSold = p.avg * sq;
+      const proceeds = gross - (Number(t.fee)||0) - (Number(t.tax)||0);
+      out.push({
+        date: t.date, name: t.name, account: invCanonAcct(t.account),
+        qty: t.qty, price: t.price, proceeds, cost: costOfSold,
+        pnl: proceeds - costOfSold,
+        pct: costOfSold>0 ? Math.round((proceeds-costOfSold)/costOfSold*1000)/10 : null,
+        fee: Number(t.fee)||0, tax: Number(t.tax)||0,
+        noCost: sq < t.qty - 0.0001      // 매수 기록보다 많이 팔았다 = 데이터 누락 신호
+      });
+      p.cost = Math.max(0, p.cost - costOfSold);
+      p.qty  = Math.max(0, p.qty - sq);
+    }
+  });
+  return out.sort((a,b)=>String(b.date).localeCompare(String(a.date)));
 }
 
 // [v25] 수익 항목 총계 — 평가손익(미실현) / 실현손익 / 배당·이자 / 비용을 한 곳에서 계산한다.
@@ -2523,7 +2633,8 @@ function investIncomeTotals(){
   const sumT = t => pfTx.filter(x=>x.type===t).reduce((a,x)=>a+Math.abs(Number(x.amount)||0),0);
   let realized = 0;
   try{ computeHoldings().forEach(h=>{ realized += h.realizedPnl; }); }catch(e){}
-  const hs = mergedHoldings().filter(h=>h.qty>0.0001);
+  // [v31] 현재가를 모르는 종목은 분모(원가)에서도 빼야 수익률이 안 눌린다.
+  const hs = mergedHoldings().filter(h=>h.qty>0.0001 && h.hasPrice);
   const unrealized = hs.reduce((a,h)=>a+(Number(h.unrealizedPnl)||0),0);
   const costTotal  = hs.reduce((a,h)=>a+(Number(h.costBasis)||0),0);
   const dividend = sumT('분배금');
@@ -2709,6 +2820,7 @@ function renderInvestSummary(){
   renderInvestByAccount(hs);
   renderInvestTrend();
   renderInvestIncome();
+  renderInvestRealized();
   renderInvestLink();
 }
 
@@ -2814,6 +2926,17 @@ function renderInvestHoldings(hsParam){
   el.innerHTML = (INV_HOLD_VIEW==='table')
     ? invHoldingsTableHtml(sorted, totalEval)
     : invHoldingsCardHtml(sorted, totalEval);
+
+  // [v31] 시트 스냅샷과 거래내역이 어긋나면 조용히 넘기지 않고 화면에서 말한다.
+  const note = document.getElementById('inv-hold-note');
+  if(note){
+    const parts = ['수량·평단가·매입원가·실현손익은 <b>거래내역</b>에서 계산해요 · 현재가만 시트 <b>[투자_보유종목]</b>에서 읽어옵니다'];
+    const stale = hs.filter(h=>h.sheetStale);
+    const noPrice = hs.filter(h=>!h.hasPrice);
+    if(stale.length) parts.push(`⚠️ 시트 [투자_보유종목]의 수량이 거래내역과 다른 종목 ${stale.length}개 — ${stale.slice(0,3).map(h=>`${h.name} 시트 ${h.sheetQty} / 실제 ${h.qty}`).join(', ')}${stale.length>3?' 외':''}. 화면은 거래내역 기준이라 맞지만, 시트 수식 범위를 넓혀두면 좋아요`);
+    if(noPrice.length) parts.push(`ℹ️ 현재가를 못 찾은 종목 ${noPrice.length}개(${noPrice.slice(0,3).map(h=>h.name).join(', ')}) — 시트에 행이 없어서 평가금액 대신 매입원가로 표시했어요`);
+    note.innerHTML = parts.map(t=>`<div style="margin-top:4px">${t}</div>`).join('');
+  }
 }
 
 function invHoldingsCardHtml(sorted, totalEval){
@@ -2916,6 +3039,161 @@ function renderInvestClosed(){
       </div>
     </div>`;
   }).join('');
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  [v31] 실현손익 화면 — "확정된 돈"만 따로 모은다.
+//   평가손익은 아직 안 팔아서 흔들리는 숫자고, 여기 있는 건 이미 끝난 숫자다.
+//   요약(실현손익·배당·이용료·순확정수익) → 연도별 → 종목별 → 매도 건별 순서.
+// ══════════════════════════════════════════════════════════════════
+let INV_REAL_TRADE_ALL = false;
+function invRealTradeToggle(){
+  INV_REAL_TRADE_ALL = !INV_REAL_TRADE_ALL;
+  renderInvestRealized();
+}
+function renderInvestRealized(){
+  const sumEl = document.getElementById('inv-real-sum');
+  if(!sumEl) return;
+  const yCard = document.getElementById('inv-real-year-card'), yEl = document.getElementById('inv-real-year');
+  const nCard = document.getElementById('inv-real-name-card'), nEl = document.getElementById('inv-real-name');
+  const tCard = document.getElementById('inv-real-trade-card'), tEl = document.getElementById('inv-real-trade');
+
+  if(!pfTx.length){
+    sumEl.innerHTML = '<div style="text-align:center;color:var(--txt3);padding:18px 0;font-size:13px">거래 내역을 동기화하면 집계돼요</div>';
+    [yCard,nCard,tCard].forEach(c=>{ if(c) c.style.display='none'; });
+    return;
+  }
+
+  const t = investIncomeTotals();
+  const trades = investRealizedTrades();
+  const c = v => v>=0 ? 'var(--red)' : 'var(--blue)';
+  const cell = (label, value, color, sub) => `
+    <div class="inv2-income-cell">
+      <div class="inv2-income-label">${label}</div>
+      <div class="inv2-income-value"${color?` style="color:${color}"`:''}>${value}</div>
+      ${sub?`<div class="inv2-income-sub">${sub}</div>`:''}
+    </div>`;
+  const soldCost = trades.reduce((a,x)=>a+x.cost,0);
+  const soldAmt  = trades.reduce((a,x)=>a+x.proceeds,0);
+  const realPct  = soldCost>0 ? Math.round(t.realized/soldCost*1000)/10 : null;
+  sumEl.innerHTML = `
+    <div class="inv2-income-grid">
+      ${cell('실현손익 (매도 확정)', wonSigned(t.realized), c(t.realized), realPct!==null?`매도원가 대비 ${realPct>=0?'+':''}${realPct}%`:'')}
+      ${cell('배당·분배금', won(t.dividend), t.dividend>0?'var(--green)':'', `${pfTx.filter(x=>x.type==='분배금').length}건`)}
+      ${cell('이자', won(t.interest), t.interest>0?'var(--green)':'')}
+      ${cell('계좌 이용료', t.usage>0?'-'+won(t.usage):won(0), t.usage>0?'var(--txt2)':'')}
+      ${cell('매도 총액', won(soldAmt), '', `${trades.length}건 · 원가 ${won(soldCost)}`)}
+      ${cell('매매 수수료·세금', won(t.feeTax), '', '실현손익에 이미 반영')}
+    </div>
+    <div class="inv2-income-total">
+      <span class="inv2-income-total-l">순확정수익 <span style="font-weight:400;color:var(--txt3);font-size:11px">실현손익+배당+이자−이용료</span></span>
+      <span class="inv2-income-total-r" style="color:${c(t.netRealized)}">${wonSigned(t.netRealized)}</span>
+    </div>`;
+
+  // ── 연도별 ──
+  const byYear = {};
+  trades.forEach(x=>{ const y=String(x.date).slice(0,4); (byYear[y]=byYear[y]||{pnl:0,n:0,div:0}).pnl+=x.pnl; byYear[y].n++; });
+  pfTx.forEach(x=>{
+    if(x.type!=='분배금' && x.type!=='이자') return;
+    const y=String(x.date).slice(0,4); (byYear[y]=byYear[y]||{pnl:0,n:0,div:0}).div+=Math.abs(Number(x.amount)||0);
+  });
+  const years = Object.keys(byYear).sort().reverse();
+  if(yCard){
+    if(!years.length){ yCard.style.display='none'; }
+    else {
+      yCard.style.display='';
+      yEl.innerHTML = years.map(y=>{
+        const v=byYear[y];
+        return `<div class="inv2-row">
+          <div class="inv2-row-top">
+            <span class="inv2-row-name">${y}년</span>
+            <span class="inv2-row-value" style="color:${c(v.pnl+v.div)}">${wonSigned(v.pnl+v.div)}</span>
+          </div>
+          <div class="inv2-row-mid">
+            <span class="inv2-row-detail">매도 ${v.n}건 실현 ${wonSigned(v.pnl)}</span>
+            ${v.div?`<span class="inv2-row-pnl" style="color:var(--green)">배당 ${won(v.div)}</span>`:''}
+          </div>
+        </div>`;
+      }).join('');
+    }
+  }
+
+  // ── 종목별 ──
+  const agg = {};
+  trades.forEach(x=>{
+    const k=x.name+'|'+x.account;
+    const a = agg[k] || (agg[k]={name:x.name, account:x.account, pnl:0, cost:0, proceeds:0, n:0, div:0, held:0});
+    a.pnl+=x.pnl; a.cost+=x.cost; a.proceeds+=x.proceeds; a.n++;
+  });
+  let held = [];
+  try{ held = computeHoldings(); }catch(e){}
+  held.forEach(h=>{
+    const k=h.name+'|'+h.account;
+    if(h.dividend>0 || agg[k]){
+      const a = agg[k] || (agg[k]={name:h.name, account:h.account, pnl:0, cost:0, proceeds:0, n:0, div:0, held:0});
+      a.div = h.dividend||0; a.held = h.qty;
+    }
+  });
+  const sortKey = (document.getElementById('inv-real-sort')||{}).value || 'pnl';
+  const rows = Object.values(agg).sort((a,b)=>{
+    if(sortKey==='name') return a.name.localeCompare(b.name,'ko');
+    if(sortKey==='div')  return b.div-a.div;
+    if(sortKey==='pct'){
+      const pa = a.cost>0?a.pnl/a.cost:-9, pb = b.cost>0?b.pnl/b.cost:-9;
+      return pb-pa;
+    }
+    return (b.pnl+b.div)-(a.pnl+a.div);
+  });
+  if(nCard){
+    if(!rows.length){ nCard.style.display='none'; }
+    else {
+      nCard.style.display='';
+      const tot = rows.reduce((s,r)=>({pnl:s.pnl+r.pnl, cost:s.cost+r.cost, proceeds:s.proceeds+r.proceeds, div:s.div+r.div}), {pnl:0,cost:0,proceeds:0,div:0});
+      nEl.innerHTML = `<div class="inv2-table-wrap"><table class="inv2-tbl">
+        <thead><tr><th>종목</th><th>계좌</th><th>매도액</th><th>매도원가</th><th>실현손익</th><th>수익률</th><th>배당</th><th>합계</th></tr></thead>
+        <tbody>${rows.map(r=>{
+          const pct = r.cost>0 ? Math.round(r.pnl/r.cost*1000)/10 : null;
+          return `<tr>
+            <td title="${r.name}">${r.name}${r.held>0.0001?' <span class="inv2-tag">보유중</span>':''}</td>
+            <td style="text-align:left">${r.account||'—'}</td>
+            <td>${r.proceeds?won(r.proceeds):'—'}</td>
+            <td>${r.cost?won(r.cost):'—'}</td>
+            <td style="color:${c(r.pnl)};font-weight:700">${r.n?wonSigned(r.pnl):'—'}</td>
+            <td style="color:${c(r.pnl)}">${pct!==null?`${pct>=0?'+':''}${pct}%`:'—'}</td>
+            <td style="color:${r.div>0?'var(--green)':''}">${r.div?won(r.div):'—'}</td>
+            <td style="font-weight:700;color:${c(r.pnl+r.div)}">${wonSigned(r.pnl+r.div)}</td>
+          </tr>`;
+        }).join('')}</tbody>
+        <tfoot><tr><td>합계</td><td></td><td>${won(tot.proceeds)}</td><td>${won(tot.cost)}</td>
+          <td style="color:${c(tot.pnl)}">${wonSigned(tot.pnl)}</td>
+          <td style="color:${c(tot.pnl)}">${tot.cost>0?`${tot.pnl>=0?'+':''}${Math.round(tot.pnl/tot.cost*1000)/10}%`:'—'}</td>
+          <td style="color:var(--green)">${won(tot.div)}</td>
+          <td style="color:${c(tot.pnl+tot.div)}">${wonSigned(tot.pnl+tot.div)}</td></tr></tfoot>
+      </table></div>
+      <div style="font-size:10.5px;color:var(--txt3);margin-top:10px;line-height:1.5">이동평균법 기준 · 매도원가는 팔던 시점의 평단가 × 매도수량 · 실현손익은 매도 수수료·세금을 이미 뺀 금액이에요</div>`;
+    }
+  }
+
+  // ── 매도 건별 ──
+  if(tCard){
+    if(!trades.length){ tCard.style.display='none'; }
+    else {
+      tCard.style.display='';
+      const shown = INV_REAL_TRADE_ALL ? trades : trades.slice(0,15);
+      const btn = document.getElementById('inv-real-trade-btn');
+      if(btn) btn.textContent = INV_REAL_TRADE_ALL ? '접기' : `전체 보기 (${trades.length}건)`;
+      tEl.innerHTML = `<div class="inv2-table-wrap"><table class="inv2-tbl">
+        <thead><tr><th>날짜</th><th>종목</th><th>수량</th><th>단가</th><th>매도액</th><th>원가</th><th>실현손익</th><th>수익률</th></tr></thead>
+        <tbody>${shown.map(x=>`<tr>
+          <td>${String(x.date).slice(2)}</td>
+          <td style="text-align:left" title="${x.name}">${x.name}${x.noCost?' <span class="inv2-tag" style="color:var(--red)">원가 없음</span>':''}</td>
+          <td>${x.qty}</td><td>${won(x.price)}</td><td>${won(x.proceeds)}</td><td>${won(x.cost)}</td>
+          <td style="color:${c(x.pnl)};font-weight:700">${wonSigned(x.pnl)}</td>
+          <td style="color:${c(x.pnl)}">${x.pct!==null?`${x.pct>=0?'+':''}${x.pct}%`:'—'}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>${INV_REAL_TRADE_ALL?'':`<div style="font-size:10.5px;color:var(--txt3);margin-top:10px">최근 ${shown.length}건만 보여주고 있어요</div>`}`;
+    }
+  }
 }
 
 // ── [v26] 계좌별 현황 — 평가금액이 있는 계좌 + 원금만 등록된 계좌(연저·IRP 등)까지 ──
@@ -3238,6 +3516,7 @@ function setInvestSub(subName, el){
   try{
     if(subName === 'history')  renderInvestSummary();
     if(subName === 'holdings') renderInvestHoldings();
+    if(subName === 'realized') renderInvestRealized();
     if(subName === 'tx')       renderInvestHistory();
   }catch(err){ console.error(err); }
 }
