@@ -252,6 +252,11 @@ body { padding-bottom:88px; }
 .inv2-hcard-extra{ display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
 .inv2-pill{ font-size:10px; font-weight:700; border-radius:99px; padding:2.5px 8px; background:var(--card2); color:var(--txt2); white-space:nowrap; }
 
+/* [v32] 계좌 필터 칩 — 보유 종목 · 실현손익 공용 */
+.inv2-chips{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
+.inv2-chip{ font-size:11.5px; font-weight:600; padding:5px 11px; border:1px solid #E5E8EB; border-radius:99px; background:#FFF; color:var(--txt3); cursor:pointer; white-space:nowrap; }
+.inv2-chip.on{ border-color:var(--blue); background:var(--blue-bg); color:var(--blue); font-weight:700; }
+
 .inv2-table-wrap{ overflow-x:auto; -webkit-overflow-scrolling:touch; margin:0 -4px; }
 table.inv2-tbl{ width:100%; border-collapse:collapse; font-size:12px; min-width:560px; }
 table.inv2-tbl th{ font-size:10.5px; font-weight:700; color:var(--txt3); text-align:right; padding:7px 8px; border-bottom:1px solid #E5E8EB; white-space:nowrap; cursor:pointer; user-select:none; }
@@ -1232,8 +1237,12 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
             <option value="name">이름순</option>
             <option value="acct">계좌순</option>
           </select>
+          <button class="inv2-mini-btn" onclick="syncHoldingsSheet()" style="border-color:var(--blue);background:var(--blue-bg);color:var(--blue)">시트 수량 맞추기</button>
         </div>
       </div>
+      <div id="inv-hold-sync-status" style="font-size:11px;color:var(--txt3);margin-bottom:10px"></div>
+      <div id="inv-hold-chips"></div>
+      <div id="inv-hold-sub"></div>
       <div id="inv-holdings-list"></div>
       <div id="inv-hold-note" style="font-size:10.5px;color:var(--txt3);margin-top:12px;line-height:1.5"></div>
     </section>
@@ -1247,9 +1256,20 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
 
   <!-- [v31] 실현손익 — 확정된 돈만 모아 보는 화면 -->
   <div id="sub-invest-realized" class="invest-sub-panel" style="display:none">
+    <div id="inv-real-chips"></div>
+
     <section class="card" id="inv-real-sum-card">
-      <div class="card-title"><span>확정 수익 요약</span><span style="font-size:11px;font-weight:400;color:var(--txt3)">팔거나 받아서 이미 손에 들어온 돈</span></div>
+      <div class="card-title" style="align-items:center;gap:8px;flex-wrap:wrap">
+        <span id="inv-real-sum-title">확정 수익 요약</span>
+        <button class="inv2-mini-btn" onclick="exportRealizedSheet()" style="border-color:var(--blue);background:var(--blue-bg);color:var(--blue)">시트로 내보내기</button>
+      </div>
       <div id="inv-real-sum"></div>
+      <div id="inv-real-sum-status" style="font-size:11px;color:var(--txt3);margin-top:8px"></div>
+    </section>
+
+    <section class="card" id="inv-real-acct-card" style="display:none">
+      <div class="card-title"><span>계좌별 실현손익</span><span style="font-size:11px;font-weight:400;color:var(--txt3)">증권사 화면과 대조용 · 줄을 누르면 그 계좌만 필터</span></div>
+      <div id="inv-real-acct"></div>
     </section>
 
     <section class="card" id="inv-real-year-card" style="display:none">
@@ -1265,6 +1285,7 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
             <option value="pnl">실현손익순</option>
             <option value="pct">수익률순</option>
             <option value="div">배당순</option>
+            <option value="acct">계좌순</option>
             <option value="name">이름순</option>
           </select>
         </div>
@@ -2652,13 +2673,13 @@ function loadPfHoldings(cb){
   fetch(url + '?action=pf_holdings')
     .then(r=>r.json())
     .then(d=>{
-      if(d && d.ok && d.data) pfHoldings = d.data.map(pfNormalizeHolding);
+      if(d && d.ok && d.data) { pfHoldings = d.data.map(pfNormalizeHolding); savePfHoldCache(); }
       // [v22 추가] 시트 탭을 못 찾으면 GAS가 이제 실제 탭 이름까지 담아서 에러를 준다.
       //   조용히 넘기지 않고 바로 화면에 띄워서, 편집기·실행 로그 없이도 원인이 보이게 한다.
       else if(d && d.ok===false) showToast('⚠️ 보유종목 못 불러옴: ' + String(d.error||'').slice(0,120));
     })
     .catch(()=>{})
-    .finally(()=>{ if(cb) cb(); });
+    .finally(()=>{ if(cb) cb(); try{ renderAssetOverview(); }catch(e){} });
 }
 
 // [v27] 시트 행 → 앱 거래 객체. 부호를 여기서 한 번에 벗긴다.
@@ -2696,6 +2717,10 @@ function invCalcAmt(){
 // ── 주식 내역 로컬 캐시 ──
 function savePfCache(){ try{ LS.set('gb_pf_cache', JSON.stringify(pfTx)); }catch(e){} }
 function loadPfCache(){ try{ const c=JSON.parse(LS.get('gb_pf_cache')||'null'); if(c && c.length){ pfTx=c; return true; } }catch(e){} return false; }
+// [v33] 보유종목(=현재가)도 캐시한다. 예전엔 pfTx만 캐시해서, 새로고침 직후엔 현재가가 없어
+//   홈 순자산의 투자 손익이 0으로 그려졌다가 동기화 후에 갑자기 튀었다.
+function savePfHoldCache(){ try{ LS.set('gb_pf_hold_cache', JSON.stringify(pfHoldings)); }catch(e){} }
+function loadPfHoldCache(){ try{ const c=JSON.parse(LS.get('gb_pf_hold_cache')||'null'); if(c && c.length){ pfHoldings=c; return true; } }catch(e){} return false; }
 
 // ── 시트에서 주식 거래내역 전체 불러오기 ──
 function loadPfData(silent){
@@ -2892,6 +2917,25 @@ function invHoldSortValue(h, key, totalEval){
   }
 }
 
+// [v32] 계좌 필터 — 보유 종목·실현손익 화면이 같은 선택을 공유한다.
+//   "계좌별로 따로 봐야 계산이 맞는지 검산이 된다"는 요구가 맞다. 전체 합계만 보면
+//   어느 계좌에서 어긋났는지 영원히 안 보인다.
+let INV_ACCT_FILTER = (()=>{ try{ return LS.get('invAcctFilterV1') || ''; }catch(e){ return ''; } })();
+function invSetAcctFilter(acct){
+  INV_ACCT_FILTER = (acct === INV_ACCT_FILTER) ? '' : (acct || '');
+  try{ LS.set('invAcctFilterV1', INV_ACCT_FILTER); }catch(e){}
+  renderInvestHoldings();
+  renderInvestRealized();
+}
+function invAcctChipsHtml(rows, fnName){
+  const seen = [];
+  rows.forEach(r=>{ const a=r.account||''; if(a && seen.indexOf(a)<0) seen.push(a); });
+  seen.sort((a,b)=>a.localeCompare(b,'ko'));
+  if(seen.length<2) return '';
+  const chip = (label, val) => `<div class="inv2-chip${INV_ACCT_FILTER===val?' on':''}" onclick="${fnName}('${String(val).replace(/'/g,"\\'")}')">${label}</div>`;
+  return '<div class="inv2-chips">' + chip('전체','') + seen.map(a=>chip(a,a)).join('') + '</div>';
+}
+
 function renderInvestHoldings(hsParam){
   const card = document.getElementById('inv-holdings-card');
   const el = document.getElementById('inv-holdings-list');
@@ -2908,8 +2952,11 @@ function renderInvestHoldings(hsParam){
   if(b) b.classList.toggle('on', INV_HOLD_VIEW==='table');
 
   const all = (hsParam && hsParam.length ? hsParam.slice() : mergedHoldings());
-  const hs = all.filter(h=>h.qty>0.0001);
+  const allHeld = all.filter(h=>h.qty>0.0001);
+  const hs = INV_ACCT_FILTER ? allHeld.filter(h=>h.account===INV_ACCT_FILTER) : allHeld.slice();
   renderInvestClosed();
+  const chipEl = document.getElementById('inv-hold-chips');
+  if(chipEl) chipEl.innerHTML = invAcctChipsHtml(allHeld, 'invSetAcctFilter');
   if(!hs.length){
     el.innerHTML = '<div style="text-align:center;color:var(--txt3);padding:20px 14px;font-size:13px">보유 중인 종목이 없어요<br><span style="font-size:11.5px">시트 [투자_보유종목] 탭을 확인해 주세요</span></div>';
     return;
@@ -2926,6 +2973,22 @@ function renderInvestHoldings(hsParam){
   el.innerHTML = (INV_HOLD_VIEW==='table')
     ? invHoldingsTableHtml(sorted, totalEval)
     : invHoldingsCardHtml(sorted, totalEval);
+
+  // [v32] 계좌를 고르면 그 계좌만의 합계를 위에 한 줄로 — 계좌별 검산이 여기서 끝나게.
+  const sub = document.getElementById('inv-hold-sub');
+  if(sub){
+    const priced = hs.filter(h=>h.hasPrice);
+    const c0 = priced.reduce((s,h)=>s+h.costBasis,0);
+    const e0 = priced.reduce((s,h)=>s+h.evalAmt,0);
+    const p0 = e0 - c0;
+    const noP = hs.filter(h=>!h.hasPrice);
+    const col = p0>=0 ? 'var(--red)' : 'var(--blue)';
+    sub.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:10px 12px;background:var(--card2);border-radius:12px;margin-bottom:12px;flex-wrap:wrap">
+      <span style="font-size:12px;font-weight:700;color:var(--txt2)">${INV_ACCT_FILTER || '전체 계좌'} · ${hs.length}종목</span>
+      <span style="font-size:12px;color:var(--txt2);font-variant-numeric:tabular-nums">원가 ${won(c0)} → 평가 ${won(e0)} <b style="color:${col}">${wonSigned(p0)}${c0>0?` (${p0>=0?'+':''}${Math.round(p0/c0*1000)/10}%)`:''}</b></span>
+      ${noP.length?`<span style="font-size:11px;color:var(--txt3);width:100%">현재가 미등록 ${noP.length}종목 · 원가 ${won(noP.reduce((s,h)=>s+h.costBasis,0))}은 위 합계에서 제외</span>`:''}
+    </div>`;
+  }
 
   // [v31] 시트 스냅샷과 거래내역이 어긋나면 조용히 넘기지 않고 화면에서 말한다.
   const note = document.getElementById('inv-hold-note');
@@ -3054,18 +3117,31 @@ function invRealTradeToggle(){
 function renderInvestRealized(){
   const sumEl = document.getElementById('inv-real-sum');
   if(!sumEl) return;
+  const aCard = document.getElementById('inv-real-acct-card'), aEl = document.getElementById('inv-real-acct');
   const yCard = document.getElementById('inv-real-year-card'), yEl = document.getElementById('inv-real-year');
   const nCard = document.getElementById('inv-real-name-card'), nEl = document.getElementById('inv-real-name');
   const tCard = document.getElementById('inv-real-trade-card'), tEl = document.getElementById('inv-real-trade');
 
   if(!pfTx.length){
     sumEl.innerHTML = '<div style="text-align:center;color:var(--txt3);padding:18px 0;font-size:13px">거래 내역을 동기화하면 집계돼요</div>';
-    [yCard,nCard,tCard].forEach(c=>{ if(c) c.style.display='none'; });
+    [aCard,yCard,nCard,tCard].forEach(c=>{ if(c) c.style.display='none'; });
     return;
   }
 
-  const t = investIncomeTotals();
-  const trades = investRealizedTrades();
+  const F = INV_ACCT_FILTER;
+  const inF = a => !F || a === F;
+  const allTrades = investRealizedTrades();
+  const trades = allTrades.filter(x=>inF(x.account));
+  const cashTx = pfTx.filter(t=>inF(invCanonAcct(t.account)));
+  const sumT = ty => cashTx.filter(x=>x.type===ty).reduce((a,x)=>a+Math.abs(Number(x.amount)||0),0);
+
+  const realized = trades.reduce((a,x)=>a+x.pnl,0);
+  const dividend = sumT('분배금');
+  const interest = sumT('이자');
+  const usage    = sumT('이용료');
+  const feeTax   = cashTx.reduce((a,x)=>a+(Number(x.fee)||0)+(Number(x.tax)||0),0);
+  const netRealized = realized + dividend + interest - usage;
+
   const c = v => v>=0 ? 'var(--red)' : 'var(--blue)';
   const cell = (label, value, color, sub) => `
     <div class="inv2-income-cell">
@@ -3073,27 +3149,92 @@ function renderInvestRealized(){
       <div class="inv2-income-value"${color?` style="color:${color}"`:''}>${value}</div>
       ${sub?`<div class="inv2-income-sub">${sub}</div>`:''}
     </div>`;
+
+  // 계좌 필터 칩 — 매도·배당이 하나라도 있는 계좌만 띄운다
+  const acctSet = [];
+  allTrades.forEach(x=>{ if(x.account && acctSet.indexOf(x.account)<0) acctSet.push(x.account); });
+  pfTx.forEach(t=>{
+    if(t.type!=='분배금' && t.type!=='이자') return;
+    const a = invCanonAcct(t.account);
+    if(a && acctSet.indexOf(a)<0) acctSet.push(a);
+  });
+  const chipEl = document.getElementById('inv-real-chips');
+  if(chipEl) chipEl.innerHTML = invAcctChipsHtml(acctSet.map(a=>({account:a})), 'invSetAcctFilter');
+  const titleEl = document.getElementById('inv-real-sum-title');
+  if(titleEl) titleEl.textContent = F ? `확정 수익 요약 · ${F}` : '확정 수익 요약';
+
   const soldCost = trades.reduce((a,x)=>a+x.cost,0);
   const soldAmt  = trades.reduce((a,x)=>a+x.proceeds,0);
-  const realPct  = soldCost>0 ? Math.round(t.realized/soldCost*1000)/10 : null;
+  const realPct  = soldCost>0 ? Math.round(realized/soldCost*1000)/10 : null;
   sumEl.innerHTML = `
     <div class="inv2-income-grid">
-      ${cell('실현손익 (매도 확정)', wonSigned(t.realized), c(t.realized), realPct!==null?`매도원가 대비 ${realPct>=0?'+':''}${realPct}%`:'')}
-      ${cell('배당·분배금', won(t.dividend), t.dividend>0?'var(--green)':'', `${pfTx.filter(x=>x.type==='분배금').length}건`)}
-      ${cell('이자', won(t.interest), t.interest>0?'var(--green)':'')}
-      ${cell('계좌 이용료', t.usage>0?'-'+won(t.usage):won(0), t.usage>0?'var(--txt2)':'')}
+      ${cell('실현손익 (매도 확정)', wonSigned(realized), c(realized), realPct!==null?`매도원가 대비 ${realPct>=0?'+':''}${realPct}%`:'')}
+      ${cell('배당·분배금', won(dividend), dividend>0?'var(--green)':'', `${cashTx.filter(x=>x.type==='분배금').length}건`)}
+      ${cell('이자', won(interest), interest>0?'var(--green)':'')}
+      ${cell('계좌 이용료', usage>0?'-'+won(usage):won(0), usage>0?'var(--txt2)':'')}
       ${cell('매도 총액', won(soldAmt), '', `${trades.length}건 · 원가 ${won(soldCost)}`)}
-      ${cell('매매 수수료·세금', won(t.feeTax), '', '실현손익에 이미 반영')}
+      ${cell('매매 수수료·세금', won(feeTax), '', '실현손익에 이미 반영')}
     </div>
     <div class="inv2-income-total">
       <span class="inv2-income-total-l">순확정수익 <span style="font-weight:400;color:var(--txt3);font-size:11px">실현손익+배당+이자−이용료</span></span>
-      <span class="inv2-income-total-r" style="color:${c(t.netRealized)}">${wonSigned(t.netRealized)}</span>
+      <span class="inv2-income-total-r" style="color:${c(netRealized)}">${wonSigned(netRealized)}</span>
     </div>`;
+
+  // ── 계좌별 (필터와 무관하게 항상 전체를 보여준다 — 여기가 계좌 간 검산 자리다) ──
+  const byAcct = {};
+  const getA = k => byAcct[k] || (byAcct[k] = { pnl:0, div:0, interest:0, usage:0, n:0, cost:0, proceeds:0 });
+  allTrades.forEach(x=>{ const a=getA(x.account||'—'); a.pnl+=x.pnl; a.cost+=x.cost; a.proceeds+=x.proceeds; a.n++; });
+  pfTx.forEach(t=>{
+    const k = invCanonAcct(t.account) || '—';
+    const amt = Math.abs(Number(t.amount)||0);
+    if(t.type==='분배금') getA(k).div += amt;
+    else if(t.type==='이자') getA(k).interest += amt;
+    else if(t.type==='이용료') getA(k).usage += amt;
+  });
+  const netA = v => v.pnl + v.div + v.interest - v.usage;
+  const acctRows = Object.keys(byAcct).filter(k=>{ const v=byAcct[k]; return v.n||v.div||v.interest||v.usage; })
+    .sort((a,b)=>netA(byAcct[b])-netA(byAcct[a]));
+  if(aCard){
+    if(!acctRows.length){ aCard.style.display='none'; }
+    else {
+      aCard.style.display='';
+      const T = acctRows.reduce((s,k)=>{ const v=byAcct[k];
+        return { pnl:s.pnl+v.pnl, cost:s.cost+v.cost, proceeds:s.proceeds+v.proceeds, n:s.n+v.n,
+                 div:s.div+v.div, interest:s.interest+v.interest, usage:s.usage+v.usage }; },
+        {pnl:0,cost:0,proceeds:0,n:0,div:0,interest:0,usage:0});
+      aEl.innerHTML = `<div class="inv2-table-wrap"><table class="inv2-tbl">
+        <thead><tr><th>계좌</th><th>매도</th><th>매도액</th><th>매도원가</th><th>실현손익</th><th>수익률</th><th>배당·이자</th><th>이용료</th><th>순확정</th></tr></thead>
+        <tbody>${acctRows.map(k=>{
+          const v = byAcct[k];
+          const pct = v.cost>0 ? Math.round(v.pnl/v.cost*1000)/10 : null;
+          const on = F===k;
+          return `<tr onclick="invSetAcctFilter('${k.replace(/'/g,"\\'")}')" style="cursor:pointer${on?';background:var(--blue-bg)':''}">
+            <td title="${k}">${on?'▸ ':''}${k}</td>
+            <td>${v.n?v.n+'건':'—'}</td>
+            <td>${v.proceeds?won(v.proceeds):'—'}</td>
+            <td>${v.cost?won(v.cost):'—'}</td>
+            <td style="color:${c(v.pnl)};font-weight:700">${v.n?wonSigned(v.pnl):'—'}</td>
+            <td style="color:${c(v.pnl)}">${pct!==null?`${pct>=0?'+':''}${pct}%`:'—'}</td>
+            <td style="color:${(v.div+v.interest)>0?'var(--green)':''}">${(v.div+v.interest)?won(v.div+v.interest):'—'}</td>
+            <td>${v.usage?'-'+won(v.usage):'—'}</td>
+            <td style="font-weight:700;color:${c(netA(v))}">${wonSigned(netA(v))}</td>
+          </tr>`;
+        }).join('')}</tbody>
+        <tfoot><tr><td>합계</td><td>${T.n}건</td><td>${won(T.proceeds)}</td><td>${won(T.cost)}</td>
+          <td style="color:${c(T.pnl)}">${wonSigned(T.pnl)}</td>
+          <td style="color:${c(T.pnl)}">${T.cost>0?`${T.pnl>=0?'+':''}${Math.round(T.pnl/T.cost*1000)/10}%`:'—'}</td>
+          <td style="color:var(--green)">${won(T.div+T.interest)}</td>
+          <td>${T.usage?'-'+won(T.usage):'—'}</td>
+          <td style="color:${c(T.pnl+T.div+T.interest-T.usage)}">${wonSigned(T.pnl+T.div+T.interest-T.usage)}</td></tr></tfoot>
+      </table></div>
+      <div style="font-size:10.5px;color:var(--txt3);margin-top:10px;line-height:1.5">계좌 줄을 누르면 그 계좌만 필터돼요 · 보유 종목 화면도 같이 걸립니다 · 이 표의 합계는 아래 종목별 표 합계와 같아야 하고, 다르면 계좌명이 두 가지로 적혔다는 뜻이에요</div>`;
+    }
+  }
 
   // ── 연도별 ──
   const byYear = {};
   trades.forEach(x=>{ const y=String(x.date).slice(0,4); (byYear[y]=byYear[y]||{pnl:0,n:0,div:0}).pnl+=x.pnl; byYear[y].n++; });
-  pfTx.forEach(x=>{
+  cashTx.forEach(x=>{
     if(x.type!=='분배금' && x.type!=='이자') return;
     const y=String(x.date).slice(0,4); (byYear[y]=byYear[y]||{pnl:0,n:0,div:0}).div+=Math.abs(Number(x.amount)||0);
   });
@@ -3127,7 +3268,7 @@ function renderInvestRealized(){
   });
   let held = [];
   try{ held = computeHoldings(); }catch(e){}
-  held.forEach(h=>{
+  held.filter(h=>inF(h.account)).forEach(h=>{
     const k=h.name+'|'+h.account;
     if(h.dividend>0 || agg[k]){
       const a = agg[k] || (agg[k]={name:h.name, account:h.account, pnl:0, cost:0, proceeds:0, n:0, div:0, held:0});
@@ -3137,6 +3278,7 @@ function renderInvestRealized(){
   const sortKey = (document.getElementById('inv-real-sort')||{}).value || 'pnl';
   const rows = Object.values(agg).sort((a,b)=>{
     if(sortKey==='name') return a.name.localeCompare(b.name,'ko');
+    if(sortKey==='acct') return (a.account||'').localeCompare(b.account||'','ko') || (b.pnl+b.div)-(a.pnl+a.div);
     if(sortKey==='div')  return b.div-a.div;
     if(sortKey==='pct'){
       const pa = a.cost>0?a.pnl/a.cost:-9, pb = b.cost>0?b.pnl/b.cost:-9;
@@ -3183,10 +3325,11 @@ function renderInvestRealized(){
       const btn = document.getElementById('inv-real-trade-btn');
       if(btn) btn.textContent = INV_REAL_TRADE_ALL ? '접기' : `전체 보기 (${trades.length}건)`;
       tEl.innerHTML = `<div class="inv2-table-wrap"><table class="inv2-tbl">
-        <thead><tr><th>날짜</th><th>종목</th><th>수량</th><th>단가</th><th>매도액</th><th>원가</th><th>실현손익</th><th>수익률</th></tr></thead>
+        <thead><tr><th>날짜</th><th>종목</th><th>계좌</th><th>수량</th><th>단가</th><th>매도액</th><th>원가</th><th>실현손익</th><th>수익률</th></tr></thead>
         <tbody>${shown.map(x=>`<tr>
           <td>${String(x.date).slice(2)}</td>
           <td style="text-align:left" title="${x.name}">${x.name}${x.noCost?' <span class="inv2-tag" style="color:var(--red)">원가 없음</span>':''}</td>
+          <td style="text-align:left">${x.account||'—'}</td>
           <td>${x.qty}</td><td>${won(x.price)}</td><td>${won(x.proceeds)}</td><td>${won(x.cost)}</td>
           <td style="color:${c(x.pnl)};font-weight:700">${wonSigned(x.pnl)}</td>
           <td style="color:${c(x.pnl)}">${x.pct!==null?`${x.pct>=0?'+':''}${x.pct}%`:'—'}</td>
@@ -3194,6 +3337,55 @@ function renderInvestRealized(){
       </table></div>${INV_REAL_TRADE_ALL?'':`<div style="font-size:10.5px;color:var(--txt3);margin-top:10px">최근 ${shown.length}건만 보여주고 있어요</div>`}`;
     }
   }
+}
+
+// [v32] 보유종목 시트의 수량·평단가·원가를 거래내역 기준으로 맞춘다.
+//   현재가(G열) 이하 수식은 GAS가 건드리지 않는다 — 시트가 원본이라서.
+//   새로 붙는 종목 행에는 위 행의 수식을 상대참조로 복사해 GOOGLEFINANCE가 자동으로 붙게 한다.
+function syncHoldingsSheet(){
+  const st = document.getElementById('inv-hold-sync-status');
+  const url = getUrl();
+  if(!url){ if(st) st.textContent = '설정에서 Apps Script URL을 먼저 등록해 주세요.'; return; }
+  if(!confirm('시트 [투자_보유종목]의 보유수량·평균단가·투자원금을 거래내역 기준으로 덮어씁니다.\n현재가와 그 오른쪽 계산 수식은 건드리지 않아요.\n\n진행할까요?')) return;
+  if(st) st.textContent = '시트 맞추는 중…';
+  fetch(url, { method:'POST', headers:{'Content-Type':'text/plain'},
+    body: JSON.stringify({ action:'pf_syncHoldings' }) })
+    .then(r=>r.json())
+    .then(d=>{
+      if(!(d && d.ok)){ if(st) st.textContent = '오류: ' + ((d&&d.error)||'Apps Script에 pf_syncHoldings 핸들러가 필요해요 (v14로 갱신 필요)'); return; }
+      const s = d.sync || {c:{}};
+      const cnt = s.counts || {};
+      if(st) st.textContent = `수량 수정 ${cnt.updated||0}건 · 신규 종목 ${cnt.added||0}건 · 0주 처리 ${cnt.zeroed||0}건 — 현재가 다시 불러오는 중…`;
+      setTimeout(()=>loadPfHoldings(()=>{ renderInvestSummary(); renderInvestHoldings();
+        if(st) st.textContent = `시트 갱신 완료 · 수정 ${cnt.updated||0} / 추가 ${cnt.added||0} / 0주 ${cnt.zeroed||0}`; }), 2500);
+    })
+    .catch(e=>{ if(st) st.textContent = '전송 실패: ' + String(e.message||e).slice(0,60); });
+}
+
+// [v32] 실현손익 → 구글시트 [투자_실현손익] 탭으로 내보내기
+function exportRealizedSheet(){
+  const st = document.getElementById('inv-real-sum-status');
+  const url = getUrl();
+  if(!url){ if(st) st.textContent = '설정에서 Apps Script URL을 먼저 등록해 주세요.'; return; }
+  const trades = investRealizedTrades();
+  if(!trades.length){ if(st) st.textContent = '내보낼 매도 내역이 없어요.'; return; }
+  const divRows = pfTx.filter(t=>t.type==='분배금' || t.type==='이자' || t.type==='이용료').map(t=>({
+    date: t.date, account: invCanonAcct(t.account), name: t.name||'', type: t.type,
+    amount: Math.abs(Number(t.amount)||0)
+  }));
+  if(st) st.textContent = '시트에 쓰는 중…';
+  fetch(url, { method:'POST', headers:{'Content-Type':'text/plain'},
+    body: JSON.stringify({ action:'pf_syncRealized',
+      trades: trades.map(x=>({ date:x.date, account:x.account, name:x.name, qty:x.qty, price:x.price,
+                               proceeds:Math.round(x.proceeds), cost:Math.round(x.cost),
+                               pnl:Math.round(x.pnl), pct:x.pct, fee:x.fee, tax:x.tax })),
+      income: divRows }) })
+    .then(r=>r.json())
+    .then(d=>{
+      if(d && d.ok) { if(st) st.textContent = `시트 [투자_실현손익] 갱신 완료 · 매도 ${trades.length}건 · ${new Date().toLocaleTimeString('ko-KR')}`; }
+      else { if(st) st.textContent = '오류: ' + ((d&&d.error)||'Apps Script에 pf_syncRealized 핸들러가 필요해요'); }
+    })
+    .catch(e=>{ if(st) st.textContent = '전송 실패: ' + String(e.message||e).slice(0,60); });
 }
 
 // ── [v26] 계좌별 현황 — 평가금액이 있는 계좌 + 원금만 등록된 계좌(연저·IRP 등)까지 ──
@@ -3236,6 +3428,7 @@ function renderInvestByAccount(hsParam){
         ${a.div12>0 ? `<span class="inv2-row-detail" style="color:var(--green)">1년 배당 ${won(a.div12)}</span>` : ''}
       </div>
       ${a.cashShort ? `<div style="margin-top:7px;font-size:11px;color:var(--warning);line-height:1.5">⚠ 매수액이 입금 기록보다 ${wonNeg(-a.cash)} 많아요 — 가계부나 시트에 납입 기록이 빠졌는지 확인해 주세요</div>` : ''}
+      ${(!a.tracked && invIsLinked(k)) ? `<div style="margin-top:7px;font-size:11px;color:var(--txt3);line-height:1.5">이 계좌엔 매수·매도 기록이 하나도 없어요 — 그냥 저축 통장이면 <a href="javascript:void(0)" onclick="event.stopPropagation();invToggleLink('${kEsc}')" style="color:var(--blue);font-weight:700">투자에서 빼기</a></div>` : ''}
       <div class="inv2-weight-row">
         <div class="inv2-weight-track"><div class="inv2-weight-fill" style="width:${weight}%"></div></div>
         <span class="inv2-weight-pct">${weight}%</span>
@@ -4195,7 +4388,17 @@ function renderAssetOverview(){
     .filter(x=>Math.abs(x.val)>0).sort((a,b)=>a.order-b.order);
   const longdebt = sumG('longdebt');
   const total = groups.reduce((s,x)=>s+x.val,0);   // 장기부채 제외 총자산 (카드미결제는 음수로 반영)
-  const netWorth = total + longdebt;                 // 장기부채 포함 순자산
+
+  // [v33] 투자 계좌 잔고는 '가계부에서 넣은 돈(원금)'일 뿐이라, 그 안에서 깎였는지 불었는지가
+  //   순자산에 전혀 안 나타났다. 원금만 잡으면 평가손실이 통째로 숨는다 — 실제로 지금
+  //   보유 종목 평가액은 매입원가보다 적은데도 순자산은 멀쩡해 보이는 상태였다.
+  //   투자 시트가 아는 만큼(평가손익 + 실현손익 + 배당·이자 − 이용료)을 한 줄로 얹는다.
+  //   계좌 잔고 = 순납입금이므로 이 값만 더하면 이중 계상이 안 생긴다(계좌명 매칭도 불필요).
+  let invT = null;
+  try{ if((typeof pfTx!=='undefined') && pfTx.length) invT = investIncomeTotals(); }catch(e){ invT = null; }
+  const invGain = invT ? Math.round(invT.total) : 0;
+
+  const netWorth = total + longdebt + invGain;        // 장기부채 포함 순자산
 
   heroEl.textContent = (netWorth<0?'-':'') + Math.abs(netWorth).toLocaleString('ko-KR') + '원';
   const sbNetEl = document.getElementById('sb-net-worth');
@@ -4228,11 +4431,30 @@ function renderAssetOverview(){
       </div>${detail}`;
     }).join('')
       + (longdebt!==0?`<div class="item-row"><div class="item-left"><span class="item-name" style="color:var(--red)">🏦 장기부채</span></div><div class="item-right" style="color:var(--red)">${longdebt<0?'-':''}${Math.abs(longdebt).toLocaleString('ko-KR')}원</div></div>`:'')
+      + (invT?`<div class="item-row" ${ASSET_GRP_OPEN['invgain']?'':''} onclick="assetGrpToggle('invgain')" style="cursor:pointer">
+          <div class="item-left"><span class="item-name" style="${invGain<0?'color:var(--red)':''}">📈 투자 손익 <span style="font-size:10px;color:var(--blue)">${ASSET_GRP_OPEN['invgain']?'▾':'▸'}</span></span></div>
+          <div class="item-right" style="${invGain<0?'color:var(--red)':''}">${invGain<0?'-':'+'}${Math.abs(invGain).toLocaleString('ko-KR')}원</div>
+        </div>
+        <div id="assetgrp_invgain" style="display:${ASSET_GRP_OPEN['invgain']?'block':'none'};margin:2px 0 4px">
+          ${[['평가손익 (미실현)', Math.round(invT.unrealized)],
+             ['실현손익 (매도 확정)', Math.round(invT.realized)],
+             ['배당·분배금', Math.round(invT.dividend)],
+             ['이자', Math.round(invT.interest)],
+             ['계좌 이용료', -Math.round(invT.usage)]]
+            .filter(r=>r[1]!==0).map(r=>`
+            <div style="display:flex;justify-content:space-between;padding:5px 0 5px 14px;border-top:1px solid #F2F4F6;font-size:12px">
+              <span style="color:var(--txt2)">${r[0]}</span>
+              <span style="color:${r[1]<0?'var(--red)':'var(--txt2)'}">${r[1]<0?'-':'+'}${Math.abs(r[1]).toLocaleString('ko-KR')}원</span>
+            </div>`).join('')}
+        </div>`:'')
       + `<div class="item-row" style="border-top:1px solid #E5E8EB;margin-top:4px">
           <div class="item-left"><span class="item-name" style="font-weight:700">순자산 (장기부채 포함)</span></div>
           <div class="item-right" style="font-weight:700;color:${netWorth>=0?'var(--blue)':'var(--red)'}">${netWorth<0?'-':''}${Math.abs(netWorth).toLocaleString('ko-KR')}원</div>
         </div>
-        <div style="font-size:11px;color:var(--txt3);margin-top:8px;line-height:1.5">* 시트 계좌 잔고(초기잔고+거래내역) 기준 · 지금 이 순간의 잔고 · 투자 계좌는 <b>입금 원금 기준</b>으로 잡혀있어 실제 평가손익은 반영되지 않아요 (증권사 평가금액 스냅샷 기능은 추후 추가 예정) · 그룹명을 누르면 계좌별 세부 잔고가 펼쳐져요</div>`;
+        <div style="font-size:11px;color:var(--txt3);margin-top:8px;line-height:1.5">* 시트 계좌 잔고(초기잔고+거래내역) 기준 · 지금 이 순간의 잔고 · 그룹명을 누르면 계좌별 세부 잔고가 펼쳐져요<br>${
+          invT ? `* 투자 계좌 잔고는 <b>넣은 돈(원금)</b>만 잡혀요. 그 안에서 깎였는지 불었는지는 <b>투자 손익</b> 줄이 따로 얹습니다 — 배당을 가계부에도 수입으로 적고 계시면 그만큼 두 번 세지니 확인해 주세요`
+                : `* 투자 계좌는 <b>입금 원금 기준</b>이에요 — 투자 탭을 한 번 열어 거래내역을 동기화하면 평가손익까지 순자산에 반영됩니다`
+        }</div>`;
   }
 
   // 자산배분 도넛 (부채 그룹 제외, 양수 자산 그룹 기준 비중)
@@ -4429,7 +4651,7 @@ function renderNetWorthTrend(){
   const pick = series.find(d=>d.ym===window.NW_TREND_SEL) || series[series.length-1];
 
   el.innerHTML = `
-    <div style="font-size:10px;color:var(--txt3);margin-bottom:6px">막대를 누르면 그 달 순자산이 아래 표시돼요 · 세로축은 0이 아닌 최근 변동폭 구간이에요</div>
+    <div style="font-size:10px;color:var(--txt3);margin-bottom:6px">막대를 누르면 그 달 순자산이 아래 표시돼요 · 세로축은 0이 아닌 최근 변동폭 구간이에요 · 과거 평가금액 이력이 없어 이 차트는 <b>투자 손익을 뺀 원금 기준</b>이라, 위 순자산 금액과는 투자 손익만큼 차이가 납니다</div>
     <div style="display:flex;align-items:flex-end;gap:3px;height:${BH}px;margin-bottom:4px">${barsHtml}</div>
     <div style="display:flex;gap:3px;margin-bottom:8px">${labelsHtml}</div>
     <div style="padding:9px 12px;background:var(--card2);border-radius:10px;font-size:12.5px;color:var(--txt2);display:flex;justify-content:space-between;margin-bottom:10px">
@@ -13104,6 +13326,7 @@ window.onload = () => {
     // 캐시가 있으면 즉시 렌더 → 백그라운드에서 시트 동기화로 갱신
     const cached = loadStateCache();
     loadPfCache();
+    loadPfHoldCache();
     if(cached) showToast('저장된 데이터로 표시 중 · 동기화 중...');
     fetchFromSheet(true);
     loadPfData(true);
