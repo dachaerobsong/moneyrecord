@@ -1344,15 +1344,15 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
     </div>
   </div>
   <!-- ══ 앱 설정: 이 앱을 굴리는 값들을 한 곳에서 ══ -->
-  <div class="card cfg-fold" id="cfg-cat-card">
+  <div class="card cfg-fold folded" id="cfg-cat-card">
     <div class="card-title cfg-fold-head" onclick="cfgToggleFold('cfg-cat-card')">🗂️ 카테고리 · 예산 <span class="cfg-fold-arrow">▾</span></div>
     <div id="cfg-cat-body"></div>
   </div>
-  <div class="card cfg-fold" id="cfg-acct-card">
+  <div class="card cfg-fold folded" id="cfg-acct-card">
     <div class="card-title cfg-fold-head" onclick="cfgToggleFold('cfg-acct-card')">🏦 계좌 · 현재 잔액 <span class="cfg-fold-arrow">▾</span></div>
     <div id="cfg-acct-body"></div>
   </div>
-  <div class="card cfg-fold" id="cfg-card-card">
+  <div class="card cfg-fold folded" id="cfg-card-card">
     <div class="card-title cfg-fold-head" onclick="cfgToggleFold('cfg-card-card')">💳 카드 <span class="cfg-fold-arrow">▾</span></div>
     <div id="cfg-card-body"></div>
   </div>
@@ -1380,7 +1380,7 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
     <div class="card-title cfg-fold-head" onclick="cfgToggleFold('cfg-tpl-card')">📋 반복 거래 템플릿 <span class="cfg-fold-arrow">▾</span></div>
     <div id="cfg-tpl-body"></div>
   </div>
-  <div class="card cfg-fold" id="cfg-report-card">
+  <div class="card cfg-fold folded" id="cfg-report-card">
     <div class="card-title cfg-fold-head" onclick="cfgToggleFold('cfg-report-card')">📤 리포트 시트로 내보내기 <span class="cfg-fold-arrow">▾</span></div>
     <div id="cfg-report-body"></div>
   </div>
@@ -1388,7 +1388,7 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
     <div class="card-title cfg-fold-head" onclick="cfgToggleFold('cfg-raw-card')">🎯 목적 통장 별도 관리 <span class="cfg-fold-arrow">▾</span></div>
     <div id="cfg-raw-body"></div>
   </div>
-  <div class="card cfg-fold" id="cfg-misc-card">
+  <div class="card cfg-fold folded" id="cfg-misc-card">
     <div class="card-title cfg-fold-head" onclick="cfgToggleFold('cfg-misc-card')">⚙️ 기본값 <span class="cfg-fold-arrow">▾</span></div>
     <div id="cfg-misc-body"></div>
   </div>
@@ -7690,7 +7690,15 @@ function exportReportToSheet(){
   catch(e){ if(st) st.textContent = '집계 실패: '+e.message; return; }
   fetch(url, { method:'POST', headers:{'Content-Type':'text/plain'},
     body: JSON.stringify(Object.assign({ action:'syncReport' }, payload)) })
-    .then(()=>{ if(st) st.textContent = `시트에 [리포트_${year}] 탭을 만들었어요 · ${new Date().toLocaleTimeString('ko-KR')}`; })
+    // [v42 수정] 예전엔 응답 내용을 읽지 않고 fetch가 끝나기만 하면 무조건 "만들었어요"를
+    //   띄웠다. 그래서 Apps Script가 도중에 에러를 던져도(시트는 이미 만들어진 뒤라
+    //   탭만 생기고 내용은 비게 됨) 화면에는 성공 메시지만 보였다. 이제 응답을 파싱해서
+    //   ok가 아니면 실제 에러를 그대로 보여준다 — exportBudgetSheet와 같은 방식.
+    .then(r=>r.json())
+    .then(d=>{
+      if(d && d.ok) { if(st) st.textContent = `시트에 [리포트_${year}] 탭을 만들었어요 · ${new Date().toLocaleTimeString('ko-KR')}`; }
+      else { if(st) st.textContent = '오류: '+((d&&d.error)||'알 수 없는 오류 (Apps Script에 syncReport 핸들러가 필요합니다)'); }
+    })
     .catch(e=>{ if(st) st.textContent = '저장 실패: '+e.message; });
 }
 
@@ -8777,7 +8785,11 @@ function txGroupedDetailHtml(major, txs, idPrefix){
     const items = groups[sn];
     const subTotal = items.reduce((s,t)=>s+(Number(t.amount)||0),0);
     const gid = idPrefix + '_' + gi;
-    const subOpen = TX_GROUP_OPEN[gid] === true; // [v8 수정] 기본 닫힘 — 필요할 때만 열어보는 쪽이 낫다고 하심
+    // [v42 수정] 기본 열림으로 되돌림 — 카테고리마다 열림/닫힘이 들쭉날쭉해 보이던 원인은
+    //   gid가 월 구분 없이 카테고리·순번으로만 정해져, 예전에 어느 달에서 한 번 열어본
+    //   소분류는 다른 달에서도 계속 열린 채로 보이던 상태 유지 버그였다. 이제 기본을
+    //   '열림'으로 통일하고, 사용자가 접은 것만 명시적으로 닫힌 상태로 남긴다.
+    const subOpen = TX_GROUP_OPEN[gid] !== false;
     const itemRows = items.map(t=>`<div style="display:flex;align-items:center;gap:6px;padding:3px 0 3px 26px">
         <span style="flex:none;font-size:9.5px;color:var(--txt3);width:24px">${parseInt(String(t.date).slice(8,10))}일</span>
         <span style="flex:1;min-width:0;font-size:11.5px;color:var(--txt2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.memo||sn}</span>
@@ -8795,7 +8807,8 @@ function txGroupedDetailHtml(major, txs, idPrefix){
   return tagNote + rows;
 }
 function txGroupToggle(gid){
-  TX_GROUP_OPEN[gid] = !(TX_GROUP_OPEN[gid] === true);
+  const cur = TX_GROUP_OPEN[gid] !== false; // 기본값이 '열림'이라 부재중일 땐 true로 본다
+  TX_GROUP_OPEN[gid] = !cur;
   if(typeof TX_GROUP_RERENDER === 'function') TX_GROUP_RERENDER();
 }
 let TX_GROUP_RERENDER = null; // 클릭 직전에 각 렌더 함수가 자기 자신을 재호출하도록 등록해둔다
@@ -9010,7 +9023,7 @@ function budCatRowHtml(c){
       .slice().sort((a,b)=>String(b.date).localeCompare(String(a.date)));
     // [v7] 소분류 그룹핑은 이제 이 함수 하나뿐이다 — txGroupedDetailHtml
     TX_GROUP_RERENDER = renderBudgetHome; // 소분류 접기/펼치기 후 다시 그릴 함수
-    const idPrefix = 'budsub_' + key.replace(/\s+/g,'_');
+    const idPrefix = 'budsub_' + BUD_MONTH + '_' + key.replace(/\s+/g,'_');
     // [수정] 항목이 많은 카테고리(문화생활·기타)는 3줄짜리 박스에 다 안 들어가 스크롤이
     //   너무 빡빡했다. 대분류별로 평소 항목 수가 다르니 박스 높이도 다르게 준다.
     // [v41] 카테고리 이름으로 높이를 정하던 걸 항목 수 기준으로 바꿨다.
@@ -11969,7 +11982,7 @@ function rptShowDrill(kind, key, ym, label){
   // [v7] 소분류 그룹핑은 이제 txGroupedDetailHtml 하나뿐이다. 수입/저축처럼 소분류가
   //   얼마 없는 경우엔 그냥 나열해도 충분해서 지출(kind==='expense')일 때만 그룹핑한다.
   const rows = (kind==='expense' && tx.length)
-    ? txGroupedDetailHtml(key, tx, 'rptdrillsub')
+    ? txGroupedDetailHtml(key, tx, 'rptdrillsub_'+ym+'_'+key.replace(/\s+/g,'_'))
     : (tx.length ? tx.map(t=>`<div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-top:1px solid #F2F4F6">
       <span style="flex:none;font-size:10px;color:var(--txt3);width:26px">${parseInt(String(t.date).slice(8,10))}일</span>
       <span style="flex:1;min-width:0;font-size:12px;color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.memo||t.category||''}${t.category?` <span style="font-size:10px;color:var(--txt3)">· ${t.category}</span>`:''}</span>
@@ -12210,7 +12223,8 @@ function renderRptInsight(){
 // ══════════════════════════════════════════════════════════════════
 let SPIKE_OPEN = {};
 function spikeToggle(key){
-  SPIKE_OPEN[key] = !SPIKE_OPEN[key];
+  const cur = SPIKE_OPEN[key] !== false; // 기본값이 '열림'이라 부재중일 땐 true로 본다
+  SPIKE_OPEN[key] = !cur;
   renderOverspendTeaser();
 }
 // ── "왜 이렇게 됐나"의 첫 줄 — 히어로 칩만 봐선 이유를 알 수 없는 항목(대표적으로 수입)에
@@ -12275,7 +12289,7 @@ function renderOverspendTeaser(){
     if(!rs.length) return '';
     const sumOver = rs.reduce((s,r)=>s+Math.max(0,r.overBud),0);
     const body = rs.map(r=>{
-      const open = !!SPIKE_OPEN[r.key];
+      const open = SPIKE_OPEN[r.key] !== false; // [v42] 기본 열림 — 카테고리마다 항상 세부내역이 보이게
       const dotC = budDotColor(r.pct);
       const tags = [];
       if(r.overBud>0) tags.push(`<span style="font-size:10px;font-weight:700;color:var(--red)">예산 +${manW(r.overBud)}</span>`);
@@ -12285,7 +12299,7 @@ function renderOverspendTeaser(){
         TX_GROUP_RERENDER = renderOverspendReason;
         const txs = mtx.filter(outCatPred(r.major)).sort((a,b)=>String(b.date).localeCompare(String(a.date)));
         detail = `<div style="max-height:150px;overflow-y:auto;-webkit-overflow-scrolling:touch;margin:2px 0 6px">
-          ${txGroupedDetailHtml(r.major, txs, 'spike_'+r.key)}
+          ${txGroupedDetailHtml(r.major, txs, 'spike_'+ym+'_'+r.key)}
         </div>
         <div style="padding:0 0 6px 22px">${typeof memoInputHtml==='function'?memoInputHtml(r.major,''):''}</div>`;
       }
@@ -12410,7 +12424,7 @@ function moCatDrillInnerHtml(key, ym){
   const bud = budgetByKey[key]||0;
   gbMemoLoad();
   const catMemo = GB_MEMO[ym+'|'+key]||'';
-  const rows = txGroupedDetailHtml(key, tx, 'motoggle_'+key.replace(/\s+/g,'_'));
+  const rows = txGroupedDetailHtml(key, tx, 'motoggle_'+ym+'_'+key.replace(/\s+/g,'_'));
   return `<div style="margin-bottom:10px">
       <div style="font-size:11px;color:var(--txt3);margin-bottom:4px">📝 이 달 메모 <span style="font-weight:400">(예산 상세·카테고리별 브리핑과 같은 메모예요)</span></div>
       <input value="${String(catMemo).replace(/"/g,'&quot;')}" placeholder="왜 이랬는지 메모"
