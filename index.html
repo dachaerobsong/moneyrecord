@@ -7781,7 +7781,9 @@ function rawFilterTx(p){
 }
 
 function rawExportRun(i){
-  const st = document.getElementById('cfg-raw-status');
+  // [v49] 프리셋별 상태 칸(cfg-raw-status-i)을 쓴다. 옛 공용 id가 아직 남아있는
+  //   화면(캐시 등)에서도 최소한 뭔가는 뜨도록 뒤에 공용 id로 한 번 더 시도한다.
+  const st = document.getElementById('cfg-raw-status-' + i) || document.getElementById('cfg-raw-status');
   // [v48] 전체를 try/catch로 감쌌다. 예전엔 이 함수 안에서 뭔가 예외(오타·undefined
   //   참조 등)가 터지면 브라우저 콘솔에만 빨간 글씨가 뜨고, 화면(상태 문구)은 아무것도
   //   안 바뀌어서 "버튼 눌러도 반응 없음"으로 보였다 — 정작 원인은 콘솔을 열어야만
@@ -7854,8 +7856,16 @@ function rawExportRun(i){
         //   "그 뒤로 몇 건 늘었는지"를 화면에서 알려준다.
         p.lastExport = { at: new Date().toISOString(), n: list.length };
         try{ cfgSave(); }catch(e){}
-        if(st) st.textContent = `[${tab}] 탭에 ${list.length}건 반영했어요${detail}${sumTab}`;
+        // [v49 수정] 진짜 원인이 여기 있었다. 예전엔 st.textContent로 성공 문구를 찍은
+        //   "바로 다음 줄"에서 renderCfgRawExport()를 불러 카드 전체를 다시 그렸다.
+        //   그런데 그 함수는 el.innerHTML = html로 카드 DOM을 통째로 새로 만들기 때문에,
+        //   방금 문구를 넣은 그 상태칸 DOM 자체가 같은 동기 실행 안에서 바로 다른 빈 칸으로
+        //   교체돼 버렸다. 브라우저가 화면을 다시 그리기도 전에 지워지니, 성공해도 사용자는
+        //   그 문구를 한 번도 볼 수 없었다 — "시트로 보내면 아무 반응 없음" 보고의 실제 범인.
+        //   순서를 뒤집어 먼저 다시 그리고, 그 뒤에 "새로 생긴" 상태칸을 다시 찾아 문구를 쓴다.
         try{ renderCfgRawExport(); }catch(e){}
+        const st2 = document.getElementById('cfg-raw-status-' + i) || document.getElementById('cfg-raw-status');
+        if(st2) st2.textContent = `[${tab}] 탭에 ${list.length}건 반영했어요${detail}${sumTab}`;
       })
       .catch(e=>{ if(st) st.textContent = '전송 실패: '+e.message; });
   }catch(err){
@@ -7987,6 +7997,13 @@ function renderCfgRawExport(){
         <button onclick="rawExportRun(${i})"
           style="flex:none;padding:8px 16px;background:${ready?'var(--blue)':'var(--card2)'};color:${ready?'#fff':'var(--txt3)'};border:none;border-radius:10px;font-size:12.5px;font-weight:700;cursor:pointer">시트로 보내기</button>
       </div>
+      <!-- [v49] 예전엔 상태 문구(cfg-raw-status)가 프리셋마다 따로 안 두고, 카드 맨 아래
+           "+ 목적 통장 추가" 버튼 밑에 딱 하나만 있었다. 프리셋이 2개 이상이면, 위쪽
+           프리셋(예: 덕질)의 버튼을 눌러도 결과 문구는 맨 아래 다른 프리셋(비상금) 카드
+           밑에 뜬다 — 화면을 스크롤해서 거기까지 안 내려보면 "눌러도 반응 없음"으로
+           보인다. 이게 계속 보고된 "반응 없음"의 진짜 원인이었을 가능성이 크다. 이제
+           프리셋마다 자기 버튼 바로 밑에 자기만의 상태 문구를 둔다. -->
+      <div id="cfg-raw-status-${i}" style="font-size:11.5px;color:var(--txt3);text-align:right;margin-top:6px;min-height:14px"></div>
     </div>`;
   });
 
