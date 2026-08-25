@@ -7749,8 +7749,31 @@ function renderCfgReport(){
 //  탭을 덮어쓰지 않고 거래 ID 기준으로 새 줄만 덧붙이므로,
 //  시트에서 J열 이후에 직접 적은 내용(행사 태그 등)은 그대로 남는다.
 // ══════════════════════════════════════════════════════════════════
+// [v51 추가] "Thu Jan 01 2026 00:00:00 GMT+0900 (한국 표준시)" 처럼 Date.toString() 꼴로
+//   굳어버린 값을 다시 "2026-01"로 되돌린다. code.gs(getConfig)는 이미 고쳤지만, 이 기기
+//   localStorage에 예전에 그 망가진 문자열이 이미 저장돼 있으면 — 그리고 이 기기가 dirty
+//   상태라 시트에서 새로 안 받아오면 — 로컬 값을 영영 그대로 쓰게 된다. 만날 때마다
+//   여기서 감지해서 고친다.
+function rawNormYm(v){
+  const s = String(v==null?'':v).trim();
+  if(!s) return '';
+  if(/^[A-Za-z]{3}\s[A-Za-z]{3}\s\d{1,2}\s\d{4}/.test(s)){
+    const d = new Date(s);
+    if(!isNaN(d.getTime())) return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+  }
+  return s;
+}
 function rawPresets(){
   if(!Array.isArray(CFG.rawExports)) CFG.rawExports = [];
+  // [v51] 만날 때마다 from·to를 검사해서, 망가진 값이 있으면 그 자리에서 고쳐 저장한다.
+  let healed = false;
+  CFG.rawExports.forEach(p=>{
+    if(!p) return;
+    const f1 = rawNormYm(p.from), f2 = rawNormYm(p.to);
+    if(f1 !== p.from){ p.from = f1; healed = true; }
+    if(f2 !== p.to){ p.to = f2; healed = true; }
+  });
+  if(healed){ try{ cfgSave(); }catch(e){} }
   return CFG.rawExports;
 }
 // [v34] 예전엔 cfgSave()만 불러서 이 기기 localStorage에만 남았다. 그래서 목적통장 설정이
@@ -7981,7 +8004,7 @@ function renderCfgRawExport(){
     <!-- [v49] 새 파일이 실제로 반영됐는지 눈으로 바로 확인하려고 버전 표시를 심어둔다.
          이 글자가 화면에 안 보이면 코드 문제가 아니라 옛 파일이 계속 서빙되고 있다는
          뜻이니, 배포/캐시 쪽을 봐야 한다. (확인되면 다음에 지워도 됨) -->
-    <span style="color:var(--txt3);opacity:.6">— 코드 버전 표시: v50</span>
+    <span style="color:var(--txt3);opacity:.6">— 코드 버전 표시: v51</span>
   </div>`;
 
   if(!list.length){
