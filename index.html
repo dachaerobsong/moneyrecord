@@ -7688,6 +7688,14 @@ function exportReportToSheet(){
   let payload;
   try{ payload = buildReportRows(year); }
   catch(e){ if(st) st.textContent = '집계 실패: '+e.message; return; }
+  // [v43 추가] "성공했다는데 시트는 비어있다"는 문제를 다음에 스스로 진단할 수 있게,
+  //   앱이 실제로 몇 행을 계산해서 보냈는지 먼저 확인한다. 여기서 0행이면 앱에
+  //   불러온 거래 자체가 없다는 뜻이니 시트 응답과 상관없이 바로 알려준다.
+  const nRows = (payload.rows||[]).length;
+  if(!nRows){
+    if(st) st.textContent = `⚠️ 앱에 ${year}년 거래 내역이 없어서 보낼 데이터가 없어요. 위쪽 "↺ 시트 불러오기"로 먼저 동기화한 뒤 다시 시도해 주세요.`;
+    return;
+  }
   fetch(url, { method:'POST', headers:{'Content-Type':'text/plain'},
     body: JSON.stringify(Object.assign({ action:'syncReport' }, payload)) })
     // [v42 수정] 예전엔 응답 내용을 읽지 않고 fetch가 끝나기만 하면 무조건 "만들었어요"를
@@ -7696,7 +7704,10 @@ function exportReportToSheet(){
     //   ok가 아니면 실제 에러를 그대로 보여준다 — exportBudgetSheet와 같은 방식.
     .then(r=>r.json())
     .then(d=>{
-      if(d && d.ok) { if(st) st.textContent = `시트에 [리포트_${year}] 탭을 만들었어요 · ${new Date().toLocaleTimeString('ko-KR')}`; }
+      // [v43] ok:true라도 실제로 몇 행을 보냈는지 같이 보여준다. 그런데도 시트가 비어
+      //   있다면 — 앱은 정상 계산해서 보냈는데 시트에 안 남은 것이니 원인은 100%
+      //   Apps Script 쪽(구버전이 배포돼 있거나, 배포를 새로 안 한 상태)이라고 특정할 수 있다.
+      if(d && d.ok) { if(st) st.textContent = `시트에 [리포트_${year}] 탭을 만들었어요 (${nRows}행 계산해서 보냄) · ${new Date().toLocaleTimeString('ko-KR')}`; }
       else { if(st) st.textContent = '오류: '+((d&&d.error)||'알 수 없는 오류 (Apps Script에 syncReport 핸들러가 필요합니다)'); }
     })
     .catch(e=>{ if(st) st.textContent = '저장 실패: '+e.message; });
