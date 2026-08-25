@@ -7781,76 +7781,88 @@ function rawFilterTx(p){
 }
 
 function rawExportRun(i){
-  const p = rawPresets()[i]; if(!p) return;
   const st = document.getElementById('cfg-raw-status');
-  const url = getUrl();
-  if(!url){ if(st) st.textContent = '시트 연동 후 사용할 수 있어요.'; return; }
-  const tab = String(p.tab||'').trim();
-  if(!tab){ if(st) st.textContent = '탭 이름을 먼저 적어주세요.'; return; }
-  const list = rawFilterTx(p);
-  if(!list.length){ if(st) st.textContent = '조건에 맞는 내역이 없어요.'; return; }
+  // [v48] 전체를 try/catch로 감쌌다. 예전엔 이 함수 안에서 뭔가 예외(오타·undefined
+  //   참조 등)가 터지면 브라우저 콘솔에만 빨간 글씨가 뜨고, 화면(상태 문구)은 아무것도
+  //   안 바뀌어서 "버튼 눌러도 반응 없음"으로 보였다 — 정작 원인은 콘솔을 열어야만
+  //   보였다. 이제 무슨 에러가 나든 상태 문구에 그대로 찍어서, 개발자 도구 없이도
+  //   화면만 보고(또는 캡처해서) 바로 원인을 알 수 있게 한다.
+  try{
+    const p = rawPresets()[i];
+    if(!p){ if(st) st.textContent = '(오류) 이 프리셋을 못 찾았어요 — 화면을 새로고침한 뒤 다시 눌러주세요.'; return; }
+    const url = getUrl();
+    if(!url){ if(st) st.textContent = '시트 연동 후 사용할 수 있어요.'; return; }
+    const tab = String(p.tab||'').trim();
+    if(!tab){ if(st) st.textContent = '탭 이름을 먼저 적어주세요.'; return; }
+    const list = rawFilterTx(p);
+    if(!list.length){ if(st) st.textContent = '조건에 맞는 내역이 없어요.'; return; }
 
-  const acc  = (p.accounts||[]).map(x=>String(x).trim()).filter(Boolean);
-  const debt = (typeof GRP_DEBT!=='undefined' ? GRP_DEBT : []);
+    const acc  = (p.accounts||[]).map(x=>String(x).trim()).filter(Boolean);
+    const debt = (typeof GRP_DEBT!=='undefined' ? GRP_DEBT : []);
 
-  // 부호 통일 — 나가는 돈은 음수, 들어오는 돈은 양수. 그래야 시트에서 그냥 더하면 상계된다.
-  // 구분 열 — 통장에서 직접 나갔는지 카드로 썼는지를 나눠야 통장 잔액과 대조가 된다.
-  const rows = list.map(t=>{
-    const amt = Number(t.amount)||0;
-    const inA = String(t.inAcct||'').trim(), outA = String(t.outAcct||t.account||'').trim();
-    let sign = 1, kind = '기타';
-    if(t.type==='지출'){
-      sign = -1;
-      kind = acc.indexOf(outA)>=0 ? '통장' : (debt.indexOf(outA)>=0 ? '카드' : '기타');
-    } else if(t.type==='수입'){
-      sign = 1; kind = '수입';
-    } else {
-      if(acc.indexOf(inA)>=0){ sign = 1; kind = '적립'; }
-      else if(acc.indexOf(outA)>=0){ sign = -1; kind = '출금'; }
-      else { sign = 1; kind = '기타'; }
-    }
-    return [ String(t.id||''), t.date||'', t.type||'', t.major||'', t.category||t.sub||'',
-             t.memo||'', sign*amt, (outA||inA), kind ];
-  });
-
-  // 통장 실잔액 — 장부 잔액과 얼마나 벌어졌는지 보려고 같이 보낸다(카드로 쓴 만큼 차이가 난다)
-  let acctBal = 0;
-  try{ const f = calcBalances(); acc.forEach(k=>{ acctBal += f(k); }); }catch(e){}
-
-  // [v38] 예전엔 응답을 안 보고 무조건 "반영했어요"를 찍었다. 그래서 Apps Script가
-  //   '알 수 없는 요청: syncRawExport'로 거절해도(배포본이 옛 버전이면 그렇게 된다)
-  //   화면은 성공이라고 말하고 시트엔 아무것도 안 생겼다 — 기능이 없는 것처럼 보였다.
-  if(st) st.textContent = `${list.length}건 보내는 중…`;
-  fetch(url, { method:'POST', headers:{'Content-Type':'text/plain'},
-    body: JSON.stringify({ action:'syncRawExport', tab:tab, rows:rows,
-                           accounts:acc, acctBal:Math.round(acctBal) }) })
-    .then(r=>r.json())
-    .then(d=>{
-      if(!d || d.ok !== true){
-        const msg = String((d && d.error) || '알 수 없는 오류');
-        if(/알 수 없는 요청/.test(msg)){
-          if(st) st.innerHTML = '⚠️ 시트 쪽 Apps Script가 이 기능을 모르고 있어요.<br>' +
-            'Apps Script 편집기에서 최신 코드로 바꾼 뒤 <b>새 버전으로 배포</b>해 주세요.';
-        } else if(st){
-          st.textContent = '시트가 거절했어요: ' + msg;
-        }
-        return;
+    // 부호 통일 — 나가는 돈은 음수, 들어오는 돈은 양수. 그래야 시트에서 그냥 더하면 상계된다.
+    // 구분 열 — 통장에서 직접 나갔는지 카드로 썼는지를 나눠야 통장 잔액과 대조가 된다.
+    const rows = list.map(t=>{
+      const amt = Number(t.amount)||0;
+      const inA = String(t.inAcct||'').trim(), outA = String(t.outAcct||t.account||'').trim();
+      let sign = 1, kind = '기타';
+      if(t.type==='지출'){
+        sign = -1;
+        kind = acc.indexOf(outA)>=0 ? '통장' : (debt.indexOf(outA)>=0 ? '카드' : '기타');
+      } else if(t.type==='수입'){
+        sign = 1; kind = '수입';
+      } else {
+        if(acc.indexOf(inA)>=0){ sign = 1; kind = '적립'; }
+        else if(acc.indexOf(outA)>=0){ sign = -1; kind = '출금'; }
+        else { sign = 1; kind = '기타'; }
       }
-      const r = d.raw || {};
-      // [v46] 이제 시트가 삭제도 반영하므로(더는 조건에 안 맞거나 앱에서 지운 거래는
-      //   줄 자체를 지운다), 몇 줄이 지워졌는지도 같이 보여준다 — 안 그러면
-      //   "눌렀는데 아무것도 안 바뀐 것 같다"고 오해하기 쉽다(실제로는 삭제만 일어난 경우).
-      const detail = (r.added!=null || r.updated!=null || r.removed!=null)
-        ? ` (추가 ${r.added||0} · 갱신 ${r.updated||0}${r.removed?` · 삭제 ${r.removed}`:''})` : '';
-      const sumTab = r.summary ? ` · 요약은 [${r.summary}] 탭에서 봐요` : '';
-      // [v38] 자동 동기화가 아니라 수동이라, 언제 얼마나 보냈는지 남겨서
-      //   "그 뒤로 몇 건 늘었는지"를 화면에서 알려준다.
-      p.lastExport = { at: new Date().toISOString(), n: list.length };
-      try{ cfgSave(); }catch(e){}
-      if(st) st.textContent = `[${tab}] 탭에 ${list.length}건 반영했어요${detail}${sumTab}`;
-      try{ renderCfgRawExport(); }catch(e){}
-    })
-    .catch(e=>{ if(st) st.textContent = '전송 실패: '+e.message; });
+      return [ String(t.id||''), t.date||'', t.type||'', t.major||'', t.category||t.sub||'',
+               t.memo||'', sign*amt, (outA||inA), kind ];
+    });
+
+    // 통장 실잔액 — 장부 잔액과 얼마나 벌어졌는지 보려고 같이 보낸다(카드로 쓴 만큼 차이가 난다)
+    let acctBal = 0;
+    try{ const f = calcBalances(); acc.forEach(k=>{ acctBal += f(k); }); }catch(e){}
+
+    // [v38] 예전엔 응답을 안 보고 무조건 "반영했어요"를 찍었다. 그래서 Apps Script가
+    //   '알 수 없는 요청: syncRawExport'로 거절해도(배포본이 옛 버전이면 그렇게 된다)
+    //   화면은 성공이라고 말하고 시트엔 아무것도 안 생겼다 — 기능이 없는 것처럼 보였다.
+    if(st) st.textContent = `${list.length}건 보내는 중…`;
+    fetch(url, { method:'POST', headers:{'Content-Type':'text/plain'},
+      body: JSON.stringify({ action:'syncRawExport', tab:tab, rows:rows,
+                             accounts:acc, acctBal:Math.round(acctBal) }) })
+      .then(r=>r.json())
+      .then(d=>{
+        if(!d || d.ok !== true){
+          const msg = String((d && d.error) || '알 수 없는 오류');
+          if(/알 수 없는 요청/.test(msg)){
+            if(st) st.innerHTML = '⚠️ 시트 쪽 Apps Script가 이 기능을 모르고 있어요.<br>' +
+              'Apps Script 편집기에서 최신 코드로 바꾼 뒤 <b>새 버전으로 배포</b>해 주세요.';
+          } else if(st){
+            st.textContent = '시트가 거절했어요: ' + msg;
+          }
+          return;
+        }
+        const r = d.raw || {};
+        // [v46] 이제 시트가 삭제도 반영하므로(더는 조건에 안 맞거나 앱에서 지운 거래는
+        //   줄 자체를 지운다), 몇 줄이 지워졌는지도 같이 보여준다 — 안 그러면
+        //   "눌렀는데 아무것도 안 바뀐 것 같다"고 오해하기 쉽다(실제로는 삭제만 일어난 경우).
+        const detail = (r.added!=null || r.updated!=null || r.removed!=null)
+          ? ` (추가 ${r.added||0} · 갱신 ${r.updated||0}${r.removed?` · 삭제 ${r.removed}`:''})` : '';
+        const sumTab = r.summary ? ` · 요약은 [${r.summary}] 탭에서 봐요` : '';
+        // [v38] 자동 동기화가 아니라 수동이라, 언제 얼마나 보냈는지 남겨서
+        //   "그 뒤로 몇 건 늘었는지"를 화면에서 알려준다.
+        p.lastExport = { at: new Date().toISOString(), n: list.length };
+        try{ cfgSave(); }catch(e){}
+        if(st) st.textContent = `[${tab}] 탭에 ${list.length}건 반영했어요${detail}${sumTab}`;
+        try{ renderCfgRawExport(); }catch(e){}
+      })
+      .catch(e=>{ if(st) st.textContent = '전송 실패: '+e.message; });
+  }catch(err){
+    const msg = '(스크립트 오류) ' + (err && err.message ? err.message : String(err));
+    if(st) st.textContent = msg;
+    try{ console.error('rawExportRun', err); }catch(e){}
+  }
 }
 
 function rawAddPreset(){
@@ -7969,8 +7981,11 @@ function renderCfgRawExport(){
       })()}
       <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
         <span style="flex:1;font-size:11.5px;color:var(--txt3)">해당 내역 <b style="color:var(--txt)">${n}건</b></span>
-        <button onclick="rawExportRun(${i})" ${ready?'':'disabled'}
-          style="flex:none;padding:8px 16px;background:${ready?'var(--blue)':'var(--card2)'};color:${ready?'#fff':'var(--txt3)'};border:none;border-radius:10px;font-size:12.5px;font-weight:700;cursor:${ready?'pointer':'default'}">시트로 보내기</button>
+        <!-- [v48] 예전엔 !ready면 버튼에 disabled를 걸었다. 그러면 안 눌리는 이유(탭 이름
+             없음 등)를 rawExportRun이 텍스트로 알려줄 기회조차 없이 그냥 "눌러도 반응 없음"
+             으로 보였다. 이제 항상 눌리게 두고, 이유는 rawExportRun이 상태 문구로 말해준다. -->
+        <button onclick="rawExportRun(${i})"
+          style="flex:none;padding:8px 16px;background:${ready?'var(--blue)':'var(--card2)'};color:${ready?'#fff':'var(--txt3)'};border:none;border-radius:10px;font-size:12.5px;font-weight:700;cursor:pointer">시트로 보내기</button>
       </div>
     </div>`;
   });
