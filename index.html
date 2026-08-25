@@ -7614,66 +7614,65 @@ function renderCfgTemplates(){
 
 // ══════════════════════════════════════════════════════════════════
 //  리포트 시트 내보내기
-//  앱에서 보는 분석을 시트에 표 하나로 남긴다.
-//  가로 = 1~12월, 세로 = 수입 › 저축 › 지출 (대분류 아래 소분류),
-//  오른쪽에 월평균 · 연간합계 · 비율.
-//  앱이 계산한 값을 그대로 보내므로 시트에 수식을 넣지 않는다.
+//  [v44 재설계] 예전엔 대분류·소분류별 월별 금액을 통째로 나열했는데, 그 내용이
+//    '예산_YYYY' 시트(예산 대비 소진율 표)랑 거의 겹쳤다 — 숫자는 똑같고 예산 대비율만
+//    빠진 채였다. 이제 이 시트는 예산_YYYY에 없는 것만 담는다: 연간 리포트 탭에 있는
+//    저축 추이 · 고정비/변동비가 지출에서 차지하는 비중 · 순자산 증감.
+//  계산식을 새로 짜지 않고 연간 리포트 화면이 실제로 쓰는 computeAnnualInsight()를
+//    그대로 불러 쓴다 — 화면에서 보는 숫자와 시트에 찍히는 숫자가 절대 어긋나지 않는다.
+//  가로 = 그 해 1월~(진행 중이면 이번 달까지), 오른쪽에 월평균 · 연간합계 · 비율.
 // ══════════════════════════════════════════════════════════════════
 function buildReportRows(year){
-  const all = (STATE.transactions.length ? STATE.transactions : DEMO).filter(t=>!isRemovedTx(t));
-  const inYear = all.filter(t=>String(t.date).slice(0,4)===String(year));
-  const months = [];
-  for(let m=1;m<=12;m++) months.push(year+'-'+String(m).padStart(2,'0'));
-
-  const sumBy = (fn) => {
-    const o = {};
-    months.forEach(ym=>{ o[ym] = 0; });
-    inYear.forEach(t=>{ if(fn(t)){ const ym=String(t.date).slice(0,7); if(o[ym]!=null) o[ym]+= (Number(t.amount)||0); } });
-    return o;
-  };
+  const d = computeAnnualInsight(year);
   const rows = [];
   const pushRow = (kind, label, indent, vals, opts) => {
     rows.push(Object.assign({ kind:kind, label:label, indent:indent, months:vals }, opts||{}));
   };
+  if(!d){
+    // 그 해 거래가 하나도 없으면(아직 안 온 미래 연도 등) 안내 한 줄만 남긴다
+    pushRow('안내','이 해에는 거래 내역이 없어요',0,{},{ isHeader:true });
+    return { year:year, months:[], rows:rows };
+  }
+  const months = d.months; // computeAnnualInsight가 이미 "1월~진행 중인 달까지"로 잘라둔 배열
+  const toMonths = vals => { const o={}; months.forEach((ym,i)=>{ o[ym]=vals[i]; }); return o; };
 
-  // ── 요약 ──
-  const inc  = sumBy(t=>t.type==='수입');
-  const exp  = sumBy(t=>t.type==='지출');
-  const sav  = sumBy(t=>isSaveTx(t));
-  const fix  = sumBy(t=>t.type==='지출' && isFixedTx(t));
-  const vari = sumBy(t=>t.type==='지출' && !isFixedTx(t));
-  const net  = {}; months.forEach(ym=>{ net[ym] = (inc[ym]||0) - (exp[ym]||0); });
-  const rate = {}; months.forEach(ym=>{ rate[ym] = inc[ym]>0 ? Math.round(sav[ym]/inc[ym]*1000)/10 : 0; });
-
+  // ── 요약: 수입 · 지출(고정비/변동비) · 저축·이동 ──
   pushRow('요약','요약',0,{},{ isHeader:true });
-  pushRow('요약','수입',1,inc,{ isMajor:true });
-  pushRow('요약','지출',1,exp,{ isMajor:true });
-  pushRow('요약','ㄴ 고정비',2,fix,{});
-  pushRow('요약','ㄴ 변동비',2,vari,{});
-  pushRow('요약','저축·이동',1,sav,{ isMajor:true });
-  pushRow('요약','수입 − 지출',1,net,{ isMajor:true });
-  pushRow('요약','저축률(%)',1,rate,{ isPct:true });
+  pushRow('요약','수입',1,toMonths(d.incomeVals),{ isMajor:true });
+  pushRow('요약','지출',1,toMonths(d.expenseVals),{ isMajor:true });
+  pushRow('요약','ㄴ 고정비',2,toMonths(d.fixedVals),{});
+  pushRow('요약','ㄴ 변동비',2,toMonths(d.varVals),{});
+  pushRow('요약','저축·이동',1,toMonths(d.saveVals),{ isMajor:true });
+  const netVals = months.map((ym,i)=> d.incomeVals[i]-d.expenseVals[i]);
+  pushRow('요약','수입 − 지출',1,toMonths(netVals),{ isMajor:true });
+  // 저축률(%) — 그 달 "저축·이동" 금액 ÷ 그 달 "수입" 금액 × 100. 수입이 0인 달은
+  // 계산에서 빼고(0%로 잡으면 월평균이 실제보다 낮게 나옴), 연간 리포트 탭의
+  // rateVals를 그대로 써서 화면에 보이는 숫자와 항상 같게 맞춘다.
+  const rateVals = d.rateVals.map(v => v==null ? 0 : Math.round(v*10)/10);
+  pushRow('요약','저축률(%)',1,toMonths(rateVals),{ isPct:true });
 
-  // ── 카테고리 ──
-  const block = (kind, list, filterFn) => {
-    if(!list.length) return;
-    pushRow(kind, kind, 0, {}, { isHeader:true });
-    list.forEach(c=>{
-      if(!c.major) return;
-      const key = normBudgetKey(c.major);
-      pushRow(kind, c.major, 1, sumBy(t=>filterFn(t) && normBudgetKey(t.major||'')===key), { isMajor:true });
-      (c.subs||[]).forEach(sn=>{
-        const vals = sumBy(t=>filterFn(t) && normBudgetKey(t.major||'')===key
-          && String(t.category||t.sub||'').trim()===sn);
-        // [v40] 예전엔 v>0 이라, 환불처럼 음수만 있는 소분류가 통째로 사라졌다.
-        //   0이 아니면 보여준다.
-        if(Object.values(vals).some(v=>v!==0)) pushRow(kind, sn, 2, vals, {});
-      });
-    });
-  };
-  block('수입', (CFG.categories['수입']||[]), t=>t.type==='수입');
-  block('저축', (CFG.categories['이동']||[]).filter(c=>(c.flags||'').indexOf('save')>=0), t=>isSaveTx(t));
-  block('지출', (CFG.categories['지출']||[]), t=>t.type==='지출');
+  // ── 지출 구조: 고정비 · 변동비가 그 달 "총 지출"에서 차지하는 비중(%) ──
+  // (금액 자체는 위 요약에 이미 있으니, 여기서는 비중만 추가한다)
+  pushRow('지출구조','지출 구조',0,{},{ isHeader:true });
+  const fixedPct = months.map((ym,i)=> d.expenseVals[i]>0 ? Math.round(d.fixedVals[i]/d.expenseVals[i]*1000)/10 : 0);
+  const varPct   = months.map((ym,i)=> d.expenseVals[i]>0 ? Math.round(d.varVals[i]/d.expenseVals[i]*1000)/10 : 0);
+  pushRow('지출구조','고정비 비율(%)',1,toMonths(fixedPct),{ isPct:true });
+  pushRow('지출구조','변동비 비율(%)',1,toMonths(varPct),{ isPct:true });
+
+  // ── 순자산 ──
+  // 월말 "잔액"이라 12개월치를 그냥 더하면 의미가 없다(흐름이 아니라 그 순간의 값).
+  // 그래서 '연간합계' 칸에는 합계 대신 실제 연초(전년 12월 말) 대비 증감을,
+  // '월평균' 칸에는 월말 잔액의 평균을 앱이 직접 계산해 넘긴다
+  // (Apps Script 쪽에 isLevel/avgOverride/totalOverride로 전달 — syncReport() 참고).
+  if(d.nwVals && d.nwVals.length && d.nwVals.some(v=>v!=null)){
+    pushRow('순자산','순자산',0,{},{ isHeader:true });
+    const nwNonNull = d.nwVals.filter(v=>v!=null);
+    const nwAvg = nwNonNull.length ? Math.round(nwNonNull.reduce((a,b)=>a+b,0)/nwNonNull.length) : null;
+    const nwDelta = (d.nwStart!=null && d.nwEnd!=null) ? Math.round(d.nwEnd-d.nwStart) : null;
+    pushRow('순자산','순자산 (월말 잔액 · 연간합계=연초 대비 증감)',1,
+      toMonths(d.nwVals.map(v=>v==null?0:Math.round(v))),
+      { isMajor:true, isLevel:true, avgOverride:nwAvg, totalOverride:nwDelta });
+  }
 
   return { year:year, months:months, rows:rows };
 }
