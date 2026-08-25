@@ -7780,6 +7780,30 @@ function rawFilterTx(p){
   }).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
 }
 
+// [v50 추가] "조건에 맞는 내역이 없어요"가 뜰 때, 어느 조건에서 막혔는지 눈으로 바로
+//   보이게 하는 진단용 함수. rawFilterTx와 같은 조건을 걸음 단계별로 세어서, from·to가
+//   여전히 이상한 값인지, 계좌 이름이 실제 거래와 안 맞는지, 소분류 이름이 안 맞는지를
+//   한 번에 구분한다 — 콘솔 없이 화면 문구만으로 원인을 좁히려는 목적.
+function rawFilterDebug(p){
+  const all = (STATE.transactions||[]).filter(t=>!isRemovedTx(t));
+  const acc  = (p.accounts||[]).map(x=>String(x).trim()).filter(Boolean);
+  const maj  = (p.majors||[]).map(x=>normBudgetKey(x)).filter(Boolean);
+  const sub  = (p.subs||[]).map(x=>String(x).trim()).filter(Boolean);
+  const from = String(p.from||'').trim(), to = String(p.to||'').trim();
+  let dateOk=0, acctHit=0, majHit=0, subHit=0;
+  all.forEach(t=>{
+    const ym = String(t.date||'').slice(0,7);
+    if(from && ym < from) return;
+    if(to   && ym > to)   return;
+    dateOk++;
+    const fields = [t.account, t.outAcct, t.inAcct].map(x=>String(x||'').trim());
+    if(acc.length && acc.some(a=>fields.indexOf(a)>=0)) acctHit++;
+    if(maj.length && maj.indexOf(normBudgetKey(t.major||''))>=0) majHit++;
+    if(sub.length && sub.indexOf(String(t.category||t.sub||'').trim())>=0) subHit++;
+  });
+  return { total: all.length, dateOk, acctHit, majHit, subHit, from, to, acc, maj, sub };
+}
+
 function rawExportRun(i){
   // [v49] 프리셋별 상태 칸(cfg-raw-status-i)을 쓴다. 옛 공용 id가 아직 남아있는
   //   화면(캐시 등)에서도 최소한 뭔가는 뜨도록 뒤에 공용 id로 한 번 더 시도한다.
@@ -7797,7 +7821,15 @@ function rawExportRun(i){
     const tab = String(p.tab||'').trim();
     if(!tab){ if(st) st.textContent = '탭 이름을 먼저 적어주세요.'; return; }
     const list = rawFilterTx(p);
-    if(!list.length){ if(st) st.textContent = '조건에 맞는 내역이 없어요.'; return; }
+    if(!list.length){
+      // [v50] 왜 0건인지 바로 보이게 진단 정보를 같이 찍는다.
+      let dbg = null; try{ dbg = rawFilterDebug(p); }catch(e){}
+      const dbgTxt = dbg
+        ? ` (전체 ${dbg.total}건 중 기간통과 ${dbg.dateOk} · 계좌일치 ${dbg.acctHit} · 대분류일치 ${dbg.majHit} · 소분류일치 ${dbg.subHit} / from="${dbg.from}" to="${dbg.to}" acc=[${dbg.acc.join(',')}] sub=[${dbg.sub.join(',')}])`
+        : '';
+      if(st) st.textContent = '조건에 맞는 내역이 없어요.' + dbgTxt;
+      return;
+    }
 
     const acc  = (p.accounts||[]).map(x=>String(x).trim()).filter(Boolean);
     const debt = (typeof GRP_DEBT!=='undefined' ? GRP_DEBT : []);
@@ -7946,6 +7978,10 @@ function renderCfgRawExport(){
     통장을 따로 만들어 관리하는 돈(비상금·목적자금 등)이 있으면 여기에 등록하세요.
     해당 내역이 구글 시트의 <b>정산 탭</b>으로 모이고, 적립·사용·잔액이 자동으로 집계됩니다.
     <b>통장을 나눠 쓰지 않는다면 이 기능은 안 쓰셔도 됩니다.</b>
+    <!-- [v49] 새 파일이 실제로 반영됐는지 눈으로 바로 확인하려고 버전 표시를 심어둔다.
+         이 글자가 화면에 안 보이면 코드 문제가 아니라 옛 파일이 계속 서빙되고 있다는
+         뜻이니, 배포/캐시 쪽을 봐야 한다. (확인되면 다음에 지워도 됨) -->
+    <span style="color:var(--txt3);opacity:.6">— 코드 버전 표시: v50</span>
   </div>`;
 
   if(!list.length){
