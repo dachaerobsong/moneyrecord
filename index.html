@@ -670,7 +670,7 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
 <div class="app-main">
 <!-- ── 상단바 ── -->
 <header class="topnav">
-  <div class="topnav-logo">asset.io <span id="app-build" style="font-size:9.5px;font-weight:500;color:var(--txt3);letter-spacing:0;vertical-align:middle">v35</span></div>
+  <div class="topnav-logo">asset.io <span id="app-build" style="font-size:9.5px;font-weight:500;color:var(--txt3);letter-spacing:0;vertical-align:middle">v36</span></div>
   <div style="display:flex;align-items:center;gap:8px">
     <button class="sync-btn" onclick="fetchFromSheet()">↺ 시트 불러오기</button>
     <button onclick="goToSettingsTab()" title="설정" style="width:32px;height:32px;border-radius:50%;border:none;background:var(--card2);color:var(--txt2);font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex:none">⚙️</button>
@@ -10942,15 +10942,26 @@ function buildCashEvents(plan, offset){
   offset = offset||0;
   const realToday=new Date(); realToday.setHours(0,0,0,0);
   const pd=plan.payday || Number(CFG.settings && CFG.settings['급여일']) || 25;
-  // 다음 급여일 (오늘 포함 이후) → offset만큼 이후 주기로 이동
-  let py=new Date(realToday.getFullYear(), realToday.getMonth(), Math.min(pd, ldom(realToday.getFullYear(),realToday.getMonth())));
-  if(py<realToday){ const ny=realToday.getFullYear(), nm=realToday.getMonth()+1; py=new Date(ny,nm, Math.min(pd, ldom(ny,nm))); }
-  for(let i=0;i<offset;i++){ const ny=py.getFullYear(), nm=py.getMonth()+1; py=new Date(ny,nm, Math.min(pd, ldom(ny,nm))); }
-  // 표시 종료: 급여일이 속한 달의 말일까지 (24/25/말일 등 급여일 이후 항목도 보이도록)
-  const viewEnd = new Date(py.getFullYear(), py.getMonth(), ldom(py.getFullYear(), py.getMonth()));
+  // [수정] 주기 경계를 '달력 달'이 아니라 '급여일'로 잡는다.
+  //   예전엔 이번 달 1일 ~ 급여월 말일이라 급여일이 구간 한가운데 박혔고,
+  //   그래서 급여 전 필요현금과 예상 잔고가 서로 다른 기준을 쓰게 됐다.
+  //   이제 한 주기 = 급여일 ~ 다음 급여일 전날. 급여는 이벤트가 아니라
+  //   '다음 주기 시작 잔고'로만 들어간다(어차피 통장에 찍히는 돈이므로).
+  // payAt(k): 오늘 '이후'의 k번째 급여일. 오늘이 급여일이면 그날 급여는 이미
+  //   잔고에 들어와 있으므로 오늘은 제외한다(예전엔 포함돼 급여를 이중으로 셌다).
+  const payAt=function(k){
+    let y=realToday.getFullYear(), m=realToday.getMonth();
+    let d=new Date(y, m, Math.min(pd, ldom(y,m)));
+    if(+d <= +realToday){ d=new Date(y, m+1, Math.min(pd, ldom(y, m+1))); }
+    for(let i=0;i<k;i++){ const ny=d.getFullYear(), nm=d.getMonth()+1; d=new Date(ny, nm, Math.min(pd, ldom(ny,nm))); }
+    return d;
+  };
+  const py = payAt(offset);                       // 이 주기가 끝난 뒤 들어올 급여일
+  const viewEnd = new Date(py); viewEnd.setDate(viewEnd.getDate()-1);   // 급여일 전날까지
   const events=[];
-  // 표시 시작: 이번 주기(offset 0)면 오늘이 속한 달 1일부터, 미래 주기면 그 주기가 속한 달 1일부터
-  const cur = offset===0 ? new Date(realToday.getFullYear(), realToday.getMonth(), 1) : new Date(py.getFullYear(), py.getMonth(), 1);
+  // 표시 시작: 이번 주기면 오늘부터, 미래 주기면 그 주기를 여는 급여일부터
+  const cycleStart = offset===0 ? new Date(realToday) : new Date(payAt(offset-1));
+  const cur = new Date(cycleStart);
   let guard=0;
   while(cur<=viewEnd && guard++<400){
     const dd=cur.getDate();
@@ -10985,7 +10996,7 @@ function buildCashEvents(plan, offset){
     });
     cur.setDate(cur.getDate()+1);
   }
-  return {events, payday:py, today:realToday, viewEnd, offset};
+  return {events, payday:py, today:realToday, viewEnd, cycleStart, offset};
 }
 let CASH_HIDE_DONE = (function(){ try{ return LS.get('cashHideDoneV1')==='1'; }catch(e){ return false; } })();
 function cashToggleHideDone(){
@@ -11006,9 +11017,9 @@ function renderCashPlan(){
   const plan = CASH_PLAN;
   const pdEl=document.getElementById('cash-payday-lbl'); if(pdEl) pdEl.value=plan.payday || Number(CFG.settings && CFG.settings['급여일']) || 25;
 
-  const {events, payday, today} = buildCashEvents(plan, CASH_CYCLE_OFFSET);
+  const {events, payday, today, viewEnd, cycleStart} = buildCashEvents(plan, CASH_CYCLE_OFFSET);
   const cycleLblEl = document.getElementById('cash-cycle-lbl');
-  if(cycleLblEl) cycleLblEl.textContent = CASH_CYCLE_OFFSET===0 ? '이번 주기' : (payday.getMonth()+1)+'월 주기';
+  if(cycleLblEl) cycleLblEl.textContent = CASH_CYCLE_OFFSET===0 ? '이번 주기' : (cycleStart.getMonth()+1)+'월 '+cycleStart.getDate()+'일~';
 
   // 현재 현금성 잔고 — 설정 탭에서 성격이 '현금·입출금'인 계좌만 합산
   const CASH_ACCTS_ALL = (plan.cashAccounts && plan.cashAccounts.length) ? plan.cashAccounts
@@ -11039,19 +11050,24 @@ function renderCashPlan(){
   //        처음 쓰는 사람에겐 넣지도 않은 급여가 찍혀 보이므로, 없으면 0으로 두고 안내한다.
   const salary= salTx ? Math.abs(Number(salTx.amount)||0) : (Number(plan.salary)||0);
 
-  const bankSum=arr=>arr.filter(e=>e.source==='bank').reduce((s,e)=>s+e.amount,0);
-  const preEvents=events.filter(e=>+e.date < +payday);
-  const paydayEvents=events.filter(e=>+e.date === +payday);
-  // 급여 전 '아직 안 낸' 통장 출금만 = 지금 필요한 현금
   // [v6 수정] 예전엔 source==='bank'이면 무조건 뺐다. 그런데 "KB뱅크 급여이체"나 "비상금저축"처럼
   //   내 다른 현금 계좌로 옮기는 항목은, 그 계좌가 여전히 1차 잔고 안에 있으면 총 현금이
   //   줄지 않는 내부 이동이다(양쪽 다 CASH_ACCTS 합계에 잡히므로). 그런 이동은 필요현금에서 뺀다.
   //   목적지가 2차(목적통장)로 옮겨졌거나 아예 없는(남에게 나가는 돈) 이벤트만 실제로 뺀다.
   const staysInPrimary = e => e.acct && CASH_ACCTS.indexOf(e.acct) >= 0;
-  const needNow = preEvents.filter(e=>e.source==='bank' && !eventPaid(e) && !staysInPrimary(e)).reduce((s,e)=>s+e.amount,0);
-  const paydayOut=bankSum(paydayEvents.filter(e=>!staysInPrimary(e)));
-  const diff = cashNow - needNow;           // 급여 전 여유/부족
-  const afterPayday = diff + salary - paydayOut;
+  // [수정] 필요현금과 예상잔고가 서로 다른 기준을 쓰던 문제를 없앤다.
+  //   이제 둘 다 '이 주기에 든 이벤트'만 본다. 주기가 오늘부터 시작하므로
+  //   이미 통장에서 빠져나간 과거 지출을 잔고에서 또 빼는 이중 차감이 사라진다.
+  const outflowOf = evs => evs.filter(e=>e.source==='bank' && !eventPaid(e) && !staysInPrimary(e))
+    .reduce((s,e)=>s+e.amount,0);
+  const needNow = outflowOf(events);
+  // 미래 주기의 시작 잔고 = 앞 주기 끝 잔고 + 급여. 급여를 지출 일정에 끼워 넣지 않고
+  //   여기서 딱 한 번만 반영한다.
+  let startBal = cashNow;
+  for(let i=0;i<CASH_CYCLE_OFFSET;i++){
+    startBal = startBal - outflowOf(buildCashEvents(plan, i).events) + salary;
+  }
+  const diff = startBal - needNow;           // 이 주기 끝에 남는 돈
 
   // ── 판정 카드 (단순화: 필요 현금 vs 현재 잔고) ──
   const vEl=document.getElementById('cash-verdict');
@@ -11061,21 +11077,23 @@ function renderCashPlan(){
     const acctLines = CASH_ACCTS.map(k=>`<span style="white-space:nowrap">${k} ${won(cb2(k))}</span>`).join('<span style="opacity:0.5"> · </span>');
     vEl.innerHTML = `
       <div style="margin:6px 0 16px">
-        <div style="font-size:13px;color:rgba(255,255,255,0.8);margin-bottom:2px">급여 전 필요한 현금</div>
+        <div style="font-size:13px;color:rgba(255,255,255,0.8);margin-bottom:2px">${cashFmtDate(cycleStart)} ~ ${cashFmtDate(viewEnd)} 나갈 돈</div>
         <div style="font-size:30px;font-weight:800">${won(needNow)}</div>
       </div>
       <div style="background:rgba(255,255,255,0.12);border-radius:14px;padding:14px 16px;font-size:15px;line-height:2">
-        <div style="display:flex;justify-content:space-between"><span>현재 현금 잔고</span><b>${won(cashNow)}</b></div>
-        <div style="font-size:11px;color:rgba(255,255,255,0.7);display:flex;flex-wrap:wrap;gap:2px 8px;margin-top:2px">${acctLines}</div>
+        <div style="display:flex;justify-content:space-between"><span>${CASH_CYCLE_OFFSET===0?'현재 현금 잔고':'주기 시작 잔고'}</span><b>${won(startBal)}</b></div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.7);display:flex;flex-wrap:wrap;gap:2px 8px;margin-top:2px">${
+          CASH_CYCLE_OFFSET===0 ? acctLines : `앞 주기 남는 돈 + 급여 ${won(salary)}`
+        }</div>
         <div style="display:flex;justify-content:space-between;border-top:1px solid rgba(255,255,255,0.25);margin-top:8px;padding-top:6px">
-          <span>${short?'부족':'여유'}</span>
-          <b style="color:${short?'#FFB4A8':'#D6F5E3'}">${short?'− ':''}${won(diff)}</b>
+          <span>${short?'부족':'남는 돈'}</span>
+          <b style="color:${short?'#FFB4A8':'#D6F5E3'}">${short?'− ':''}${won(Math.abs(diff))}</b>
         </div>
       </div>
       <div style="font-size:12px;color:rgba(255,255,255,0.75);margin-top:10px;line-height:1.6">${
         salary>0
-          ? `급여일(${plan.payday || Number(CFG.settings && CFG.settings['급여일']) || 25}일) +${won(salary)} − 급여일 출금 ${won(paydayOut)} → 직후 ${won(afterPayday)}`
-          : `급여 내역이 아직 없어요 — 수입을 '월급'으로 한 번 입력하면 급여일 이후 잔고까지 계산해요`
+          ? `${cashFmtDate(payday)} 급여 ${won(salary)}가 들어오면 다음 주기가 시작돼요 — 급여는 잔고로만 잡고 지출 일정에는 넣지 않아요`
+          : `급여 내역이 아직 없어요 — 수입을 '월급'으로 한 번 입력하면 다음 주기 시작 잔고까지 계산해요`
       }</div>
       ${CASH_CYCLE_OFFSET>0 ? `<div style="font-size:11px;color:rgba(255,255,255,0.65);margin-top:6px">* 미리보기 주기예요 — 위 잔고는 오늘 시점 기준이라, 실제 그때 잔고와는 달라질 수 있어요</div>` : ''}
       ${CASH_ACCTS_2ND.length ? `<div style="margin-top:12px;padding-top:10px;border-top:1px dashed rgba(255,255,255,0.25);font-size:12px;color:rgba(255,255,255,0.75)">
@@ -11102,17 +11120,17 @@ function renderCashPlan(){
       // ── 예상 잔고 굴리기 ──
       // 예전엔 날짜 오른쪽에 '남은 ₩1,900,000'이라고 적었는데, 저건 사실 "그날 나갈 돈 합계"였다.
       // 잔고처럼 읽혀서 "아직 오지도 않은 21일이 왜 마이너스냐"는 오해를 만들었다.
-      // 이제 '이날 −금액'과 '예상 잔고'를 나눠 적고, 급여일엔 급여 입금(+)을 먼저 반영한다.
-      let running = cashNow;
+      // 이제 '이날 −금액'과 '예상 잔고'를 나눠 적는다.
+      // [수정] 급여를 여기서 더하지 않는다. 급여는 이 주기가 끝난 뒤 들어오는 돈이고,
+      //   다음 주기의 '시작 잔고'에서 한 번만 반영된다. 예전엔 여기서도 더하고
+      //   히어로 카드에서도 따로 계산해서, 같은 화면에 잔고 정답이 두 개 있었다.
+      let running = startBal;
       const projected = {};
       keys.forEach(k=>{
         const list = byDate[k];
-        const d = list[0].date;
-        if(+d < +today) return;                       // 지난 날은 이미 잔고에 반영돼 있음
-        if(+d === +payday && salary>0) running += salary;
         // [v7 수정] needNow와 같은 기준을 쓴다 — 내 다른 계좌로 옮기는 돈(목적지가 1차 잔고
         //   안에 있는 경우)은 총 현금이 안 줄어드니 예상 잔고 굴릴 때도 빼면 안 된다.
-        running -= list.filter(e=>e.source==='bank' && !eventPaid(e) && !staysInPrimary(e)).reduce((s,e)=>s+e.amount,0);
+        running -= outflowOf(list);
         projected[k] = running;
       });
       // ── 완료 항목 숨기기 ──
@@ -11127,17 +11145,14 @@ function renderCashPlan(){
         const list=byDate[k];
         const shown = CASH_HIDE_DONE ? list.filter(e=>!eventPaid(e)) : list;
         const d=list[0].date;
-        const isPay = +d === +payday;
-        const isAfter = +d > +payday;   // 급여일 이후 = 참고용
+        // [수정] 급여 입금 행을 여기서 직접 만들어 붙이고 있었다. 지출 일정에 수입이
+        //   섞여 보이던 원인이라 삭제한다. 급여는 히어로 카드의 시작 잔고에서만 다룬다.
+        const isPay = false;
+        const isAfter = false;
         const isPast = +d < +today;     // 지난 날짜 — 지우지 않고 표시만
         const dayUnpaid=list.filter(e=>e.source==='bank' && !eventPaid(e)).reduce((s,e)=>s+e.amount,0);
         const proj = projected[k];
-        const payRow = (isPay && salary>0)
-          ? `<div style="display:flex;align-items:center;gap:8px;font-size:clamp(12px,3.6vw,14px);padding:4px 0">
-              <span style="font-size:16px;line-height:1">💰</span>
-              <span style="flex:1;min-width:0;color:var(--green);font-weight:700">급여 입금</span>
-              <span style="font-weight:700;flex:none;white-space:nowrap;color:var(--green)">+ ${won(salary)}</span>
-              <span style="width:20px"></span></div>` : '';
+        const payRow = '';
         const rows=shown.map(e=>{
           const paidInfo = findPaidInfo(e);
           const paid = !!paidInfo;
@@ -11174,7 +11189,10 @@ function renderCashPlan(){
               ${(proj!=null && !isPast && !isAfter) ? `<br><span style="font-size:10.5px;font-weight:600;color:${proj<0?'var(--red)':'var(--txt3)'}">예상 잔고 ${won(proj)}</span>` : ''}
             </span>
           </div>${payRow}${rows}</div>`;
-      }).join('');
+      }).join('') + `<div style="border-top:1px dashed #D8DCE1;margin-top:4px;padding-top:12px;text-align:center">
+        <div style="font-size:12.5px;font-weight:700;color:var(--txt2)">${cashFmtDate(payday)} 급여일</div>
+        <div style="font-size:10.5px;color:var(--txt3);margin-top:3px">여기부터는 다음 주기예요 — 오른쪽 › 로 넘겨보세요</div>
+      </div>`;
     }
   }
 
