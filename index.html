@@ -10902,10 +10902,10 @@ function findPaidInfo(e, skipManual){
     });
     return matches.length ? pack(matches) : null;
   }
-  // [수정] '그 주기 동안' 항목명을 포함하는 내역을 전부 합산한다.
-  //   달을 놓쳐 월초·월말에 두 번 기록돼도 더해서 한 번 낸 것으로 본다.
-  const ymd = d => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-  const lo = e.cs ? ymd(e.cs) : em+'-01', hi = e.ce ? ymd(e.ce) : em+'-31';
+  // [수정] 항목이 속한 '달력 월' 안에서 항목명(카테고리)을 포함하는 내역을 전부 합산한다.
+  //   달을 놓쳐 월초·월말에 두 번 기록돼도 더한다. 급여일 주기로 자르면 9/25 이후에 적은 9월분이
+  //   10월 항목 쪽으로 넘어가 버려서(9월 항목엔 1건만, 10월 항목엔 9월 내역이 잡힘) 달력 월 기준으로 되돌렸다.
+  const lo = em+'-01', hi = em+'-31';
   const strength = cashMatchStrength(e.name);
   const matches = txs.filter(t=>{
     if(CASH_PAY_TYPES.indexOf(t.type) < 0) return false;
