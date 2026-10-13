@@ -10856,22 +10856,14 @@ const CASH_GENERIC_FIELDS = ['저축','지출','수입','이동','이체','기�
 // 공백을 무시하고 비교한다. '엄마생활비' 항목이 메모에 '엄마 생활비'로 적혀 있어도 같은 건이다.
 // (가져오기 모달도 이미 공백을 지워 비교하고 있었는데 여기만 안 하고 있었다)
 const cashNorm = x => String(x||'').replace(/\s+/g,'');
-// 반환: 0=불일치 / 1=약한 일치(항목명이 필드를 품음) / 2=강한 일치(필드가 항목명과 같거나 품음)
-// [수정] 약한 일치는 예전엔 그대로 '납부완료'로 봤다. 그래서 소분류가 '이자'인 다른 내역(예금이자 등)이
-//        '전세대출이자'를 납부완료로 만들었다. 이제 약한 일치는 금액까지 맞아야 인정한다.
+// 항목명이 거래의 분류·소분류·메모·입금계좌 중 하나와 같거나 그것에 '포함'될 때만 그 항목의 납부로 본다.
+// [수정] 예전엔 반대 방향(항목명이 분류명을 품음)도 인정해서, 소분류 '곗돈'·'전세대출'·'이자' 같은
+//        공통 단어가 가족곗돈·대딩곗돈, 전세대출원금·이자, 예금이자까지 전부 끌어왔다.
 function cashMatchStrength(name){
   const target = cashNorm(name);
   if(target.length < 2) return () => 0;   // 한 글자 항목명은 오매칭만 만든다
   return function(t){
-    const fields = [t.category, t.sub, t.inAcct, t.memo].map(cashNorm);
-    let best = 0;
-    fields.forEach(f=>{
-      if(!f) return;
-      if(f === target || f.indexOf(target) >= 0){ best = 2; return; }
-      // 반대 방향(항목명이 필드를 품음)은 두 글자 이상 + 일반 분류명이 아닐 때만 약한 일치
-      if(best < 2 && f.length >= 2 && CASH_GENERIC_FIELDS.indexOf(f) < 0 && target.indexOf(f) >= 0) best = 1;
-    });
-    return best;
+    return [t.category, t.sub, t.inAcct, t.memo].map(cashNorm).some(f=> f && f.indexOf(target) >= 0) ? 2 : 0;
   };
 }
 function cashItemMatcher(name){ const m = cashMatchStrength(name); return t => m(t) > 0; }
@@ -10895,8 +10887,9 @@ function findPaidInfo(e, skipManual){
   const notYet = +e.date > +_t0;
   const near = (a,b) => b>0 && Math.abs(a-b) <= Math.max(1000, b*0.02);
   const pack = matches => {
-    const info = { amount: matches.reduce((s,t)=>s+Math.abs(Number(t.amount)||0),0), count: matches.length, first: matches[0] };
-    return (notYet && !near(info.amount, e.amount)) ? null : info;
+    const info = { amount: matches.reduce((s,t)=>s+Math.abs(Number(t.amount)||0),0), count: matches.length, first: matches[0], list: matches };
+    // 결제일 전이라도 기록된 합계가 계획 금액 이상이면 낸 것으로 본다 (월초·월말에 나눠/중복 기재한 경우 포함)
+    return (notYet && info.amount < e.amount - Math.max(1000, e.amount*0.02)) ? null : info;
   };
   if(e.isCard){
     // 발급사 카드에 대한 카드납부(이동)가 그 달에 있으면 결제된 것으로 간주
@@ -10909,14 +10902,15 @@ function findPaidInfo(e, skipManual){
     });
     return matches.length ? pack(matches) : null;
   }
+  // [수정] '그 주기 동안' 항목명을 포함하는 내역을 전부 합산한다.
+  //   달을 놓쳐 월초·월말에 두 번 기록돼도 더해서 한 번 낸 것으로 본다.
+  const ymd = d => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  const lo = e.cs ? ymd(e.cs) : em+'-01', hi = e.ce ? ymd(e.ce) : em+'-31';
   const strength = cashMatchStrength(e.name);
   const matches = txs.filter(t=>{
     if(CASH_PAY_TYPES.indexOf(t.type) < 0) return false;
-    if(String(t.date).slice(0,7)!==em || !done(t)) return false;
-    const st = strength(t);
-    if(st === 2) return true;
-    if(st === 1) return near(Math.abs(Number(t.amount)||0), e.amount);   // 약한 일치는 금액이 맞아야
-    return false;
+    const ds = String(t.date).slice(0,10);
+    return ds >= lo && ds <= hi && done(t) && strength(t) > 0;
   });
   return matches.length ? pack(matches) : null;
 }
@@ -10987,7 +10981,7 @@ function buildCashEvents(plan, offset){
       // [v6 추가] 이 항목이 어느 계좌로 들어가는지(acct/moveTo)를 이벤트에도 그대로 넘긴다.
       //   목적지가 여전히 '1차(가용) 잔고'에 속한 계좌라면 총 현금은 안 줄어드는 내부 이동이라,
       //   이 정보가 있어야 아래에서 그런 이벤트를 필요현금 계산에서 뺄 수 있다.
-      if(eff===dd) events.push({date:new Date(cur), name:it.name, amount, source:it.source||'bank', ym, key: ym+'|'+it.name, overridden: !!ov, acct: it.acct||it.moveTo||''});
+      if(eff===dd) events.push({date:new Date(cur), name:it.name, amount, source:it.source||'bank', ym, key: ym+'|'+it.name, cs:cycleStart, ce:viewEnd, overridden: !!ov, acct: it.acct||it.moveTo||''});
     });
     Object.entries(plan.cardPayDays||{}).forEach(([issuer,payDay])=>{
       const eff=Math.min(Number(payDay)||14, monLast);
@@ -11007,7 +11001,7 @@ function buildCashEvents(plan, offset){
         const mo = (plan.manual||{})[ckey];
         let manualAmt = false;
         if(mo && mo.amount!=null){ bill = Number(mo.amount)||0; isEstimate = false; manualAmt = true; }
-        events.push({date:new Date(cur), name:issuer+'카드 결제'+(isEstimate?' (추정)':''), amount:bill, source:'bank', isCard:true, isEstimate, ym:cym, key:ckey, manualAmt});
+        events.push({date:new Date(cur), name:issuer+'카드 결제'+(isEstimate?' (추정)':''), amount:bill, source:'bank', isCard:true, isEstimate, ym:cym, key:ckey, cs:cycleStart, ce:viewEnd, manualAmt});
       }
     });
     cur.setDate(cur.getDate()+1);
@@ -11220,8 +11214,8 @@ function renderCashPlan(){
           const manualTag = (mo && mo.paid!=null) ? ` <span style="font-size:9.5px;color:var(--blue);font-weight:600">${mo.paid?'수동 완료':'수동 미납'}</span>` : '';
           const pendingTag = (e.source==='bank' && !paid && e.amount>0 && +e.date < +today) ? ' <span style="font-size:10px;color:var(--warning);font-weight:600">미처리</span>' : '';
           const esc = x => String(x==null?'':x).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
-          const hint = (paid && !paidInfo.manual && paidInfo.first)
-            ? `<div style="margin:-2px 0 4px 26px;font-size:10px;color:var(--txt3)">↳ ${String(paidInfo.first.date).slice(5,10).replace('-','/')} ${esc(paidInfo.first.sub||paidInfo.first.category||paidInfo.first.memo||'내역')}${paidInfo.count>1?' 외 '+(paidInfo.count-1)+'건':''} 내역으로 완료 처리됨 · 아니면 ☑를 눌러 해제</div>` : '';
+          const hint = (paid && !paidInfo.manual && paidInfo.list && paidInfo.list.length)
+            ? `<div style="margin:-2px 0 4px 26px;font-size:10px;color:var(--txt3);line-height:1.5">↳ ${paidInfo.list.slice(0,4).map(t=>String(t.date).slice(5,10).replace('-','/')+' '+esc(t.sub||t.category||t.memo||'내역')+' '+won(t.amount)).join(' · ')}${paidInfo.count>4?' 외 '+(paidInfo.count-4)+'건':''} 내역으로 완료 처리됨 · 아니면 ☑를 눌러 해제</div>` : '';
           const nameStyle = paid ? 'color:var(--txt3);text-decoration:line-through' : (e.source!=='bank'?'color:var(--txt3)':'color:var(--txt)');
           const amtHtml = paid
             ? (paidInfo.manual
