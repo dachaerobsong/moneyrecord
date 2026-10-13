@@ -10856,14 +10856,14 @@ const CASH_GENERIC_FIELDS = ['저축','지출','수입','이동','이체','기�
 // 공백을 무시하고 비교한다. '엄마생활비' 항목이 메모에 '엄마 생활비'로 적혀 있어도 같은 건이다.
 // (가져오기 모달도 이미 공백을 지워 비교하고 있었는데 여기만 안 하고 있었다)
 const cashNorm = x => String(x||'').replace(/\s+/g,'');
-// 항목명이 거래의 분류·소분류·메모·입금계좌 중 하나와 같거나 그것에 '포함'될 때만 그 항목의 납부로 본다.
+// 항목명이 거래의 분류·소분류(카테고리)와 같거나 그것에 '포함'될 때만 그 항목의 납부로 본다.
 // [수정] 예전엔 반대 방향(항목명이 분류명을 품음)도 인정해서, 소분류 '곗돈'·'전세대출'·'이자' 같은
 //        공통 단어가 가족곗돈·대딩곗돈, 전세대출원금·이자, 예금이자까지 전부 끌어왔다.
 function cashMatchStrength(name){
   const target = cashNorm(name);
   if(target.length < 2) return () => 0;   // 한 글자 항목명은 오매칭만 만든다
   return function(t){
-    return [t.category, t.sub, t.inAcct, t.memo].map(cashNorm).some(f=> f && f.indexOf(target) >= 0) ? 2 : 0;
+    return [t.category, t.sub].map(cashNorm).some(f=> f && f.indexOf(target) >= 0) ? 2 : 0;   // 카테고리(대분류·소분류)만 본다 — 메모·비고·입금계좌는 안 봄
   };
 }
 function cashItemMatcher(name){ const m = cashMatchStrength(name); return t => m(t) > 0; }
@@ -11215,7 +11215,7 @@ function renderCashPlan(){
           const pendingTag = (e.source==='bank' && !paid && e.amount>0 && +e.date < +today) ? ' <span style="font-size:10px;color:var(--warning);font-weight:600">미처리</span>' : '';
           const esc = x => String(x==null?'':x).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
           const hint = (paid && !paidInfo.manual && paidInfo.list && paidInfo.list.length)
-            ? `<div style="margin:-2px 0 4px 26px;font-size:10px;color:var(--txt3);line-height:1.5">↳ ${paidInfo.list.slice(0,4).map(t=>String(t.date).slice(5,10).replace('-','/')+' '+esc(t.sub||t.category||t.memo||'내역')+' '+won(t.amount)).join(' · ')}${paidInfo.count>4?' 외 '+(paidInfo.count-4)+'건':''} 내역으로 완료 처리됨 · 아니면 ☑를 눌러 해제</div>` : '';
+            ? `<div style="margin:-2px 0 4px 26px;font-size:10px;color:var(--txt3);line-height:1.5">↳ ${paidInfo.list.slice(0,4).map(t=>String(t.date).slice(5,10).replace('-','/')+' '+esc(t.sub||t.category||'내역')+' '+won(t.amount)).join(' · ')}${paidInfo.count>4?' 외 '+(paidInfo.count-4)+'건':''} 내역으로 완료 처리됨 · 아니면 ☑를 눌러 해제</div>` : '';
           const nameStyle = paid ? 'color:var(--txt3);text-decoration:line-through' : (e.source!=='bank'?'color:var(--txt3)':'color:var(--txt)');
           const amtHtml = paid
             ? (paidInfo.manual
