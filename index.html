@@ -1274,7 +1274,7 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
 <main id="p-ana2" class="panel">
   <div class="a2-head">
     <div class="a2-headrow">
-      <span class="a2-title">가계부 분석</span>
+      <span class="a2-title">월간 보드</span>
       <div class="a2-nav">
         <button class="a2-navbtn" onclick="a2Nav(-1)" aria-label="이전">‹</button>
         <span class="a2-pill" id="a2-label"></span>
@@ -1282,10 +1282,10 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
       </div>
     </div>
     <div class="a2-tabs">
-      <button class="a2-tab on" data-sub="dash" onclick="a2SetSub('dash')">대시보드</button>
-      <button class="a2-tab" data-sub="table" onclick="a2SetSub('table')">표</button>
-      <button class="a2-tab" data-sub="year" onclick="a2SetSub('year')">연간 리포트</button>
-      <button class="a2-tab" data-sub="annual-table" onclick="a2SetSub('annual-table')">연간표</button>
+      <button class="a2-tab on" data-sub="dash" onclick="a2SetSub('dash')">월간 보드</button>
+      <button class="a2-tab" data-sub="table" onclick="a2SetSub('table')">월간 표</button>
+      <button class="a2-tab" data-sub="year" onclick="a2SetSub('year')">연간 보드</button>
+      <button class="a2-tab" data-sub="annual-table" onclick="a2SetSub('annual-table')">연간 표</button>
     </div>
   </div>
   <div id="a2-body"></div>
@@ -4405,10 +4405,7 @@ function fetchFromSheet(silent) {
       // ③ 자산
       if(data.asset) STATE.asset = data.asset;
 
-      // ④ 현금흐름 일정: 공통 시트 데이터를 적용. 시트가 비어 있으면 기존 로컬 데이터를 최초 업로드.
-      if(Object.prototype.hasOwnProperty.call(data, 'cashPlan')) applyCashPlanFromSheet(data.cashPlan);
-
-      // ⑤ 카테고리별 실시간 메모 (시트 '메모_항목별'을 공통 원본으로 병합 — 로컬 전용 메모도 복구)
+      // ④ 카테고리별 실시간 메모 (시트 '메모_항목별'을 원본으로 병합 — 다른 기기에서 쓴 메모도 반영)
       if(data.cellMemos){
         gbMemoMergeFromSheet(data.cellMemos);
       }
@@ -6078,28 +6075,20 @@ function gbMemoWrap(obj){
 // 시트에서 받은 메모 합치기: 이모지·공백만 다른 옛 키의 메모는 버리지 않고 하나로 합친다.
 // 합친 뒤에는 시트의 옛 줄을 비워서(빈 메모 저장) 다음 동기화 때 되살아나지 않게 한다.
 function gbMemoMergeFromSheet(src){
-  // local snapshot 먼저 확보. 시트에 없는 로컬 메모는 복구 대상으로 간주한다.
   gbMemoLoad();
-  var local = {};
-  Object.keys(GB_MEMO||{}).forEach(function(k){ var v=String(GB_MEMO[k]||'').trim(); if(v) local[gbMemoCanon(k)]=v; });
-  var by = {}, sheetKeys = {};
+  var by = {};
   Object.keys(src||{}).forEach(function(k){
     var ck = gbMemoCanon(k), v = String(src[k]==null?'':src[k]).trim();
-    sheetKeys[ck] = true; // 빈 값도 시트에 존재하면 의도적 삭제일 수 있으므로 복구하지 않음
     var o = by[ck] || (by[ck] = { canon:null, legacy:[] });
     if(ck===k) o.canon = v; else if(v) o.legacy.push({ k:k, v:v });
   });
-  var url = getUrl(), fixes = [], recoveries = [];
-  // 시트 값을 우선 반영하고, 시트에 아예 없는 로컬 메모만 보존/복구한다.
+  var url = getUrl(), fixes = [];
   Object.keys(by).forEach(function(ck){
     var o = by[ck];
-    var val = (o.canon!==null) ? o.canon : (local[ck]||'');
+    var val = (o.canon!==null) ? o.canon : (GB_MEMO[ck]||'');   // 통일된 키는 시트 값이 우선
     o.legacy.forEach(function(l){ val = gbMemoJoin(val, l.v); });
     if(val) GB_MEMO[ck] = val; else delete GB_MEMO[ck];
     if(o.legacy.length) fixes.push({ ck:ck, val:val, legacy:o.legacy.map(function(l){ return l.k; }) });
-  });
-  Object.keys(local).forEach(function(ck){
-    if(!sheetKeys[ck] && local[ck]) { GB_MEMO[ck] = local[ck]; recoveries.push({ck:ck,val:local[ck]}); }
   });
   try{ LS.set('asset_gb_memo', JSON.stringify(GB_MEMO)); }catch(e){}
   if(!url) return;
@@ -6108,8 +6097,10 @@ function gbMemoMergeFromSheet(src){
     fetch(url, { method:'POST', headers:{'Content-Type':'text/plain'},
       body: JSON.stringify({ action:'gb_saveCellMemo', mon: full.slice(0,i), key: full.slice(i+1), memo: memo }) }).catch(function(){});
   };
-  fixes.forEach(function(f){ send(f.ck, f.val); f.legacy.forEach(function(k){ send(k, ''); }); });
-  recoveries.forEach(function(f){ send(f.ck, f.val); });
+  fixes.forEach(function(f){
+    send(f.ck, f.val);
+    f.legacy.forEach(function(k){ send(k, ''); });
+  });
 }
 let GB_MEMO = gbMemoWrap({});
 function gbMemoLoad(){ try{ GB_MEMO = gbMemoWrap(JSON.parse(LS.get('asset_gb_memo')||'{}')); }catch(e){ GB_MEMO = gbMemoWrap({}); } }
@@ -10997,43 +10988,7 @@ function loadCashPlan(){
   }catch(e){}
   return p;
 }
-let CASH_PLAN_SYNC_READY = false;
-let CASH_PLAN_SAVE_TIMER = null;
-function saveCashPlanObj(p){
-  try{ LS.set(CASH_PLAN_KEY, JSON.stringify(p)); }catch(e){}
-  // 초기 시트 동기화 전에는 기본값/자동 생성값이 기존 원격 데이터를 덮지 않게 대기한다.
-  if(!CASH_PLAN_SYNC_READY || !getUrl()) return;
-  if(CASH_PLAN_SAVE_TIMER) clearTimeout(CASH_PLAN_SAVE_TIMER);
-  CASH_PLAN_SAVE_TIMER = setTimeout(function(){
-    const url = getUrl(); if(!url) return;
-    sheetPost({action:'saveCashPlan', plan:p})
-      .then(d=>{ if(d && d.ok===false) console.warn('현금흐름 시트 저장 실패', d.error); })
-      .catch(e=>console.warn('현금흐름 저장 요청 실패', e));
-  }, 250);
-}
-function applyCashPlanFromSheet(remotePlan){
-  let localPlan = null;
-  try{ localPlan = JSON.parse(LS.get(CASH_PLAN_KEY)||'null'); }catch(e){}
-  if(remotePlan && typeof remotePlan==='object' && Array.isArray(remotePlan.items)){
-    // 원격 데이터로 교체하기 전, 이 기기에서만 수정했던 값은 로컬 백업으로 남긴다.
-    if(localPlan && JSON.stringify(localPlan)!==JSON.stringify(remotePlan)){
-      try{ if(!LS.get(CASH_PLAN_KEY+'_pre_sync_backup')) LS.set(CASH_PLAN_KEY+'_pre_sync_backup', JSON.stringify(localPlan)); }catch(e){}
-    }
-    // 공통 시트가 기준. 기기별 낡은 캐시로 원격 데이터를 덮어쓰지 않는다.
-    CASH_PLAN = Object.assign({}, JSON.parse(JSON.stringify(DEFAULT_CASH_PLAN)), remotePlan);
-    if(!CASH_PLAN.cardPayDays) CASH_PLAN.cardPayDays = {};
-    if(!CASH_PLAN.cashAccounts) CASH_PLAN.cashAccounts = [];
-    if(!CASH_PLAN.manual) CASH_PLAN.manual = {};
-    try{ LS.set(CASH_PLAN_KEY, JSON.stringify(CASH_PLAN)); }catch(e){}
-  } else {
-    // 시트에 아직 현금흐름 데이터가 없으면 이 기기에 있던 데이터로 최초 초기화한다.
-    CASH_PLAN = (localPlan && Array.isArray(localPlan.items)) ? localPlan : JSON.parse(JSON.stringify(DEFAULT_CASH_PLAN));
-    CASH_PLAN_SYNC_READY = true;
-    saveCashPlanObj(CASH_PLAN);
-  }
-  CASH_PLAN_SYNC_READY = true;
-  try{ renderCashPlan(); if(typeof renderCashEdit==='function') renderCashEdit(); }catch(e){}
-}
+function saveCashPlanObj(p){ try{ LS.set(CASH_PLAN_KEY, JSON.stringify(p)); }catch(e){} }
 let CASH_PLAN = null;
 
 // ── 이전 앱의 고정 지출 일정 가져오기 ──
@@ -11708,8 +11663,18 @@ function computeAnnualInsight(year){
   const txByMonth = {};
   months.forEach(ym=>{ txByMonth[ym] = allTx.filter(t=>String(t.date).slice(0,7)===ym && !isRemovedTx(t)); });
 
-  // 카테고리별 연간 합계/월별 값/추세 (이벤트성 누적 카테고리는 신호등과 마찬가지로 랭킹·추세에서 제외)
-  const catKeys = Object.keys(CAT_OUT_LABELS).filter(k=>catCadence(k)!=='event');
+  // 카테고리별 연간 합계/월별 값/추세. 설정 항목과 실제 거래의 대분류를 함께 모아
+  // 사용자가 추가한 카테고리(예: 곗돈, 엄마, 엄마2)도 연간 리포트에서 빠지지 않게 한다.
+  const catKeyList = [];
+  const addAnnualCatKey = raw => {
+    const name = String(raw||'').trim(); if(!name) return;
+    const nk = normBudgetKey(name);
+    if(!catKeyList.some(k=>a2AnnualOrderName(k)===a2AnnualOrderName(name))) catKeyList.push(name);
+  };
+  Object.keys(CAT_OUT_LABELS||{}).forEach(addAnnualCatKey);
+  Object.keys((STATE.catMap||{})['지출']||{}).forEach(addAnnualCatKey);
+  allTx.forEach(t=>{ if(t && t.type==='지출' && t.major) addAnnualCatKey(t.major); });
+  const catKeys = catKeyList.filter(k=>catCadence(k)!=='event');
   const catStats = catKeys.map(k=>{
     const nk = normBudgetKey(k);
     const _p = outCatPred(k);
@@ -11743,6 +11708,26 @@ function computeAnnualInsight(year){
   const totalIncome = incomeVals.reduce((a,b)=>a+b,0);
   const totalExpense = expenseVals.reduce((a,b)=>a+b,0);
   const totalSave = saveVals.reduce((a,b)=>a+b,0);
+
+  // 저축·투자도 대분류별 월별 추이를 제공한다. 설정상 저축 항목과 실제 저축 거래를 함께 모은다.
+  const saveKeyList = [];
+  const addAnnualSaveKey = raw => {
+    const name = String(raw||'').trim(); if(!name) return;
+    const nk = normBudgetKey(name);
+    if(!saveKeyList.some(k=>normBudgetKey(k)===nk)) saveKeyList.push(name);
+  };
+  (SAVE_MAJORS||[]).forEach(addAnnualSaveKey);
+  allTx.forEach(t=>{ if(t && isSaveTx(t) && t.major) addAnnualSaveKey(t.major); });
+  const saveCatStats = saveKeyList.map(k=>{
+    const vals = months.map(ym=>txByMonth[ym].filter(t=>isSaveTx(t) && normBudgetKey(t.major||'')===normBudgetKey(k))
+      .reduce((sum,t)=>sum+(Number(t.amount)||0),0));
+    const total = vals.reduce((a,b)=>a+b,0);
+    const nonZeroN = vals.filter(v=>v>0).length;
+    const slope = nonZeroN>=4 ? linRegSlope(vals) : null;
+    const avg = total/months.length;
+    return { key:k, label:(CAT_MV_LABELS && CAT_MV_LABELS[k]) || k, total, vals, relSlope:(slope!=null && avg>0)?slope/avg:null };
+  });
+
   const saveRate = totalIncome>0 ? Math.round(totalSave/totalIncome*100) : null;
   const rateVals = months.map((ym,i)=> incomeVals[i]>0 ? saveVals[i]/incomeVals[i]*100 : null);
   const saveRateSlope = rateVals.filter(v=>v!=null).length>=4 ? linRegSlope(rateVals.filter(v=>v!=null)) : null;
@@ -11837,7 +11822,7 @@ function computeAnnualInsight(year){
   let crossSettle = null;
   try{ crossSettle = crossYearSettle(year); }catch(e){}
 
-  return { year, months, isCurYear, crossSettle, catStats, overRank, risingRank, fallingRank,
+  return { year, months, isCurYear, crossSettle, catStats, saveCatStats, overRank, risingRank, fallingRank,
     totalIncome, totalExpense, totalSave, saveRate, saveRateSlope,
     nwStart, nwEnd, nwVals, incomeVals, saveVals, expenseVals, rateVals,
     fixedVals, varVals, fixedTotal, varTotal, fixedCats, varCats, fixedCV, varCV,
@@ -13846,8 +13831,6 @@ window.onload = () => {
     STATE.cardBudget = DEMO_CARD_BUDGET;
     STATE.initBal = DEMO_INITBAL;
     STATE.acctsDef = DEMO_ACCTSDEF;
-    // scriptUrl은 localStorage에 저장되므로 새 기기/브라우저에는 자동으로 전달되지 않는다.
-    setTimeout(()=>showToast('⚠️ 이 기기는 구글 시트 미연결 상태임 · 설정에서 같은 Apps Script /exec 주소를 연결해야 동기화됨'), 400);
   }
   updateCategoryOptions();
   renderHome();
@@ -14314,6 +14297,8 @@ function renderAna2(){
     if(s==='dash' || s==='table' || s==='year' || s==='annual-table') A2_SUB = s;
   }
   gbMemoLoad();
+  var titleEl = document.querySelector('#p-ana2 .a2-title');
+  if(titleEl){ titleEl.textContent = A2_SUB==='dash' ? '월간 보드' : A2_SUB==='table' ? '월간 표' : A2_SUB==='year' ? '연간 보드' : '연간 표'; }
   var lab = document.getElementById('a2-label');
   if(lab){
     lab.textContent = (A2_SUB==='year' || A2_SUB==='annual-table') ? (a2Year()+'년')
@@ -14460,7 +14445,7 @@ function a2WhereCardHtml(cats, cur, ym){
       +a2DetailHostHtml('dash', c.key, 'out', open)
     +'</div>';
   }).join('');
-  return '<div class="a2-card"><div class="a2-ct"><span>어디에 썼을까요?</span><small>카테고리를 누르면 세부 내역</small></div>'
+  return '<div class="a2-card"><div class="a2-ct"><span>어디에 썼을까요?</span><small>선택한 달에 많이 쓴 순 · 카테고리를 누르면 세부 내역</small></div>'
     +'<div style="display:flex;align-items:center;gap:18px;margin-top:14px">'+donut+'<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:9px">'+lg+'</div></div>'
     +'<div class="a2-hr"></div>'+rows+'</div>';
 }
@@ -14618,25 +14603,79 @@ function a2AnnualMonthlyTableHtml(year){
   return '<section class="a2-card a2-full a2-annual-month-card"><div class="a2-ct"><span>월별 요약표</span><small>1~12월 가로 비교 · 월을 누르면 해당 월 대시보드로 이동</small></div><div class="a2-annual-note">금액은 원 단위 표시를 줄여 만원 단위로 표기함. 거래가 없는 달은 회색으로 표시함.</div>'+head+body+'</tbody></table></div></section>';
 }
 
+// 연간 화면 공통 카테고리 순서. 통신비/식비/문화생활/교통비 등 기존 명칭도 별칭으로 맞춘다.
+function a2AnnualOrderName(major){
+  var n = normBudgetKey(String(major||'').replace(/\s+/g,''));
+  var aliases = { '통신비':'통신', '식비':'식', '문화생활':'문화', '교통비':'교통', '꾸밈':'꾸밈비', '꿈밈':'꾸밈비' };
+  return aliases[n] || n;
+}
+function a2AnnualCategoryPriority(major){
+  var order = ['주거비','보험','통신','곗돈','엄마','엄마2','식','생활용품','꾸밈비','자기계발','건강','교통','경조사','문화','기타'];
+  var i = order.indexOf(a2AnnualOrderName(major));
+  return i<0 ? 1000 : i;
+}
+function a2AnnualRowGroup(type, major){
+  var n = a2AnnualOrderName(major);
+  if(type==='수입') return {rank:0, label:'수입'};
+  var isSaveMajor = type==='저축' || ((type==='이동') && (SAVE_MAJORS||[]).some(function(k){return normBudgetKey(k)===normBudgetKey(major);}));
+  if(isSaveMajor) return {rank:1, label:'저축'};
+  if(type==='지출'){
+    var fixedPreferred = ['주거비','보험','통신','곗돈','엄마','엄마2'];
+    var variablePreferred = ['식','생활용품','꾸밈비','자기계발','건강','교통','경조사','문화','기타'];
+    var fixed = fixedPreferred.indexOf(n)>=0 ? true : variablePreferred.indexOf(n)>=0 ? false : isFixedMajor(major);
+    return fixed ? {rank:2, label:'고정'} : {rank:3, label:'비고정'};
+  }
+  return {rank:4, label:type||'기타'};
+}
+
 // 연간 상세표: 카테고리와 소분류를 행으로, 1~12월을 열로 표시.
-// 대분류 행으로 소분류를 접고 펼칠 수 있으며, 시트로 내보내기 가능.
+// 수입 → 저축 → 고정비 → 비고정비 순으로 표시하고, 지출 카테고리는 사용자가 지정한 순서를 따른다.
 function a2AnnualDetailTableHtml(){
   var y=a2Year(), txs=a2AllTx().filter(function(t){return String(t.date||'').slice(0,4)===String(y);});
   var months=[]; for(var m=1;m<=12;m++) months.push(String(y)+'-'+a2pad(m));
-  var kinds=['수입','이동','지출'];
-  var rows=[], seen={};
+  var kinds=['수입','이동','저축','지출'];
+  var rows=[], seen={}, seq=0;
   function addRow(type,major,sub){
-    var id=type+'|'+major+'|'+(sub||''); if(seen[id]) return; seen[id]=true;
-    rows.push({type:type,major:major,sub:sub||'',id:id});
+    major=String(major||'미분류').trim(); sub=String(sub||'').trim();
+    var id=type+'|'+a2AnnualOrderName(major)+'|'+normBudgetKey(sub).replace(/\s+/g,''); if(seen[id]) return; seen[id]=true;
+    var group=a2AnnualRowGroup(type,major);
+    rows.push({type:type,displayType:group.label,groupRank:group.rank,major:major,sub:sub,id:id,seq:seq++});
   }
   if(typeof CFG!=='undefined' && CFG.categories){
     kinds.forEach(function(type){(CFG.categories[type]||[]).forEach(function(c){
       addRow(type,c.major,''); (c.subs||[]).forEach(function(sub){addRow(type,c.major,sub);});
     });});
   }
-  txs.forEach(function(t){addRow(t.type||'지출',t.major||'미분류',''); addRow(t.type||'지출',t.major||'미분류',t.sub||'기타');});
-  rows.sort(function(a,b){var k=kinds.indexOf(a.type)-kinds.indexOf(b.type); if(k) return k; var m=a.major.localeCompare(b.major,'ko'); if(m) return m; return a.sub? (b.sub? a.sub.localeCompare(b.sub,'ko'):1) : (b.sub?-1:0);});
-  function rowTx(r,ym){return txs.filter(function(t){return String(t.date||'').slice(0,7)===ym && t.type===r.type && String(t.major||'미분류')===r.major && (r.sub ? String(t.sub||'기타')===r.sub : true);});}
+  // 현재 STATE.catMap, 카테고리 설정, 기본 목록, 예전 거래에만 남은 항목까지 모두 보완한다.
+  [['수입',(STATE.catMap||{})['수입']],['이동',(STATE.catMap||{})['이동']],['저축',(STATE.catMap||{})['저축']],['지출',(STATE.catMap||{})['지출']]].forEach(function(pair){
+    Object.keys(pair[1]||{}).forEach(function(major){addRow(pair[0],major,'');(pair[1][major]||[]).forEach(function(sub){addRow(pair[0],major,sub);});});
+  });
+  [['수입',CAT_IN_SUBS],['이동',CAT_MV_SUBS],['지출',CAT_OUT_SUBS]].forEach(function(pair){
+    Object.keys(pair[1]||{}).forEach(function(major){addRow(pair[0],major,'');(pair[1][major]||[]).forEach(function(sub){addRow(pair[0],major,sub);});});
+  });
+  txs.forEach(function(t){addRow(t.type||'지출',t.major||'미분류',''); addRow(t.type||'지출',t.major||'미분류',t.sub||t.category||'기타');});
+  rows.sort(function(a,b){
+    if(a.groupRank!==b.groupRank) return a.groupRank-b.groupRank;
+    if(a.groupRank===2 || a.groupRank===3){
+      var ap=a2AnnualCategoryPriority(a.major), bp=a2AnnualCategoryPriority(b.major);
+      if(ap!==bp) return ap-bp;
+    }
+    var am=a2AnnualOrderName(a.major), bm=a2AnnualOrderName(b.major);
+    if(am===bm){
+      if(!a.sub && b.sub) return -1; if(a.sub && !b.sub) return 1;
+      if(a.sub && b.sub) return a.sub.localeCompare(b.sub,'ko');
+      return a.seq-b.seq;
+    }
+    if(a.groupRank===0 || a.groupRank===1 || (a.groupRank>=4 && a2AnnualCategoryPriority(a.major)>=1000 && a2AnnualCategoryPriority(b.major)>=1000)) return a.seq-b.seq;
+    if(a2AnnualCategoryPriority(a.major)>=1000 && a2AnnualCategoryPriority(b.major)<1000) return 1;
+    if(a2AnnualCategoryPriority(a.major)<1000 && a2AnnualCategoryPriority(b.major)>=1000) return -1;
+    return am.localeCompare(bm,'ko');
+  });
+  function rowTx(r,ym){return txs.filter(function(t){
+    if(String(t.date||'').slice(0,7)!==ym || t.type!==r.type) return false;
+    if(a2AnnualOrderName(t.major||'미분류')!==a2AnnualOrderName(r.major)) return false;
+    return !r.sub || normBudgetKey(t.sub||t.category||'기타')===normBudgetKey(r.sub);
+  });}
   function amount(list){return list.reduce(function(s,t){return s+(Number(t.amount)||0);},0);}
   function money(v){return v? a2num(v):'—';}
   var colgroup='<colgroup><col style="width:60px"><col style="width:190px">'+months.map(function(){return '<col style="width:88px">';}).join('')+'<col style="width:110px"><col style="width:100px"></colgroup>';
@@ -14649,10 +14688,10 @@ function a2AnnualDetailTableHtml(){
       return '<td class="'+(v?'has-value':'')+'"><button class="a2-annual-cell" onclick="a2AnnualShowDetail(\''+ym+'\',\''+encType+'\',\''+encMajor+'\',\''+encSub+'\')" title="'+a2e(r.major+(r.sub?' · '+r.sub:''))+' / '+ym+' 내역 보기">'+money(v)+(memo?'<small class="memo-mark">📝 '+a2e(memo.slice(0,24))+(memo.length>24?'…':'')+'</small>':'')+'</button></td>';
     }).join('');
     var itemText=majorRow?'<button class="a2-major-toggle" onclick="a2AnnualToggleGroup(\''+group+'\',this)" title="세부 항목 접기/펼치기"><span class="a2-fold-icon">▾</span> '+a2e(r.major)+'</button>':'<span class="a2-sub-indent">↳ '+a2e(r.sub)+'</span>';
-    return '<tr class="'+(majorRow?'major-row':'sub-row')+'" data-group="'+group+'"'+(!majorRow?' data-parent="'+group+'"':'')+'><td class="kind">'+a2e(r.type)+'</td><th class="item">'+itemText+'</th>'+cells+'<td class="total">'+money(total)+'</td><td class="avg">'+money(avg)+'</td></tr>';
+    return '<tr class="'+(majorRow?'major-row':'sub-row')+'" data-group="'+group+'"'+(!majorRow?' data-parent="'+group+'"':'')+'><td class="kind">'+a2e(r.displayType||r.type)+'</td><th class="item">'+itemText+'</th>'+cells+'<td class="total">'+money(total)+'</td><td class="avg">'+money(avg)+'</td></tr>';
   }).join('');
   var detail=''; if(A2_ANNUAL_PICK){detail=a2AnnualSelectedDetailHtml(A2_ANNUAL_PICK);}
-  return '<div class="a2-card a2-full a2-annual-detail-card"><div class="a2-ct"><span>연간 상세표</span><div class="a2-annual-tools"><small>대분류를 누르면 세부 항목 접기/펼치기 · 월별 셀을 누르면 거래 내역과 메모 표시</small><button type="button" class="a2-collapse-btn" onclick="a2AnnualToggleAll(false)">모두 접기</button><button type="button" class="a2-collapse-btn" onclick="a2AnnualToggleAll(true)">모두 펼치기</button><button class="a2-annual-export" onclick="a2ExportAnnualDetail()">↥ 연간상세표 시트로 저장</button></div></div><div class="a2-annual-note">금액은 원 단위임. 📝 표시는 해당 월에 저장된 메모임. 연간 평균은 연간 합계를 12개월로 나눈 값임. 저장 시 구글 시트의 ‘연간상세표’ 탭을 갱신함.</div>'+head+body+'</tbody></table></div><div id="a2-annual-selected">'+detail+'</div><div id="a2-annual-export-status" class="a2-annual-note" aria-live="polite"></div></div>';
+  return '<div class="a2-card a2-full a2-annual-detail-card"><div class="a2-ct"><span>연간 표</span><div class="a2-annual-tools"><small>대분류를 누르면 세부 항목 접기/펼치기 · 월별 셀을 누르면 거래 내역과 메모 표시</small><button type="button" class="a2-collapse-btn" onclick="a2AnnualToggleAll(false)">모두 접기</button><button type="button" class="a2-collapse-btn" onclick="a2AnnualToggleAll(true)">모두 펼치기</button><button class="a2-annual-export" onclick="a2ExportAnnualDetail()">↥ 연간상세표 시트로 저장</button></div></div><div class="a2-annual-note">금액은 원 단위임. 📝 표시는 해당 월에 저장된 메모임. 연간 평균은 연간 합계를 12개월로 나눈 값임. 저장 시 구글 시트의 ‘연간상세표’ 탭을 갱신함.</div>'+head+body+'</tbody></table></div><div id="a2-annual-selected">'+detail+'</div><div id="a2-annual-export-status" class="a2-annual-note" aria-live="polite"></div></div>';
 }
 function a2TableToggleAll(open){
   var rows=Array.prototype.slice.call(document.querySelectorAll('#p-ana2 .a2-tbl tr.a2-r[data-view="table"]'));
@@ -14733,7 +14772,7 @@ function a2YearHtml(){
     +'</div></div>';
 
   // 월별 수입·지출 추이
-  var mx = Math.max.apply(null, d.incomeVals.concat(d.expenseVals).concat([1]));
+  var mx = Math.max.apply(null, d.incomeVals.concat(d.expenseVals).concat(d.saveVals||[]).concat([1]));
   var colW = 350/n;
   var line = function(vals, col){
     var pts = vals.map(function(v,i){ return ((i+0.5)*colW).toFixed(1)+','+(8+(1-v/mx)*104).toFixed(1); });
@@ -14745,14 +14784,14 @@ function a2YearHtml(){
   var labels = d.months.map(function(ym){
     return '<span class="'+(ym===curYm?'on':'')+'" onclick="a2GoMonth(\''+ym+'\',\'dash\')">'+parseInt(ym.slice(5,7),10)+'월</span>';
   }).join('');
-  var trend = '<div class="a2-card"><div class="a2-ct"><span>월별 수입·지출 추이</span><small>월 이름을 누르면 그 달 대시보드</small></div>'
-    +'<div class="a2-legend"><span><i style="background:var(--blue)"></i>수입</span><span><i style="background:#CC8A87"></i>지출</span></div>'
-    +'<svg width="100%" height="120" viewBox="0 0 350 120" preserveAspectRatio="none" role="img" aria-label="월별 수입과 지출 추이">'
-    +line(d.incomeVals,'#3182F6')+line(d.expenseVals,'#CC8A87')+'</svg>'
+  var trend = '<div class="a2-card"><div class="a2-ct"><span>월별 수입·지출·저축 추이</span><small>월 이름을 누르면 그 달 대시보드</small></div>'
+    +'<div class="a2-legend"><span><i style="background:var(--blue)"></i>수입</span><span><i style="background:#CC8A87"></i>지출</span><span><i style="background:#2E9E6B"></i>저축</span></div>'
+    +'<svg width="100%" height="120" viewBox="0 0 350 120" preserveAspectRatio="none" role="img" aria-label="월별 수입, 지출, 저축 추이">'
+    +line(d.incomeVals,'#3182F6')+line(d.expenseVals,'#CC8A87')+line(d.saveVals||[],'#2E9E6B')+'</svg>'
     +'<div class="a2-mlabels" style="grid-template-columns:repeat('+n+',1fr)">'+labels+'</div></div>';
 
   // 카테고리별 추이 — 최근 6개월 스파크라인, 누르면 월별·소분류 세부
-  var cs = d.catStats.filter(function(c){ return c.total!==0; }).sort(function(a,b){ return b.total-a.total; });
+  var cs = d.catStats.filter(function(c){ return c.total!==0; }).sort(function(a,b){ var ap=a2AnnualCategoryPriority(a.key), bp=a2AnnualCategoryPriority(b.key); if(ap!==bp) return ap-bp; return a.key.localeCompare(b.key,'ko'); });
   var palette = ['#3182F6','#2E9E6B','#C08A3E','#9B8AE0','#E2564F'];
   var catRows = cs.map(function(c,i){
     var enc = a2enc(c.key), open = a2IsOpen('year', enc);
@@ -14766,9 +14805,23 @@ function a2YearHtml(){
       +'<span class="a2-amt" style="flex:1;text-align:right;'+(rising?'color:var(--red-vivid)':'')+'">'+a2num(c.vals[c.vals.length-1])+'</span></div>'
       +a2DetailHostHtml('year', c.key, 'out', open)+'</div>';
   }).join('');
-  var catCard = '<div class="a2-card"><div class="a2-ct"><span>카테고리별 추이</span><small>최근 '+Math.min(6,n)+'개월 · 누르면 세부</small></div>'
+  var catCard = '<div class="a2-card"><div class="a2-ct"><span>지출 카테고리별 추이</span><small>최근 '+Math.min(6,n)+'개월 · 사용자 지정 순서</small></div>'
     +'<div style="margin-top:6px">'+(catRows||'<div class="a2-empty">지출 내역이 없어요</div>')+'</div>'
-    +'<div class="a2-note" style="margin-top:8px">빨간색 = 최근 몇 달 꾸준히 늘고 있는 카테고리</div></div>';
+    +'<div class="a2-note" style="margin-top:8px">빨간색 = 최근 몇 달 꾸준히 늘고 있는 카테고리 · 오른쪽 금액은 최근월 지출</div></div>';
+
+  // 저축·투자 대분류별 추이: 지출 카테고리와 분리해 최근 6개월 흐름을 표시한다.
+  var saveStats = (d.saveCatStats||[]).filter(function(c){ return c.total!==0; });
+  var saveRows = saveStats.map(function(c,i){
+    var v6 = c.vals.slice(-6);
+    var rising = c.relSlope!=null && c.relSlope>=0.06;
+    var col = rising ? '#E2564F' : palette[i%palette.length];
+    return '<div class="a2-cat"><div class="a2-cathead" style="cursor:default">'
+      +'<span class="a2-cname" style="flex:none;width:76px">'+a2e(c.label)+'</span>'
+      +a2Spark(v6,col)
+      +'<span class="a2-amt" style="flex:1;text-align:right;'+(rising?'color:var(--red-vivid)':'')+'">'+a2num(c.vals[c.vals.length-1])+'</span></div></div>';
+  }).join('');
+  var saveCatCard = '<div class="a2-card"><div class="a2-ct"><span>저축·투자 카테고리별 추이</span><small>최근 '+Math.min(6,n)+'개월 · 오른쪽은 최근월 저축액</small></div>'
+    +'<div style="margin-top:6px">'+(saveRows||'<div class="a2-empty">저축·투자 내역이 없어요</div>')+'</div></div>';
 
   // 연간 예산 페이스 — 올해 전체 예산 대비 지금까지 쓴 비율 vs 경과 비율
   var elapsed = Math.round(n/12*100);
@@ -14798,7 +14851,7 @@ function a2YearHtml(){
       +'<div class="a2-row" style="margin-top:8px"><span class="a2-note" style="font-size:12px">연간 예산의 '+usedPct+'% 사용</span><span class="a2-note" style="font-size:12px">'+n+'월 기준 경과 '+elapsed+'%</span></div>'
       +'<div class="a2-hr"></div><div class="a2-note" style="margin-bottom:4px">검은 눈금 = 정상 페이스 · 넘어선 순서대로 · 누르면 세부</div>'+prow+'</div>';
   }
-  return '<div class="a2-grid">'+a2AnnualMonthlyTableHtml(y)+kpi+trend+catCard+paceCard+'</div>';
+  return '<div class="a2-grid">'+a2AnnualMonthlyTableHtml(y)+kpi+trend+catCard+saveCatCard+paceCard+'</div>';
 }
 
 // 연간 탭 카테고리 세부 — 월별 금액 막대 · 합계/월평균/예산 · 소분류별 합계 · 월별 메모
@@ -14943,6 +14996,43 @@ window.addEventListener('load', ()=>{ initFoldableCards(); if(typeof renderAllSe
  #p-ana2 .a2-annual-memo-edit input{max-width:800px;flex:1;padding:9px 12px;border:1px solid #D0D5DD;border-radius:7px;font-size:12px;}
 }
 @media (max-width:859px){#p-ana2 .a2-annual-detail-wrap{overflow:auto;} #p-ana2 table.a2-annual-detail{min-width:1200px;border-collapse:collapse;font-size:10px;} #p-ana2 .a2-annual-detail th,#p-ana2 .a2-annual-detail td{padding:5px;border-bottom:1px solid #E5E8EB;white-space:nowrap;} #p-ana2 .a2-annual-cell{border:0;background:transparent;font:inherit;cursor:pointer;} #p-ana2 .a2-annual-memo-edit{display:flex;gap:8px;flex-wrap:wrap;} #p-ana2 .a2-annual-memo-edit input{flex:1;min-width:180px;}}
+</style>
+
+
+<style id="mobile-memo-compatibility-fix">
+/* 모바일: 연간 리포트의 월별 메모가 한 줄 말줄임 처리되거나 하단 탭바에 가리지 않도록 보정 */
+@media (max-width: 859px) {
+  body {
+    padding-bottom: calc(120px + env(safe-area-inset-bottom)) !important;
+  }
+
+  #p-ana2 .a2-grid,
+  #p-ana2 .a2-card,
+  #p-ana2 .a2-detail {
+    min-height: 0;
+    height: auto;
+  }
+
+  /* 월별 메모 문구는 줄바꿈을 허용해 전체 내용 표시 */
+  #p-ana2 .a2-tx {
+    align-items: flex-start;
+    gap: 7px;
+  }
+  #p-ana2 .a2-tx .m {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    line-height: 1.5;
+  }
+
+  /* 하단 고정 탭바가 상세 카드의 마지막 메모를 덮지 않도록 여백 확보 */
+  #p-ana2 .a2-detail {
+    padding-bottom: 16px;
+    margin-bottom: 18px;
+  }
+}
 </style>
 
 </body>
