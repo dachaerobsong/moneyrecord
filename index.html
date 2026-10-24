@@ -6075,20 +6075,32 @@ function gbMemoWrap(obj){
 // 시트에서 받은 메모 합치기: 이모지·공백만 다른 옛 키의 메모는 버리지 않고 하나로 합친다.
 // 합친 뒤에는 시트의 옛 줄을 비워서(빈 메모 저장) 다음 동기화 때 되살아나지 않게 한다.
 function gbMemoMergeFromSheet(src){
+  // 먼저 이 기기에만 남아 있을 수 있는 메모를 읽어 둠.
   gbMemoLoad();
-  var by = {};
+  var localBefore = {};
+  Object.keys(GB_MEMO).forEach(function(k){ localBefore[gbMemoCanon(k)] = String(GB_MEMO[k]||'').trim(); });
+  var by = {}, sheetKeys = {};
   Object.keys(src||{}).forEach(function(k){
     var ck = gbMemoCanon(k), v = String(src[k]==null?'':src[k]).trim();
+    sheetKeys[ck] = true; // 값이 비어 있어도 시트에 키가 있으면 사용자가 지운 메모일 수 있으므로 덮어쓰지 않음
     var o = by[ck] || (by[ck] = { canon:null, legacy:[] });
     if(ck===k) o.canon = v; else if(v) o.legacy.push({ k:k, v:v });
   });
-  var url = getUrl(), fixes = [];
+  var url = getUrl(), fixes = [], localOnly = [];
   Object.keys(by).forEach(function(ck){
     var o = by[ck];
     var val = (o.canon!==null) ? o.canon : (GB_MEMO[ck]||'');   // 통일된 키는 시트 값이 우선
     o.legacy.forEach(function(l){ val = gbMemoJoin(val, l.v); });
     if(val) GB_MEMO[ck] = val; else delete GB_MEMO[ck];
     if(o.legacy.length) fixes.push({ ck:ck, val:val, legacy:o.legacy.map(function(l){ return l.k; }) });
+  });
+  // 핵심 수정: PC 로컬에는 있지만 구글 시트에는 아예 없는 메모를 시트로 복구함.
+  // 시트에 같은 키가 있고 값이 빈 경우는 의도적 삭제일 수 있어 복구하지 않음.
+  Object.keys(localBefore).forEach(function(ck){
+    if(localBefore[ck] && !sheetKeys[ck]){
+      GB_MEMO[ck] = localBefore[ck];
+      localOnly.push({ ck:ck, val:localBefore[ck] });
+    }
   });
   try{ LS.set('asset_gb_memo', JSON.stringify(GB_MEMO)); }catch(e){}
   if(!url) return;
@@ -6097,6 +6109,7 @@ function gbMemoMergeFromSheet(src){
     fetch(url, { method:'POST', headers:{'Content-Type':'text/plain'},
       body: JSON.stringify({ action:'gb_saveCellMemo', mon: full.slice(0,i), key: full.slice(i+1), memo: memo }) }).catch(function(){});
   };
+  localOnly.forEach(function(f){ send(f.ck, f.val); });
   fixes.forEach(function(f){
     send(f.ck, f.val);
     f.legacy.forEach(function(k){ send(k, ''); });
@@ -14896,43 +14909,6 @@ window.addEventListener('load', ()=>{ initFoldableCards(); if(typeof renderAllSe
  #p-ana2 .a2-annual-memo-edit input{max-width:800px;flex:1;padding:9px 12px;border:1px solid #D0D5DD;border-radius:7px;font-size:12px;}
 }
 @media (max-width:859px){#p-ana2 .a2-annual-detail-wrap{overflow:auto;} #p-ana2 table.a2-annual-detail{min-width:1200px;border-collapse:collapse;font-size:10px;} #p-ana2 .a2-annual-detail th,#p-ana2 .a2-annual-detail td{padding:5px;border-bottom:1px solid #E5E8EB;white-space:nowrap;} #p-ana2 .a2-annual-cell{border:0;background:transparent;font:inherit;cursor:pointer;} #p-ana2 .a2-annual-memo-edit{display:flex;gap:8px;flex-wrap:wrap;} #p-ana2 .a2-annual-memo-edit input{flex:1;min-width:180px;}}
-</style>
-
-
-<style id="mobile-memo-compatibility-fix">
-/* 모바일: 연간 리포트의 월별 메모가 한 줄 말줄임 처리되거나 하단 탭바에 가리지 않도록 보정 */
-@media (max-width: 859px) {
-  body {
-    padding-bottom: calc(120px + env(safe-area-inset-bottom)) !important;
-  }
-
-  #p-ana2 .a2-grid,
-  #p-ana2 .a2-card,
-  #p-ana2 .a2-detail {
-    min-height: 0;
-    height: auto;
-  }
-
-  /* 월별 메모 문구는 줄바꿈을 허용해 전체 내용 표시 */
-  #p-ana2 .a2-tx {
-    align-items: flex-start;
-    gap: 7px;
-  }
-  #p-ana2 .a2-tx .m {
-    white-space: normal !important;
-    overflow: visible !important;
-    text-overflow: clip !important;
-    overflow-wrap: anywhere;
-    word-break: break-word;
-    line-height: 1.5;
-  }
-
-  /* 하단 고정 탭바가 상세 카드의 마지막 메모를 덮지 않도록 여백 확보 */
-  #p-ana2 .a2-detail {
-    padding-bottom: 16px;
-    margin-bottom: 18px;
-  }
-}
 </style>
 
 </body>
