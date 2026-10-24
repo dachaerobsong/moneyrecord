@@ -1285,7 +1285,8 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
     <div class="a2-tabs">
       <button class="a2-tab on" data-sub="dash" onclick="a2SetSub('dash')">대시보드</button>
       <button class="a2-tab" data-sub="table" onclick="a2SetSub('table')">표</button>
-      <button class="a2-tab" data-sub="year" onclick="a2SetSub('year')">연간</button>
+      <button class="a2-tab" data-sub="year" onclick="a2SetSub('year')">연간 리포트</button>
+      <button class="a2-tab" data-sub="annual-table" onclick="a2SetSub('annual-table')">연간표</button>
     </div>
   </div>
   <div id="a2-body"></div>
@@ -13908,7 +13909,8 @@ function initFoldableCards(){
 //   · 예산이 BUD_MONTH(기존 월간 화면의 '보고 있는 달')를 읽는 함수가 있어서,
 //     계산하는 동안만 a2WithBud()로 잠깐 바꿨다가 반드시 되돌린다.
 // ══════════════════════════════════════════════════════════════════
-var A2_SUB = 'dash';        // dash | table | year
+var A2_SUB = 'dash';        // dash | table | year | annual-table
+var A2_ANNUAL_PICK = null;
 var A2_SUB_INIT = false;
 var A2_MONTH = '';          // 'YYYY-MM'
 var A2_YEAR = 0;
@@ -14193,7 +14195,7 @@ function a2DetailHostHtml(view, key, kind, open){
 
 // ── 이동 · 이동 후 다시 그리기 ──────────────────────────────────
 function a2Nav(d){
-  if(A2_SUB==='year'){
+  if(A2_SUB==='year' || A2_SUB==='annual-table'){
     var y = a2Year()+d;
     if(y > new Date().getFullYear()) return;
     A2_YEAR = y;
@@ -14228,12 +14230,12 @@ function renderAna2(){
   if(!A2_SUB_INIT){
     A2_SUB_INIT = true;
     var s = LS.get('a2_sub');
-    if(s==='dash' || s==='table' || s==='year') A2_SUB = s;
+    if(s==='dash' || s==='table' || s==='year' || s==='annual-table') A2_SUB = s;
   }
   gbMemoLoad();
   var lab = document.getElementById('a2-label');
   if(lab){
-    lab.textContent = A2_SUB==='year' ? (a2Year()+'년')
+    lab.textContent = (A2_SUB==='year' || A2_SUB==='annual-table') ? (a2Year()+'년')
       : (a2Month().slice(0,4)+'년 '+parseInt(a2Month().slice(5,7),10)+'월');
   }
   document.querySelectorAll('#p-ana2 .a2-tab').forEach(function(b){ b.classList.toggle('on', b.dataset.sub===A2_SUB); });
@@ -14243,7 +14245,7 @@ function renderAna2(){
       host.innerHTML = '<div class="a2-card"><div class="a2-empty">거래 내역이 아직 없어요.<br>설정에서 시트를 연동하거나 가계부에 내역을 입력하면 여기에 분석이 나와요.</div></div>';
       return;
     }
-    host.innerHTML = A2_SUB==='dash' ? a2DashHtml() : A2_SUB==='table' ? a2TableHtml() : a2YearHtml();
+    host.innerHTML = A2_SUB==='dash' ? a2DashHtml() : A2_SUB==='table' ? a2TableHtml() : A2_SUB==='annual-table' ? a2AnnualDetailTableHtml() : a2YearHtml();
     if(A2_SUB==='table') a2FitTable();
   }catch(e){
     console.error(e);
@@ -14424,10 +14426,10 @@ function a2DiffCell(diff, upIsGood, empty){
 }
 function a2TblRow(view, key, kind, labelHtml, amtHtml, budHtml, pctHtml, diffHtml, memoHtml){
   var enc = a2enc(key), open = a2IsOpen(view, enc);
-  return '<tr class="a2-r" onclick="a2Toggle(\''+view+'\',\''+enc+'\',\''+kind+'\')">'
+  return '<tr class="a2-r" data-view="'+view+'" data-enc="'+enc+'" data-kind="'+kind+'" onclick="a2Toggle(\''+view+'\',\''+enc+'\',\''+kind+'\')">'
     +'<td><span class="a2-car" id="a2c_'+a2id(view,enc)+'" style="display:inline-block">'+(open?'▾':'▸')+'</span>'+labelHtml+'</td>'
     +'<td>'+amtHtml+'</td><td>'+budHtml+'</td><td>'+pctHtml+'</td><td>'+diffHtml+'</td><td>'+memoHtml+'</td></tr>'
-    +'<tr class="a2-dr" id="a2d_'+a2id(view,enc)+'" style="display:'+(open?'table-row':'none')+'"'+(open?' data-filled="1"':'')+'><td colspan="6">'
+    +'<tr class="a2-dr" data-view="'+view+'" data-enc="'+enc+'" data-kind="'+kind+'" id="a2d_'+a2id(view,enc)+'" style="display:'+(open?'table-row':'none')+'"'+(open?' data-filled="1"':'')+'><td colspan="6">'
     +(open ? '<div class="a2-tdwrap"><div class="a2-detail">'+a2DetailFor(view, key, kind)+'</div></div>' : '')+'</td></tr>';
 }
 function a2TableHtml(){
@@ -14457,9 +14459,9 @@ function a2TableHtml(){
   // 저축·투자 / 수입 — 같은 방식으로 누르면 세부
   var saveBud = a2SaveBud(ym), inBud = a2InBud(ym);
   var goalPct = function(v, b){ if(!(b>0)) return '<span style="color:var(--txt3)">—</span>'; var p=Math.round(v/b*100); return '<b style="color:'+(p>=100?'var(--green-vivid)':'var(--txt2)')+'">'+p+'%</b>'; };
-  var flow = '<tr class="a2-sep"><td colspan="6">저축 · 수입</td></tr>'
-    + a2TblRow('table','__save','save',' 💰 저축·투자', a2num(cur.mSave), saveBud>0?a2num(saveBud):'<span style="color:var(--txt3)">—</span>', goalPct(cur.mSave,saveBud), a2DiffCell(cur.mSave-prev.mSave, true, prev.mSave===0 && cur.mSave===0), '')
-    + a2TblRow('table','__in','in',' 💵 수입', a2num(cur.mIn), inBud>0?a2num(inBud):'<span style="color:var(--txt3)">—</span>', goalPct(cur.mIn,inBud), a2DiffCell(cur.mIn-prev.mIn, true, prev.mIn===0 && cur.mIn===0), '');
+  var flow = '<tr class="a2-sep"><td colspan="6">수입 · 저축</td></tr>'
+    + a2TblRow('table','__in','in',' 💵 수입', a2num(cur.mIn), inBud>0?a2num(inBud):'<span style="color:var(--txt3)">—</span>', goalPct(cur.mIn,inBud), a2DiffCell(cur.mIn-prev.mIn, true, prev.mIn===0 && cur.mIn===0), '')
+    + a2TblRow('table','__save','save',' 💰 저축·투자', a2num(cur.mSave), saveBud>0?a2num(saveBud):'<span style="color:var(--txt3)">—</span>', goalPct(cur.mSave,saveBud), a2DiffCell(cur.mSave-prev.mSave, true, prev.mSave===0 && cur.mSave===0), '');
 
   var note = '';
   if(bt.excl>0 || bt.reserve>0){
@@ -14467,9 +14469,9 @@ function a2TableHtml(){
       +(bt.excl>0?' (누적형·예산 미설정 '+a2won(bt.excl)+' 제외)':'')
       +(bt.reserve>0?' · 아직 도래하지 않은 분기·반기 예산 '+a2won(bt.reserve)+'은 뺐어요':'')+'</div>';
   }
-  return '<div class="a2-note" style="margin:0 4px 8px">행을 누르면 소분류 → 개별 거래까지 펼쳐져요 · ← 옆으로 끌어서 더 보기</div>'
+  return '<div class="a2-table-toolbar"><div class="a2-note" style="margin:0">행을 누르면 소분류 → 개별 거래까지 펼쳐져요 · ← 옆으로 끌어서 더 보기</div><div class="a2-collapse-tools"><button type="button" onclick="a2TableToggleAll(false)">모두 접기</button><button type="button" onclick="a2TableToggleAll(true)">모두 펼치기</button></div></div>'
     +'<div class="a2-tblwrap"><table class="a2-tbl"><thead><tr><th>카테고리</th><th>금액</th><th>예산</th><th>예산대비</th><th>지난달대비</th><th style="text-align:left">메모</th></tr></thead><tbody>'
-    +body+sumRow+flow+'</tbody></table></div>'+note;
+    +flow+body+sumRow+'</tbody></table></div>'+note;
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -14533,6 +14535,98 @@ function a2AnnualMonthlyTableHtml(year){
     }).join('')+'<td class="annual-total">'+(r.pct?'—':fmt(total,false))+'</td></tr>';
   }).join('');
   return '<section class="a2-card a2-full a2-annual-month-card"><div class="a2-ct"><span>월별 요약표</span><small>1~12월 가로 비교 · 월을 누르면 해당 월 대시보드로 이동</small></div><div class="a2-annual-note">금액은 원 단위 표시를 줄여 만원 단위로 표기함. 거래가 없는 달은 회색으로 표시함.</div>'+head+body+'</tbody></table></div></section>';
+}
+
+// 연간 상세표: 카테고리와 소분류를 행으로, 1~12월을 열로 표시.
+// 대분류 행으로 소분류를 접고 펼칠 수 있으며, 시트로 내보내기 가능.
+function a2AnnualDetailTableHtml(){
+  var y=a2Year(), txs=a2AllTx().filter(function(t){return String(t.date||'').slice(0,4)===String(y);});
+  var months=[]; for(var m=1;m<=12;m++) months.push(String(y)+'-'+a2pad(m));
+  var kinds=['수입','이동','지출'];
+  var rows=[], seen={};
+  function addRow(type,major,sub){
+    var id=type+'|'+major+'|'+(sub||''); if(seen[id]) return; seen[id]=true;
+    rows.push({type:type,major:major,sub:sub||'',id:id});
+  }
+  if(typeof CFG!=='undefined' && CFG.categories){
+    kinds.forEach(function(type){(CFG.categories[type]||[]).forEach(function(c){
+      addRow(type,c.major,''); (c.subs||[]).forEach(function(sub){addRow(type,c.major,sub);});
+    });});
+  }
+  txs.forEach(function(t){addRow(t.type||'지출',t.major||'미분류',''); addRow(t.type||'지출',t.major||'미분류',t.sub||'기타');});
+  rows.sort(function(a,b){var k=kinds.indexOf(a.type)-kinds.indexOf(b.type); if(k) return k; var m=a.major.localeCompare(b.major,'ko'); if(m) return m; return a.sub? (b.sub? a.sub.localeCompare(b.sub,'ko'):1) : (b.sub?-1:0);});
+  function rowTx(r,ym){return txs.filter(function(t){return String(t.date||'').slice(0,7)===ym && t.type===r.type && String(t.major||'미분류')===r.major && (r.sub ? String(t.sub||'기타')===r.sub : true);});}
+  function amount(list){return list.reduce(function(s,t){return s+(Number(t.amount)||0);},0);}
+  function money(v){return v? a2num(v):'—';}
+  var colgroup='<colgroup><col style="width:60px"><col style="width:190px">'+months.map(function(){return '<col style="width:88px">';}).join('')+'<col style="width:110px"><col style="width:100px"></colgroup>';
+  var head='<div class="a2-annual-detail-wrap"><table class="a2-annual-detail">'+colgroup+'<thead><tr><th class="kind">구분</th><th class="major">항목</th>'+months.map(function(ym){return '<th>'+parseInt(ym.slice(5,7),10)+'월</th>';}).join('')+'<th class="total">연간 합계</th><th class="avg">연간 평균</th></tr></thead><tbody>';
+  var body=rows.map(function(r){
+    var majorRow=!r.sub, vals=months.map(function(ym){return amount(rowTx(r,ym));}), total=vals.reduce(function(a,b){return a+b;},0), avg=total/12;
+    var group=a2enc(r.type+'|'+r.major);
+    var cells=months.map(function(ym,i){
+      var memo=a2MemoGet(ym,r.major,r.sub), v=vals[i], encType=a2enc(r.type), encMajor=a2enc(r.major), encSub=a2enc(r.sub);
+      return '<td class="'+(v?'has-value':'')+'"><button class="a2-annual-cell" onclick="a2AnnualShowDetail(\''+ym+'\',\''+encType+'\',\''+encMajor+'\',\''+encSub+'\')" title="'+a2e(r.major+(r.sub?' · '+r.sub:''))+' / '+ym+' 내역 보기">'+money(v)+(memo?'<small class="memo-mark">📝 '+a2e(memo.slice(0,24))+(memo.length>24?'…':'')+'</small>':'')+'</button></td>';
+    }).join('');
+    var itemText=majorRow?'<button class="a2-major-toggle" onclick="a2AnnualToggleGroup(\''+group+'\',this)" title="세부 항목 접기/펼치기"><span class="a2-fold-icon">▾</span> '+a2e(r.major)+'</button>':'<span class="a2-sub-indent">↳ '+a2e(r.sub)+'</span>';
+    return '<tr class="'+(majorRow?'major-row':'sub-row')+'" data-group="'+group+'"'+(!majorRow?' data-parent="'+group+'"':'')+'><td class="kind">'+a2e(r.type)+'</td><th class="item">'+itemText+'</th>'+cells+'<td class="total">'+money(total)+'</td><td class="avg">'+money(avg)+'</td></tr>';
+  }).join('');
+  var detail=''; if(A2_ANNUAL_PICK){detail=a2AnnualSelectedDetailHtml(A2_ANNUAL_PICK);}
+  return '<div class="a2-card a2-full a2-annual-detail-card"><div class="a2-ct"><span>연간 상세표</span><div class="a2-annual-tools"><small>대분류를 누르면 세부 항목 접기/펼치기 · 월별 셀을 누르면 거래 내역과 메모 표시</small><button type="button" class="a2-collapse-btn" onclick="a2AnnualToggleAll(false)">모두 접기</button><button type="button" class="a2-collapse-btn" onclick="a2AnnualToggleAll(true)">모두 펼치기</button><button class="a2-annual-export" onclick="a2ExportAnnualDetail()">↥ 연간상세표 시트로 저장</button></div></div><div class="a2-annual-note">금액은 원 단위임. 📝 표시는 해당 월에 저장된 메모임. 연간 평균은 연간 합계를 12개월로 나눈 값임. 저장 시 구글 시트의 ‘연간상세표’ 탭을 갱신함.</div>'+head+body+'</tbody></table></div><div id="a2-annual-selected">'+detail+'</div><div id="a2-annual-export-status" class="a2-annual-note" aria-live="polite"></div></div>';
+}
+function a2TableToggleAll(open){
+  var rows=Array.prototype.slice.call(document.querySelectorAll('#p-ana2 .a2-tbl tr.a2-r[data-view="table"]'));
+  rows.forEach(function(row){
+    var enc=row.getAttribute('data-enc'), kind=row.getAttribute('data-kind');
+    var detail=document.getElementById('a2d_'+a2id('table',enc));
+    var isOpen=!!detail && detail.style.display!=='none';
+    if(open!==isOpen) a2Toggle('table',enc,kind);
+  });
+}
+function a2AnnualToggleAll(open){
+  var table=document.querySelector('#p-ana2 table.a2-annual-detail'); if(!table)return;
+  Array.prototype.forEach.call(table.querySelectorAll('tr.major-row'),function(row){
+    var btn=row.querySelector('.a2-major-toggle'); if(!btn)return;
+    var group=row.getAttribute('data-group');
+    var subs=table.querySelectorAll('tr.sub-row[data-parent="'+group+'"]');
+    subs.forEach(function(sub){sub.style.display=open?'table-row':'none';});
+    var icon=btn.querySelector('.a2-fold-icon'); if(icon)icon.textContent=open?'▾':'▸';
+  });
+}
+function a2AnnualToggleGroup(group, btn){
+  var table=btn.closest('table'); if(!table) return;
+  var subs=table.querySelectorAll('tr.sub-row[data-parent="'+group+'"]');
+  var willOpen=Array.prototype.some.call(subs,function(r){return r.style.display==='none';});
+  // Default is expanded. If all are currently visible, collapse; otherwise expand.
+  var currentlyOpen=Array.prototype.every.call(subs,function(r){return r.style.display!=='none';});
+  var open=subs.length ? !currentlyOpen : false;
+  subs.forEach(function(r){r.style.display=open?'table-row':'none';});
+  var icon=btn.querySelector('.a2-fold-icon'); if(icon) icon.textContent=open?'▾':'▸';
+}
+function a2ExportAnnualDetail(){
+  var status=document.getElementById('a2-annual-export-status'), url=getUrl();
+  if(!url){if(status)status.textContent='먼저 설정에서 구글 시트를 연동해야 함.';return;}
+  var y=a2Year(), txs=a2AllTx().filter(function(t){return String(t.date||'').slice(0,4)===String(y);});
+  var months=[];for(var m=1;m<=12;m++)months.push(String(y)+'-'+a2pad(m));
+  var kinds=['수입','이동','지출'], rows=[], seen={};
+  function add(type,major,sub){var id=type+'|'+major+'|'+(sub||'');if(seen[id])return;seen[id]=1;rows.push({type:type,major:major,sub:sub||''});}
+  if(typeof CFG!=='undefined'&&CFG.categories) kinds.forEach(function(type){(CFG.categories[type]||[]).forEach(function(c){add(type,c.major,'');(c.subs||[]).forEach(function(s){add(type,c.major,s);});});});
+  txs.forEach(function(t){add(t.type||'지출',t.major||'미분류','');add(t.type||'지출',t.major||'미분류',t.sub||'기타');});
+  rows.sort(function(a,b){var k=kinds.indexOf(a.type)-kinds.indexOf(b.type);if(k)return k;var m=a.major.localeCompare(b.major,'ko');if(m)return m;return a.sub?(b.sub?a.sub.localeCompare(b.sub,'ko'):1):(b.sub?-1:0);});
+  rows=rows.map(function(r){var vals={};months.forEach(function(ym){vals[ym]=txs.filter(function(t){return String(t.date||'').slice(0,7)===ym&&t.type===r.type&&String(t.major||'미분류')===r.major&&(!r.sub||String(t.sub||'기타')===r.sub);}).reduce(function(s,t){return s+(Number(t.amount)||0);},0);});var total=months.reduce(function(s,ym){return s+vals[ym];},0);return {type:r.type,major:r.major,sub:r.sub,months:vals,total:total,avg:Math.round(total/12),memo:months.map(function(ym){return a2MemoGet(ym,r.major,r.sub);})};});
+  if(status)status.textContent='저장 중…';
+  fetch(url,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'syncAnnualDetail',year:y,months:months,rows:rows})})
+    .then(function(r){return r.json();}).then(function(d){if(status)status.textContent=d&&d.ok?'연간상세표 시트 저장 완료 ('+(d.rows||rows.length)+'행) · '+new Date().toLocaleTimeString('ko-KR'):'저장 실패: '+((d&&d.error)||'알 수 없는 오류');})
+    .catch(function(e){if(status)status.textContent='저장 실패: '+e.message;});
+}
+function a2AnnualPickMonth(ym){A2_ANNUAL_PICK={ym:ym,type:'지출',major:'',sub:''}; renderAna2();}
+function a2AnnualShowDetail(ym,typeEnc,majorEnc,subEnc){A2_ANNUAL_PICK={ym:ym,type:a2dec(typeEnc),major:a2dec(majorEnc),sub:a2dec(subEnc)}; var el=document.getElementById('a2-annual-selected'); if(el) el.innerHTML=a2AnnualSelectedDetailHtml(A2_ANNUAL_PICK);}
+function a2AnnualSelectedDetailHtml(p){
+  if(!p || !p.major) return '<div class="a2-card a2-full"><div class="a2-empty">위 표에서 월별 금액을 누르면 해당 월의 세부 거래와 메모가 여기에 표시됨.</div></div>';
+  var txs=a2AllTx().filter(function(t){return String(t.date||'').slice(0,7)===p.ym && t.type===p.type && String(t.major||'미분류')===p.major && (!p.sub || String(t.sub||'기타')===p.sub);}).sort(function(a,b){return String(a.date).localeCompare(String(b.date));});
+  var memo=a2MemoGet(p.ym,p.major,p.sub);
+  var list=txs.map(function(t){return '<tr><td>'+a2e(String(t.date||'').slice(5))+'</td><td>'+a2e(t.sub||'')+'</td><td>'+a2e(t.memo||t.description||'')+'</td><td class="num">'+a2num(Number(t.amount)||0)+'</td><td>'+a2e(t.note||'')+'</td></tr>';}).join('');
+  var encM=a2enc(p.major), encS=a2enc(p.sub);
+  return '<div class="a2-card a2-full a2-annual-selected-card"><div class="a2-ct"><span>'+a2e(p.ym)+' · '+a2e(p.type)+' · '+a2e(p.major)+(p.sub?' / '+a2e(p.sub):'')+'</span><small>'+txs.length+'건 · 합계 '+a2won(txs.reduce(function(s,t){return s+(Number(t.amount)||0);},0))+'</small></div><div class="a2-annual-memo-edit"><label>월별 메모</label><input class="a2-memo" value="'+a2e(memo)+'" placeholder="이 항목의 해당 월 메모 입력" data-ym="'+p.ym+'" data-major="'+encM+'" data-sub="'+encS+'" onchange="a2MemoSave(this)"></div><div class="a2-annual-detail-wrap"><table class="a2-annual-tx"><thead><tr><th>날짜</th><th>세부 항목</th><th>내용</th><th>금액</th><th>비고</th></tr></thead><tbody>'+(list||'<tr><td colspan="5" class="empty">해당 월 거래 내역 없음</td></tr>')+'</tbody></table></div></div>';
 }
 
 function a2YearHtml(){
@@ -14724,5 +14818,52 @@ window.addEventListener('load', ()=>{ initFoldableCards(); if(typeof renderAllSe
 }
 </style>
 
+<style id="annual-detail-table-style">
+ #p-ana2 .a2-table-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 4px 8px;}
+ #p-ana2 .a2-collapse-tools{display:flex;gap:6px;}
+ #p-ana2 .a2-collapse-tools button,#p-ana2 .a2-collapse-btn{border:1px solid #D0D5DD;border-radius:6px;padding:5px 9px;background:#fff;color:#344054;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;}
+
+@media (min-width:860px){
+ #p-ana2 .a2-annual-detail-card{grid-column:1/-1;}
+ #p-ana2 .a2-annual-detail-wrap{width:100%;overflow:auto;max-height:68vh;border:1px solid #E5E8EB;border-radius:8px;}
+ #p-ana2 table.a2-annual-detail{width:100%;min-width:1600px;table-layout:fixed;border-collapse:separate;border-spacing:0;font-size:11px;font-variant-numeric:tabular-nums;}
+ #p-ana2 .a2-annual-detail th,#p-ana2 .a2-annual-detail td{padding:5px 6px;border-right:1px solid #E8EBEF;border-bottom:1px solid #E8EBEF;white-space:nowrap;text-align:right;vertical-align:middle;}
+ #p-ana2 .a2-annual-detail thead th{position:sticky;top:0;background:#192332;color:#fff;z-index:3;text-align:center;}
+ #p-ana2 .a2-annual-detail thead th.kind{left:0;z-index:5;width:60px;min-width:60px;max-width:60px;}
+ #p-ana2 .a2-annual-detail thead th.major{left:60px;z-index:5;width:190px;min-width:190px;max-width:190px;text-align:left;}
+ #p-ana2 .a2-annual-detail td.kind{position:sticky;left:0;background:#F8FAFC;z-index:1;text-align:left;color:#667085;width:60px;min-width:60px;max-width:60px;}
+ #p-ana2 .a2-annual-detail th.item{position:sticky;left:60px;z-index:1;background:#fff;text-align:left;width:190px;min-width:190px;max-width:190px;overflow:hidden;text-overflow:ellipsis;}
+ #p-ana2 .a2-annual-detail th.item span{color:#667085;font-weight:500;}
+ #p-ana2 .a2-annual-detail .major-row th.item{background:#EEF3F8;font-weight:800;}
+ #p-ana2 .a2-annual-detail .major-row td{background:#F8FAFC;font-weight:700;}
+ #p-ana2 .a2-annual-detail .sub-row th.item{font-weight:500;color:#475467;}
+ #p-ana2 .a2-annual-detail td.has-value{color:#1D2939;}
+ #p-ana2 .a2-annual-detail td.total,#p-ana2 .a2-annual-detail th.total{position:sticky;right:0;background:#EDF4FF;z-index:2;font-weight:800;}
+ #p-ana2 .a2-annual-detail thead th.total{z-index:5;background:#DCE9FA;color:#172B4D;}
+ #p-ana2 .a2-annual-detail thead th.avg{position:sticky;right:0;background:#E7EEF8;color:#172B4D;z-index:4;min-width:90px;}
+ #p-ana2 .a2-annual-detail td.avg{position:sticky;right:0;background:#F4F7FC;z-index:2;font-weight:700;color:#344054;min-width:90px;}
+ #p-ana2 .a2-annual-detail thead th.total{right:90px;}
+ #p-ana2 .a2-annual-detail td.total{right:90px;}
+ #p-ana2 .a2-major-toggle{display:inline-flex;align-items:center;gap:5px;border:0;background:transparent;color:inherit;font:inherit;font-weight:800;padding:0;cursor:pointer;text-align:left;}
+ #p-ana2 .a2-fold-icon{color:var(--blue);display:inline-block;width:10px;}
+ #p-ana2 .a2-sub-indent{display:inline-block;padding-left:18px;color:#475467;font-weight:500;}
+ #p-ana2 .a2-annual-tools{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end;}
+ #p-ana2 .a2-annual-export{border:0;border-radius:7px;padding:8px 12px;background:var(--blue);color:#fff;font-weight:700;font-size:12px;cursor:pointer;white-space:nowrap;}
+ #p-ana2 .a2-annual-cell{border:0;background:transparent;color:inherit;font:inherit;text-align:right;width:100%;min-width:72px;padding:0;cursor:pointer;}
+ #p-ana2 .a2-annual-cell:hover{color:#1769D2;text-decoration:underline;}
+ #p-ana2 .a2-annual-cell .memo-mark{display:block;font-size:9px;max-width:112px;overflow:hidden;text-overflow:ellipsis;color:#7C5A15;font-weight:500;text-align:right;}
+ #p-ana2 .a2-annual-tx{width:100%;border-collapse:collapse;font-size:12px;}
+ #p-ana2 .a2-annual-tx th{background:#F7F8FA;color:#667085;text-align:left;padding:8px;border-bottom:1px solid #E5E8EB;white-space:nowrap;}
+ #p-ana2 .a2-annual-tx td{padding:8px;border-bottom:1px solid #EEF0F3;}
+ #p-ana2 .a2-annual-tx td.num{text-align:right;font-variant-numeric:tabular-nums;font-weight:700;}
+ #p-ana2 .a2-annual-tx td.empty{text-align:center;color:#98A2B3;padding:20px;}
+ #p-ana2 .a2-annual-memo-edit{display:flex;align-items:center;gap:12px;margin-bottom:12px;}
+ #p-ana2 .a2-annual-memo-edit label{font-size:12px;font-weight:700;white-space:nowrap;}
+ #p-ana2 .a2-annual-memo-edit input{max-width:800px;flex:1;padding:9px 12px;border:1px solid #D0D5DD;border-radius:7px;font-size:12px;}
+}
+@media (max-width:859px){#p-ana2 .a2-annual-detail-wrap{overflow:auto;} #p-ana2 table.a2-annual-detail{min-width:1200px;border-collapse:collapse;font-size:10px;} #p-ana2 .a2-annual-detail th,#p-ana2 .a2-annual-detail td{padding:5px;border-bottom:1px solid #E5E8EB;white-space:nowrap;} #p-ana2 .a2-annual-cell{border:0;background:transparent;font:inherit;cursor:pointer;} #p-ana2 .a2-annual-memo-edit{display:flex;gap:8px;flex-wrap:wrap;} #p-ana2 .a2-annual-memo-edit input{flex:1;min-width:180px;}}
+</style>
+
 </body>
 </html>
+
