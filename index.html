@@ -1283,12 +1283,12 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
       <button class="a2-tab" data-sub="table" onclick="a2SetSub('table')">월간 표</button>
       <button class="a2-tab" data-sub="year" onclick="a2SetSub('year')">연간 보드</button>
       <button class="a2-tab" data-sub="annual-table" onclick="a2SetSub('annual-table')">연간 표</button>
-    </div>
-    <div class="a2-period-row">
-      <div class="a2-nav">
-        <button class="a2-navbtn" onclick="a2Nav(-1)" aria-label="이전">‹</button>
-        <span class="a2-pill" id="a2-label"></span>
-        <button class="a2-navbtn" onclick="a2Nav(1)" aria-label="다음">›</button>
+      <div class="a2-period-row">
+        <div class="a2-nav">
+          <button class="a2-navbtn" onclick="a2Nav(-1)" aria-label="이전">‹</button>
+          <span class="a2-pill" id="a2-label"></span>
+          <button class="a2-navbtn" onclick="a2Nav(1)" aria-label="다음">›</button>
+        </div>
       </div>
     </div>
   </div>
@@ -6146,14 +6146,13 @@ function memoInputMajorInlineHtml(major){
 function budTx(){ return (STATE.transactions.length ? STATE.transactions : DEMO).filter(t => String(t.date).slice(0,7) === BUD_MONTH && !isRemovedTx(t)); }
 function budgetOf(major, subList, ym){
   const b = STATE.budget || {};
-  // [신규] 적용기간이 걸린 소분류가 있는 대분류는, 설정에 저장된 고정 합계를 쓰면 안 된다.
-  //        (보람상조가 7월부터 빠지면 대분류 예산도 그 달부터 줄어야 하므로)
-  //        그 달에 살아있는 소분류 예산만 다시 더한다.
+  // 기간별 금액이 설정된 소분류가 하나라도 있으면 반드시 해당 월의 소분류 금액으로 계산한다.
+  // 합계가 0원이어도 유효한 결과이므로, 예전의 고정 대분류 예산으로 되돌아가면 안 된다.
   if(majorHasPeriodSub(major, subList)){
     const m = ym || (typeof BUD_MONTH!=='undefined' ? BUD_MONTH : currentMonthStr());
     const subs = subList || CAT_OUT_SUBS[major] || (STATE.catMap['지출'] && STATE.catMap['지출'][major]) || [];
     let psum = 0; subs.forEach(sn => psum += subBudgetOf(major, sn, m));
-    if(psum > 0) return psum;
+    return psum;
   }
   if(b[major]!=null) return Number(b[major])||0;
   // 지출뿐 아니라 수입/이동 이모지 라벨("👷 근로소득", "💳 카드납부" 등)도 매칭
@@ -6225,7 +6224,8 @@ function subPeriodOf(sub){ return (STATE.subPeriod||{})[stripSp(sub)] || null; }
 // 이 대분류에 적용기간이 걸린 소분류가 하나라도 있는가 (있으면 대분류 예산을 달마다 다시 계산)
 function majorHasPeriodSub(major, subList){
   const subs = subList || CAT_OUT_SUBS[major] || (STATE.catMap['지출'] && STATE.catMap['지출'][major]) || [];
-  return subs.some(sn => !!subPeriodOf(sn));
+  // 단일 적용기간(from/to)뿐 아니라 금액 자체가 바뀌는 다구간(periods)도 감지해야 한다.
+  return subs.some(sn => !!subPeriodOf(sn) || !!((STATE.subPeriods||{})[stripSp(sn)] && (STATE.subPeriods||{})[stripSp(sn)].length));
 }
 function subBudgetOf(major, sub, ym){
   const _ym = ym || (typeof BUD_MONTH!=='undefined' ? BUD_MONTH : currentMonthStr());
@@ -7152,9 +7152,37 @@ function cfgMoveCat(kind, i, dir){
   CFG_OPEN[kind+'|'+i] = b; CFG_OPEN[kind+'|'+j] = a;
   cfgSaveLocal(); renderCfgCategories(); cfgApply();
 }
-// 소분류 예산이 있으면 대분류 예산은 그 합으로 본다
-function cfgMajorBudget(c){
-  const sub = Object.values(c.subBudget||{}).reduce((s,v)=>s+(Number(v)||0),0);
+// 소분류 예산이 있으면 대분류 예산은 그 합으로 본다.
+// 기간별 금액(periods)이 있으면 기준 월의 유효 금액만 합산해 총계에도 반영한다.
+function cfgMajorBudget(c, ym){
+  if(!c) return 0;
+  const targetYm = String(ym || (typeof BUD_MONTH!=='undefined' ? BUD_MONTH : currentMonthStr())).slice(0,7);
+  const subs = c.subs || [];
+  const meta = c.subMeta || {};
+  const sb = c.subBudget || {};
+  // 단일 적용기간(from/to)과 다구간(periods) 설정을 모두 반영한다.
+  // 기간 설정이 하나라도 있으면 설정된 월에 유효한 소분류 금액만 합산하며,
+  // 기간 밖의 항목은 0원으로 처리한다. 기존 고정 합계로 되돌아가지 않는다.
+  const hasPeriodRules = subs.some(sn => {
+    const m = meta[sn] || {};
+    return (m.from || m.to) || (Array.isArray(m.periods) && m.periods.length);
+  });
+  if(hasPeriodRules){
+    let total = 0;
+    subs.forEach(sn=>{
+      const m = meta[sn] || {};
+      const periods = m.periods;
+      if(Array.isArray(periods) && periods.length){
+        const hit = periods.find(p => (!p.from || targetYm >= p.from) && (!p.to || targetYm <= p.to));
+        total += hit ? (Number(hit.amount)||0) : 0;
+      } else {
+        const inRange = (!m.from || targetYm >= m.from) && (!m.to || targetYm <= m.to);
+        total += inRange ? (Number(sb[sn])||0) : 0;
+      }
+    });
+    return total;
+  }
+  const sub = Object.values(sb).reduce((s,v)=>s+(Number(v)||0),0);
   return sub>0 ? sub : (Number(c.budget)||0);
 }
 // 대분류 예산 칸 — 소분류 예산이 하나라도 있으면 입력칸 대신 '합계'를 보여준다
@@ -7162,9 +7190,13 @@ function cfgMajorBudgetCell(kind, i){
   const c = (CFG.categories[kind]||[])[i]; if(!c) return '';
   const ph = kind==='이동' ? '월목표' : kind==='수입' ? '월수입' : '예산';
   const subTotal = Object.values(c.subBudget||{}).reduce((s,v)=>s+(Number(v)||0),0);
-  if(subTotal>0){
-    return `<div style="text-align:right;font-size:12.5px;font-weight:700;color:var(--txt);font-variant-numeric:tabular-nums" title="소분류 예산의 합">
-      ${won(subTotal)}<div style="font-size:9px;color:var(--txt3);font-weight:400">소분류 합</div></div>`;
+  const hasPeriods = (c.subs||[]).some(sn => {
+    const m = ((c.subMeta||{})[sn]||{});
+    return !!(m.from || m.to) || (Array.isArray(m.periods) && m.periods.length);
+  });
+  if(subTotal>0 || hasPeriods){
+    return `<div style="text-align:right;font-size:12.5px;font-weight:700;color:var(--txt);font-variant-numeric:tabular-nums" title="선택 월 기준 소분류 예산의 합">
+      ${won(cfgMajorBudget(c))}<div style="font-size:9px;color:var(--txt3);font-weight:400">${hasPeriods?'선택 월 합계':'소분류 합'}</div></div>`;
   }
   return `<input value="${Number(c.budget)||''}" placeholder="${ph}" inputmode="numeric"
     oninput="cfgSetMajorBudget('${kind}',${i},this.value)" style="${CT.num}">`;
@@ -14513,6 +14545,11 @@ function a2TblRow(view, key, kind, labelHtml, amtHtml, budHtml, pctHtml, diffHtm
     +(open ? '<div class="a2-tdwrap"><div class="a2-detail">'+a2DetailFor(view, key, kind)+'</div></div>' : '')+'</td></tr>';
 }
 function a2TableHtml(){
+  // 월간 표 기본 상태: 수입·저축 합계는 펼쳐 대분류를 보여주고, 각 대분류의 거래는 접어 둔다.
+  ['__in','__save'].forEach(function(k){
+    var stateKey='table|'+a2enc(k);
+    if(!Object.prototype.hasOwnProperty.call(A2_OPEN,stateKey)) A2_OPEN[stateKey]=true;
+  });
   var ym = a2Month();
   var cats = a2CatsCached(ym);
   var cur = moMonthTotals(ym), prev = moMonthTotals(moPrevYm(ym));
@@ -14737,9 +14774,22 @@ function a2TableToggleAll(open){
   var rows=Array.prototype.slice.call(document.querySelectorAll('#p-ana2 .a2-tbl tr.a2-r[data-view="table"]'));
   rows.forEach(function(row){
     var enc=row.getAttribute('data-enc'), kind=row.getAttribute('data-kind');
+    var key=a2dec(enc);
     var detail=document.getElementById('a2d_'+a2id('table',enc));
     var isOpen=!!detail && detail.style.display!=='none';
-    if(open!==isOpen) a2Toggle('table',enc,kind);
+    // 모두 접기는 수입·저축 합계 아래의 대분류 목록까지 숨기지 않고, 거래 세부만 접는다.
+    var keepSummary=(key==='__in'||key==='__save');
+    var targetOpen= open || keepSummary;
+    if(targetOpen!==isOpen) a2Toggle('table',enc,kind);
+  });
+  // 수입·저축의 대분류 아래 소분류/거래 펼침은 '모두 펼치기'에서만 열고, '모두 접기'에서는 닫는다.
+  ['__in','__save'].forEach(function(k){
+    var detail=document.getElementById('a2d_'+a2id('table',a2enc(k)));
+    if(!detail) return;
+    Array.prototype.forEach.call(detail.querySelectorAll('.a2-subtx'),function(el){
+      el.style.display=open?'block':'none';
+      var car=document.getElementById(el.id+'_c'); if(car) car.textContent=open?'▾':'▸';
+    });
   });
 }
 function a2AnnualToggleAll(open){
@@ -15156,5 +15206,29 @@ window.addEventListener('load', ()=>{ initFoldableCards(); if(typeof renderAllSe
   #p-ana2 .a2-head{top:60px!important;padding-top:8px!important;}
   #p-ana2 .a2-title{font-size:22px!important;}
   #p-ana2 .a2-period-row{min-height:40px;padding-top:4px;}
+}
+</style>
+
+<style id="analysis-latest-layout-and-table-fix">
+/* 서브탭 제목은 표시하지 않고, 네 개의 탭과 월/연도 이동을 같은 줄에 둔다. */
+#p-ana2 .a2-title{display:none!important;}
+#p-ana2 .a2-headrow{display:none!important;}
+#p-ana2 .a2-head{margin-top:0!important;padding-top:8px!important;margin-bottom:10px!important;}
+#p-ana2 .a2-tabs{display:flex!important;align-items:center!important;gap:0!important;width:100%!important;max-width:none!important;margin:0!important;white-space:nowrap!important;overflow-x:auto!important;overflow-y:hidden!important;}
+#p-ana2 .a2-tab{flex:0 0 auto!important;padding:10px 13px!important;font-size:12px!important;}
+#p-ana2 .a2-period-row{display:flex!important;align-items:center!important;justify-content:flex-end!important;flex:1 0 auto!important;min-height:0!important;padding:0 0 0 12px!important;margin-left:auto!important;}
+#p-ana2 .a2-nav{margin-left:auto!important;gap:5px!important;}
+#p-ana2 .a2-navbtn{flex:0 0 28px!important;width:28px!important;height:28px!important;}
+#p-ana2 .a2-pill{padding:6px 10px!important;min-height:28px!important;font-size:12px!important;}
+/* 월간 표의 열 제목은 세로 스크롤 중에도 고정, 첫 번째 카테고리 열은 가로 이동 중에도 고정 */
+#p-ana2 .a2-tbl thead th{position:sticky!important;top:0!important;z-index:5!important;background:var(--bg)!important;}
+#p-ana2 .a2-tbl thead th:first-child{left:0!important;z-index:8!important;}
+#p-ana2 .a2-tbl tbody td:first-child{position:sticky!important;left:0!important;z-index:2!important;background:var(--card)!important;}
+#p-ana2 .a2-tbl tbody tr.a2-r[data-kind="in"] td:first-child,#p-ana2 .a2-tbl tbody tr.a2-r[data-kind="save"] td:first-child{background:#FFF7F5!important;}
+#p-ana2 .a2-tbl tbody tr.a2-dr td:first-child{position:static!important;}
+@media(max-width:859px){
+ #p-ana2 .a2-tab{padding:9px 8px!important;font-size:11px!important;}
+ #p-ana2 .a2-period-row{padding-left:6px!important;}
+ #p-ana2 .a2-pill{padding:5px 7px!important;font-size:11px!important;}
 }
 </style>
