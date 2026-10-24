@@ -14198,6 +14198,9 @@ function a2GroupsHtml(opts){
     if(order.some(function(g){ return stripSp(g)===z; })) return;
     if(opts.subBud && opts.subBud(s)>0){ groups[s] = []; order.push(s); }
   });
+  (opts.zeroGroups||[]).forEach(function(g){
+    if(!groups[g]){ groups[g] = []; order.push(g); }
+  });
   var tot = txs.reduce(function(s,t){ return s+(Number(t.amount)||0); },0);
   var sum = function(g){ return groups[g].reduce(function(s,t){ return s+(Number(t.amount)||0); },0); };
   order.sort(function(a,b){ return sum(b)-sum(a); });
@@ -14227,6 +14230,7 @@ function a2GroupsHtml(opts){
         +'<span class="a2-subamt'+(amt<0?' a2-neg':'')+'"'+(over?' style="color:var(--red-vivid)"':'')+'>'+a2won(amt)+'</span>'
         +(share ? '<span class="a2-share" style="min-width:26px">'+share+'</span>' : '')
       +'</div>'
+      +(opts.groupMemoInline ? (opts.groupMemoInline(g)||'') : '')
       +'<div class="a2-subtx" id="'+sid+'">'+memo+rows+'</div>'
     +'</div>';
   }).join('');
@@ -14278,15 +14282,30 @@ function a2FlowBody(kind, ym){
     if(!t.major) return;
     rawOf[majorLabel(t.type==='수입'?'수입':'이동', t.major)] = t.major;
   });
+  // 이 달 거래가 없는 대분류도 0원으로 보이게 (등록된 수입·저축 대분류 기준)
+  var have = {}; txs.forEach(function(t){ if(t.major) have[normBudgetKey(t.major)] = true; });
+  var zeroGroups = [], regMajors = [];
+  if(kind==='save') regMajors = (typeof SAVE_MAJORS!=='undefined' ? SAVE_MAJORS : []).slice();
+  else {
+    regMajors = Object.keys(CAT_IN_SUBS||{});
+    Object.keys((STATE.catMap||{})['수입']||{}).forEach(function(k){ if(regMajors.indexOf(k)<0) regMajors.push(k); });
+  }
+  regMajors.forEach(function(k){
+    if(!k || have[normBudgetKey(k)]) return;
+    var lab = majorLabel(kind==='save'?'이동':'수입', k);
+    if(!lab || rawOf[lab]) return;
+    rawOf[lab] = k; zeroGroups.push(lab);
+  });
   return meta + a2GroupsHtml({
     txs: txs, ym: ym, major: '',
     groupKey: function(t){
       var m = t.major ? majorLabel(t.type==='수입'?'수입':'이동', t.major) : '(대분류 없음)';
       return m;
     },
-    groupMemo: function(g){
+    zeroGroups: zeroGroups,
+    groupMemoInline: function(g){
       var raw = rawOf[g]; if(!raw) return '';
-      return '<div style="margin:2px 0 6px">'+a2MemoInput(ym, raw, '', '', '이 달 메모')+'</div>';
+      return '<div style="margin:0 0 6px 18px">'+a2MemoInput(ym, raw, '', '', '메모')+'</div>';
     }
   });
 }
@@ -14494,7 +14513,8 @@ function a2WhereCardHtml(cats, cur, ym){
   var all = cats.filter(function(c){ return c.spend!==0; }).sort(function(a,b){ return b.spend-a.spend; });
   var pos = all.filter(function(c){ return c.spend>0; });
   var tot = pos.reduce(function(s,c){ return s+c.spend; },0);
-  if(!all.length) return '<div class="a2-card"><div class="a2-ct"><span>어디에 썼을까요?</span></div><div class="a2-empty">이 달 지출 내역이 없어요</div></div>';
+  var zeros = cats.filter(function(c){ return c.spend===0; });   // 0원이었던 카테고리도 맨 아래에 0으로 표시
+  if(!all.length && !zeros.length) return '<div class="a2-card"><div class="a2-ct"><span>어디에 썼을까요?</span></div><div class="a2-empty">이 달 지출 내역이 없어요</div></div>';
   var top = pos.slice(0,5), restSum = pos.slice(5).reduce(function(s,c){ return s+c.spend; },0);
   var colorOf = {}; top.forEach(function(c,i){ colorOf[c.key] = A2_COLORS[i]; });
   var R=40, C=2*Math.PI*R, off=0, segs='';
@@ -14516,7 +14536,7 @@ function a2WhereCardHtml(cats, cur, ym){
   var other = pos.slice(4).reduce(function(s,c){ return s+c.spend; },0);
   if(other>0) lg += '<div class="a2-row"><span style="display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600"><span class="a2-dot" style="background:'+A2_GREY+'"></span>그 외</span><span style="font-size:13px;font-weight:700">'+Math.round(other/tot*100)+'%</span></div>';
 
-  var rows = all.map(function(c){
+  var rows = all.concat(zeros).map(function(c){
     var enc = a2enc(c.key), open = a2IsOpen('dash', enc), j = a2Judge(c);
     var col = colorOf[c.key] || A2_GREY;
     return '<div class="a2-cat">'
@@ -14525,7 +14545,7 @@ function a2WhereCardHtml(cats, cur, ym){
         +'<span class="a2-dot" style="background:'+col+'"></span>'
         +'<span class="a2-cname">'+a2e(c.label)+(c.fixed?'<span class="a2-tag">고정</span>':'')+'</span>'
         +(j.txt ? '<span class="a2-share" style="color:'+j.color+';font-weight:700">'+j.txt+'</span>' : '')
-        +'<span class="a2-amt'+(c.spend<0?' a2-neg':'')+'">'+a2won(c.spend)+'</span>'
+        +'<span class="a2-amt'+(c.spend<0?' a2-neg':'')+'"'+(c.spend===0?' style="color:var(--txt3)"':'')+'>'+a2won(c.spend)+'</span>'
       +'</div>'
       +a2DetailHostHtml('dash', c.key, 'out', open)
     +'</div>';
@@ -14593,7 +14613,7 @@ function a2TableHtml(){
   var cats = a2CatsCached(ym);
   var cur = moMonthTotals(ym), prev = moMonthTotals(moPrevYm(ym));
   var bt = a2BudTotals(cats);
-  var rows = cats.filter(function(c){ return c.spend!==0 || c.bud>0 || c.prev!==0; });
+  var rows = cats.slice();   // 0원이었던 카테고리도 지우지 않고 0으로 보여준다
   var body = rows.map(function(c){
     var j = a2Judge(c);
     var budTxt = c.cadence==='event' ? '<span style="color:var(--txt3)">—</span>'
@@ -14602,8 +14622,8 @@ function a2TableHtml(){
     var pctTxt = j.txt ? '<b style="color:'+j.color+'">'+j.txt+'</b>'+(j.note?'<span class="a2-note"> '+j.note+'</span>':'') : '<span style="color:var(--txt3)">—</span>';
     return a2TblRow('table', c.key, 'out',
       ' '+a2e(c.label)+(c.fixed?'<span class="a2-tag">고정</span>':''),
-      '<span'+(c.spend<0?' class="a2-neg"':'')+'>'+a2num(c.spend)+'</span>', budTxt, pctTxt,
-      a2DiffCell(c.spend-c.prev, false, c.prev===0 && c.spend===0),
+      '<span'+(c.spend<0?' class="a2-neg"':(c.spend===0?' style="color:var(--txt3)"':''))+'>'+a2num(c.spend)+'</span>', budTxt, pctTxt,
+      a2DiffCell(c.spend-c.prev, false, false),
       a2MemoInput(ym, c.key, '', 'in', '메모'));
   }).join('');
 
