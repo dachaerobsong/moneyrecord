@@ -4405,10 +4405,7 @@ function fetchFromSheet(silent) {
       // ③ 자산
       if(data.asset) STATE.asset = data.asset;
 
-      // ④ 현금흐름 일정: 공통 시트 데이터를 적용. 시트가 비어 있으면 기존 로컬 데이터를 최초 업로드.
-      if(Object.prototype.hasOwnProperty.call(data, 'cashPlan')) applyCashPlanFromSheet(data.cashPlan);
-
-      // ⑤ 카테고리별 실시간 메모 (시트 '메모_항목별'을 공통 원본으로 병합 — 로컬 전용 메모도 복구)
+      // ④ 카테고리별 실시간 메모 (시트 '메모_항목별'을 원본으로 병합 — 다른 기기에서 쓴 메모도 반영)
       if(data.cellMemos){
         gbMemoMergeFromSheet(data.cellMemos);
       }
@@ -6078,28 +6075,20 @@ function gbMemoWrap(obj){
 // 시트에서 받은 메모 합치기: 이모지·공백만 다른 옛 키의 메모는 버리지 않고 하나로 합친다.
 // 합친 뒤에는 시트의 옛 줄을 비워서(빈 메모 저장) 다음 동기화 때 되살아나지 않게 한다.
 function gbMemoMergeFromSheet(src){
-  // local snapshot 먼저 확보. 시트에 없는 로컬 메모는 복구 대상으로 간주한다.
   gbMemoLoad();
-  var local = {};
-  Object.keys(GB_MEMO||{}).forEach(function(k){ var v=String(GB_MEMO[k]||'').trim(); if(v) local[gbMemoCanon(k)]=v; });
-  var by = {}, sheetKeys = {};
+  var by = {};
   Object.keys(src||{}).forEach(function(k){
     var ck = gbMemoCanon(k), v = String(src[k]==null?'':src[k]).trim();
-    sheetKeys[ck] = true; // 빈 값도 시트에 존재하면 의도적 삭제일 수 있으므로 복구하지 않음
     var o = by[ck] || (by[ck] = { canon:null, legacy:[] });
     if(ck===k) o.canon = v; else if(v) o.legacy.push({ k:k, v:v });
   });
-  var url = getUrl(), fixes = [], recoveries = [];
-  // 시트 값을 우선 반영하고, 시트에 아예 없는 로컬 메모만 보존/복구한다.
+  var url = getUrl(), fixes = [];
   Object.keys(by).forEach(function(ck){
     var o = by[ck];
-    var val = (o.canon!==null) ? o.canon : (local[ck]||'');
+    var val = (o.canon!==null) ? o.canon : (GB_MEMO[ck]||'');   // 통일된 키는 시트 값이 우선
     o.legacy.forEach(function(l){ val = gbMemoJoin(val, l.v); });
     if(val) GB_MEMO[ck] = val; else delete GB_MEMO[ck];
     if(o.legacy.length) fixes.push({ ck:ck, val:val, legacy:o.legacy.map(function(l){ return l.k; }) });
-  });
-  Object.keys(local).forEach(function(ck){
-    if(!sheetKeys[ck] && local[ck]) { GB_MEMO[ck] = local[ck]; recoveries.push({ck:ck,val:local[ck]}); }
   });
   try{ LS.set('asset_gb_memo', JSON.stringify(GB_MEMO)); }catch(e){}
   if(!url) return;
@@ -6108,8 +6097,10 @@ function gbMemoMergeFromSheet(src){
     fetch(url, { method:'POST', headers:{'Content-Type':'text/plain'},
       body: JSON.stringify({ action:'gb_saveCellMemo', mon: full.slice(0,i), key: full.slice(i+1), memo: memo }) }).catch(function(){});
   };
-  fixes.forEach(function(f){ send(f.ck, f.val); f.legacy.forEach(function(k){ send(k, ''); }); });
-  recoveries.forEach(function(f){ send(f.ck, f.val); });
+  fixes.forEach(function(f){
+    send(f.ck, f.val);
+    f.legacy.forEach(function(k){ send(k, ''); });
+  });
 }
 let GB_MEMO = gbMemoWrap({});
 function gbMemoLoad(){ try{ GB_MEMO = gbMemoWrap(JSON.parse(LS.get('asset_gb_memo')||'{}')); }catch(e){ GB_MEMO = gbMemoWrap({}); } }
@@ -10997,43 +10988,7 @@ function loadCashPlan(){
   }catch(e){}
   return p;
 }
-let CASH_PLAN_SYNC_READY = false;
-let CASH_PLAN_SAVE_TIMER = null;
-function saveCashPlanObj(p){
-  try{ LS.set(CASH_PLAN_KEY, JSON.stringify(p)); }catch(e){}
-  // 초기 시트 동기화 전에는 기본값/자동 생성값이 기존 원격 데이터를 덮지 않게 대기한다.
-  if(!CASH_PLAN_SYNC_READY || !getUrl()) return;
-  if(CASH_PLAN_SAVE_TIMER) clearTimeout(CASH_PLAN_SAVE_TIMER);
-  CASH_PLAN_SAVE_TIMER = setTimeout(function(){
-    const url = getUrl(); if(!url) return;
-    sheetPost({action:'saveCashPlan', plan:p})
-      .then(d=>{ if(d && d.ok===false) console.warn('현금흐름 시트 저장 실패', d.error); })
-      .catch(e=>console.warn('현금흐름 저장 요청 실패', e));
-  }, 250);
-}
-function applyCashPlanFromSheet(remotePlan){
-  let localPlan = null;
-  try{ localPlan = JSON.parse(LS.get(CASH_PLAN_KEY)||'null'); }catch(e){}
-  if(remotePlan && typeof remotePlan==='object' && Array.isArray(remotePlan.items)){
-    // 원격 데이터로 교체하기 전, 이 기기에서만 수정했던 값은 로컬 백업으로 남긴다.
-    if(localPlan && JSON.stringify(localPlan)!==JSON.stringify(remotePlan)){
-      try{ if(!LS.get(CASH_PLAN_KEY+'_pre_sync_backup')) LS.set(CASH_PLAN_KEY+'_pre_sync_backup', JSON.stringify(localPlan)); }catch(e){}
-    }
-    // 공통 시트가 기준. 기기별 낡은 캐시로 원격 데이터를 덮어쓰지 않는다.
-    CASH_PLAN = Object.assign({}, JSON.parse(JSON.stringify(DEFAULT_CASH_PLAN)), remotePlan);
-    if(!CASH_PLAN.cardPayDays) CASH_PLAN.cardPayDays = {};
-    if(!CASH_PLAN.cashAccounts) CASH_PLAN.cashAccounts = [];
-    if(!CASH_PLAN.manual) CASH_PLAN.manual = {};
-    try{ LS.set(CASH_PLAN_KEY, JSON.stringify(CASH_PLAN)); }catch(e){}
-  } else {
-    // 시트에 아직 현금흐름 데이터가 없으면 이 기기에 있던 데이터로 최초 초기화한다.
-    CASH_PLAN = (localPlan && Array.isArray(localPlan.items)) ? localPlan : JSON.parse(JSON.stringify(DEFAULT_CASH_PLAN));
-    CASH_PLAN_SYNC_READY = true;
-    saveCashPlanObj(CASH_PLAN);
-  }
-  CASH_PLAN_SYNC_READY = true;
-  try{ renderCashPlan(); if(typeof renderCashEdit==='function') renderCashEdit(); }catch(e){}
-}
+function saveCashPlanObj(p){ try{ LS.set(CASH_PLAN_KEY, JSON.stringify(p)); }catch(e){} }
 let CASH_PLAN = null;
 
 // ── 이전 앱의 고정 지출 일정 가져오기 ──
@@ -13846,8 +13801,6 @@ window.onload = () => {
     STATE.cardBudget = DEMO_CARD_BUDGET;
     STATE.initBal = DEMO_INITBAL;
     STATE.acctsDef = DEMO_ACCTSDEF;
-    // scriptUrl은 localStorage에 저장되므로 새 기기/브라우저에는 자동으로 전달되지 않는다.
-    setTimeout(()=>showToast('⚠️ 이 기기는 구글 시트 미연결 상태임 · 설정에서 같은 Apps Script /exec 주소를 연결해야 동기화됨'), 400);
   }
   updateCategoryOptions();
   renderHome();
@@ -14943,6 +14896,43 @@ window.addEventListener('load', ()=>{ initFoldableCards(); if(typeof renderAllSe
  #p-ana2 .a2-annual-memo-edit input{max-width:800px;flex:1;padding:9px 12px;border:1px solid #D0D5DD;border-radius:7px;font-size:12px;}
 }
 @media (max-width:859px){#p-ana2 .a2-annual-detail-wrap{overflow:auto;} #p-ana2 table.a2-annual-detail{min-width:1200px;border-collapse:collapse;font-size:10px;} #p-ana2 .a2-annual-detail th,#p-ana2 .a2-annual-detail td{padding:5px;border-bottom:1px solid #E5E8EB;white-space:nowrap;} #p-ana2 .a2-annual-cell{border:0;background:transparent;font:inherit;cursor:pointer;} #p-ana2 .a2-annual-memo-edit{display:flex;gap:8px;flex-wrap:wrap;} #p-ana2 .a2-annual-memo-edit input{flex:1;min-width:180px;}}
+</style>
+
+
+<style id="mobile-memo-compatibility-fix">
+/* 모바일: 연간 리포트의 월별 메모가 한 줄 말줄임 처리되거나 하단 탭바에 가리지 않도록 보정 */
+@media (max-width: 859px) {
+  body {
+    padding-bottom: calc(120px + env(safe-area-inset-bottom)) !important;
+  }
+
+  #p-ana2 .a2-grid,
+  #p-ana2 .a2-card,
+  #p-ana2 .a2-detail {
+    min-height: 0;
+    height: auto;
+  }
+
+  /* 월별 메모 문구는 줄바꿈을 허용해 전체 내용 표시 */
+  #p-ana2 .a2-tx {
+    align-items: flex-start;
+    gap: 7px;
+  }
+  #p-ana2 .a2-tx .m {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    line-height: 1.5;
+  }
+
+  /* 하단 고정 탭바가 상세 카드의 마지막 메모를 덮지 않도록 여백 확보 */
+  #p-ana2 .a2-detail {
+    padding-bottom: 16px;
+    margin-bottom: 18px;
+  }
+}
 </style>
 
 </body>
