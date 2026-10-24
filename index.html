@@ -14898,6 +14898,43 @@ window.addEventListener('load', ()=>{ initFoldableCards(); if(typeof renderAllSe
 @media (max-width:859px){#p-ana2 .a2-annual-detail-wrap{overflow:auto;} #p-ana2 table.a2-annual-detail{min-width:1200px;border-collapse:collapse;font-size:10px;} #p-ana2 .a2-annual-detail th,#p-ana2 .a2-annual-detail td{padding:5px;border-bottom:1px solid #E5E8EB;white-space:nowrap;} #p-ana2 .a2-annual-cell{border:0;background:transparent;font:inherit;cursor:pointer;} #p-ana2 .a2-annual-memo-edit{display:flex;gap:8px;flex-wrap:wrap;} #p-ana2 .a2-annual-memo-edit input{flex:1;min-width:180px;}}
 </style>
 
+
+<style id="mobile-memo-compatibility-fix">
+/* 모바일: 연간 리포트의 월별 메모가 한 줄 말줄임 처리되거나 하단 탭바에 가리지 않도록 보정 */
+@media (max-width: 859px) {
+  body {
+    padding-bottom: calc(120px + env(safe-area-inset-bottom)) !important;
+  }
+
+  #p-ana2 .a2-grid,
+  #p-ana2 .a2-card,
+  #p-ana2 .a2-detail {
+    min-height: 0;
+    height: auto;
+  }
+
+  /* 월별 메모 문구는 줄바꿈을 허용해 전체 내용 표시 */
+  #p-ana2 .a2-tx {
+    align-items: flex-start;
+    gap: 7px;
+  }
+  #p-ana2 .a2-tx .m {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    line-height: 1.5;
+  }
+
+  /* 하단 고정 탭바가 상세 카드의 마지막 메모를 덮지 않도록 여백 확보 */
+  #p-ana2 .a2-detail {
+    padding-bottom: 16px;
+    margin-bottom: 18px;
+  }
+}
+</style>
+
 </body>
 </html>
 
