@@ -516,7 +516,7 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
 
 <style id="ana2-style">
 /* ═══════════════════════════════════════════════════════════════
-   ✨ 새 분석 (ana2) — 대시보드 · 표 · 연간
+   분석 (ana2) — 대시보드 · 표 · 연간
    기존 '분석' 탭(#p-analysis)은 그대로 두고, 이 탭만 따로 얹었다.
    모든 규칙이 #p-ana2 아래로 한정돼 있어 다른 화면에 영향이 없다.
 ═══════════════════════════════════════════════════════════════ */
@@ -792,8 +792,7 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
   <div class="sb-logo">Asset.io</div>
   <button class="tab-btn sb-item on" data-tab="home" onclick="changeTab('home', this)"><span class="icon">🏠</span><span>홈</span></button>
   <button class="tab-btn sb-item" data-tab="ledger" onclick="changeTab('ledger', this)"><span class="icon">💰</span><span>가계부</span></button>
-  <button class="tab-btn sb-item" data-tab="analysis" onclick="changeTab('analysis', this)"><span class="icon">📊</span><span>분석</span></button>
-  <button class="tab-btn sb-item" data-tab="ana2" onclick="changeTab('ana2', this)"><span class="icon">✨</span><span>새 분석</span></button>
+  <button class="tab-btn sb-item" data-tab="ana2" onclick="changeTab('ana2', this)"><span class="icon">📊</span><span>분석</span></button>
   <button class="tab-btn sb-item" data-tab="invest" onclick="changeTab('invest', this)"><span class="icon">📈</span><span>투자</span></button>
   <div class="sb-net"><div class="lb">순자산</div><div class="vv" id="sb-net-worth">—</div></div>
 </nav>
@@ -1267,8 +1266,8 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
 </main>
 
 <!-- ════════════════════════════════════════════
-  TAB 2-b: 새 분석 (대시보드 · 표 · 연간)
-  기존 '분석' 탭(#p-analysis)은 그대로 두고 따로 추가한 화면.
+  분석 탭 (대시보드 · 표 · 연간)
+  기존 분석 화면의 계산 로직은 일부 유지하되, 사용자에게는 이 화면을 통합 분석 탭으로 표시함.
   기존 탭의 계산 함수(buildOutCats · majorTxPred · computeAnnualInsight 등)를
   그대로 불러다 쓰므로 숫자가 기존 분석과 같다.
 ═════════════════════════════════════════════ -->
@@ -1589,8 +1588,7 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
 <nav class="tabbar">
   <button class="tab-btn on" data-tab="home" onclick="changeTab('home', this)"><span class="icon">🏠</span><span>홈</span></button>
   <button class="tab-btn" data-tab="ledger" onclick="changeTab('ledger', this)"><span class="icon">💰</span><span>가계부</span></button>
-  <button class="tab-btn" data-tab="analysis" onclick="changeTab('analysis', this)"><span class="icon">📊</span><span>분석</span></button>
-  <button class="tab-btn" data-tab="ana2" onclick="changeTab('ana2', this)"><span class="icon">✨</span><span>새 분석</span></button>
+  <button class="tab-btn" data-tab="ana2" onclick="changeTab('ana2', this)"><span class="icon">📊</span><span>분석</span></button>
   <button class="tab-btn" data-tab="invest" onclick="changeTab('invest', this)"><span class="icon">📈</span><span>투자</span></button>
 </nav>
 </div><!-- /app-main -->
@@ -2435,7 +2433,7 @@ function goToSettingsTab(){ changeTab('settings', null); }
 function goToTab(tabName){ const btn=document.querySelector(`.tab-btn[data-tab="${tabName}"]`); if(btn) changeTab(tabName, btn); }
 // 저축 목표 진행률은 연간 리포트로 이동함 (구 목표 탭)
 function goToAnnualGoals(){
-  goToTab('analysis');
+  changeTab('analysis', null);
   const periodBtn = document.querySelector('#p-analysis .sub-tab[data-sub="period"]');
   if(typeof setAnalysisSub==='function') setAnalysisSub('period', periodBtn);
   setTimeout(()=>{ const el=document.getElementById('rpt-goals-card'); if(el) el.scrollIntoView({behavior:'smooth', block:'start'}); }, 50);
@@ -10348,6 +10346,7 @@ function flashEl(el){
 }
 // 이번 달 서브탭에서 기간 리포트 서브탭으로 전환 (같은 분석 탭 안에서 이동)
 function analysisGoToPeriod(){
+  changeTab('analysis', null);
   if(typeof RPT_YEAR !== 'undefined') RPT_YEAR = parseInt(BUD_MONTH.slice(0,4));
   const periodBtn = document.querySelector('#p-analysis .sub-tab[data-sub="period"]');
   setAnalysisSub('period', periodBtn);
@@ -13791,7 +13790,7 @@ function restoreLastView(){
     // 구버전(탭 재구조화 이전)에는 설정이 하단 탭이었음 — 지금은 상단바 아이콘이라 탭 복원 대상에서 제외
     if(lastTab==='settings'){ goToSettingsTab(); return; }
     // 구버전(목표 탭)은 연간 리포트로 흡수됨 — 지금은 없는 탭이므로 분석 탭으로 대체
-    if(lastTab==='goals') lastTab = 'analysis';
+    if(lastTab==='goals' || lastTab==='analysis') lastTab = 'ana2';
     if(lastTab && lastTab!=='home'){
       const btn = document.querySelector(`.tab-btn[data-tab="${lastTab}"]`);
       if(btn) changeTab(lastTab, btn);
@@ -13805,7 +13804,7 @@ function restoreLastView(){
         if(subBtn) setLedgerSub(lastSub, subBtn);
       }
     }
-    if(lastTab==='analysis'){
+    if(lastTab==='legacy-analysis'){
       let lastASub = LS.get('gb_last_analysissub') || 'month';
       if(lastASub==='insights' || lastASub==='budget') lastASub='month'; // 구버전(소비 패턴 탭·예산 탭)은 월간 리포트로 통합됨
       const subBtn = document.querySelector(`#p-analysis .sub-tab[data-sub="${lastASub}"]`);
@@ -13893,9 +13892,9 @@ function initFoldableCards(){
   });
 }
 // ══════════════════════════════════════════════════════════════════
-//  ✨ 새 분석 (ana2) — 대시보드 · 표 · 연간                       [v37.0 추가]
+//  분석 (ana2) — 대시보드 · 표 · 연간                       [v37.0 추가]
 //
-//  기존 '분석' 탭(월간/연간 리포트)은 그대로 남겨두고, 목업(가계부_분석화면)대로
+//  통합 분석 탭은 목업(가계부_분석화면)대로
 //  3탭 화면을 따로 만들었다. 기존 코드를 고치지 않고 아래 함수들을 '불러다만' 쓴다:
 //    buildOutCats · majorTxPred · subTxPred · budgetOf · subBudgetOf · txGroupKey
 //    moMonthTotals · isFixedTx · isSaveTx · computeAnnualInsight · outCatPred
