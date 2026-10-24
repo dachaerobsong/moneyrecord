@@ -513,6 +513,136 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
 .cfg-fold-head:active{ opacity:.6; }
 .card.cfg-fold.folded > *:not(.card-title){ display:none !important; }
 </style>
+
+<style id="ana2-style">
+/* ═══════════════════════════════════════════════════════════════
+   ✨ 새 분석 (ana2) — 대시보드 · 표 · 연간
+   기존 '분석' 탭(#p-analysis)은 그대로 두고, 이 탭만 따로 얹었다.
+   모든 규칙이 #p-ana2 아래로 한정돼 있어 다른 화면에 영향이 없다.
+═══════════════════════════════════════════════════════════════ */
+#p-ana2 .a2-head{ position:sticky; top:60px; z-index:60; background:var(--bg); margin:-8px -4px 10px; padding:10px 4px 0; box-shadow:0 10px 0 var(--bg); }
+#p-ana2 .a2-headrow{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+#p-ana2 .a2-title{ font-size:20px; font-weight:800; letter-spacing:-.6px; color:var(--txt); }
+#p-ana2 .a2-nav{ display:flex; align-items:center; gap:6px; }
+#p-ana2 .a2-navbtn{ width:30px; height:30px; border-radius:50%; border:1px solid #E5E8EB; background:var(--card); color:var(--txt2); font-size:15px; cursor:pointer; line-height:1; padding:0; }
+#p-ana2 .a2-pill{ background:var(--card2); border-radius:99px; padding:8px 14px; font-size:13px; font-weight:700; color:var(--txt); white-space:nowrap; }
+#p-ana2 .a2-tabs{ display:flex; border-bottom:1px solid #EEF0F3; margin-top:6px; }
+#p-ana2 .a2-tab{ flex:1; text-align:center; padding:10px 0; font-size:13px; font-weight:600; color:var(--txt3); background:none; border:none; cursor:pointer; }
+#p-ana2 .a2-tab.on{ color:var(--txt); font-weight:700; box-shadow:inset 0 -2px 0 var(--txt); }
+
+#p-ana2 .a2-grid{ display:grid; grid-template-columns:minmax(0,1fr); gap:14px; }
+@media (min-width:860px){
+  #p-ana2 .a2-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; }
+  #p-ana2 .a2-grid .a2-full{ grid-column:1 / -1; }
+}
+#p-ana2 .a2-card{ background:var(--card); border-radius:18px; padding:20px; border:1px solid #EEF0F3; min-width:0; }
+#p-ana2 .a2-ct{ font-size:15px; font-weight:700; color:var(--txt); display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+#p-ana2 .a2-ct small{ font-size:11px; font-weight:500; color:var(--txt3); }
+#p-ana2 .a2-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+#p-ana2 .a2-lbl{ font-size:12px; color:var(--txt3); font-weight:500; }
+#p-ana2 .a2-big{ font-size:30px; font-weight:800; letter-spacing:-1px; margin-top:4px; font-variant-numeric:tabular-nums; color:var(--txt); }
+#p-ana2 .a2-val{ font-size:15px; font-weight:700; margin-top:2px; font-variant-numeric:tabular-nums; color:var(--txt); }
+#p-ana2 .a2-note{ font-size:11px; color:var(--txt3); }
+#p-ana2 .a2-up{ color:var(--red-vivid); font-weight:600; }
+#p-ana2 .a2-dn{ color:var(--green-vivid); font-weight:600; }
+#p-ana2 .a2-hr{ height:1px; background:#EEF0F3; margin:14px 0; }
+#p-ana2 .a2-track{ position:relative; height:8px; background:var(--blue-bg); border-radius:4px; overflow:visible; }
+#p-ana2 .a2-fill{ height:100%; background:var(--blue); border-radius:4px; }
+#p-ana2 .a2-mark{ position:absolute; top:-3px; width:2px; height:14px; background:var(--txt); opacity:.55; }
+#p-ana2 .a2-stat{ cursor:pointer; min-width:0; }
+#p-ana2 .a2-stat:active{ opacity:.6; }
+#p-ana2 .a2-empty{ text-align:center; color:var(--txt3); font-size:12.5px; padding:14px 0; line-height:1.6; }
+
+/* 6개월 막대 */
+#p-ana2 .a2-bars{ display:flex; align-items:flex-end; gap:10px; height:96px; padding:0 2px; margin-top:12px; }
+#p-ana2 .a2-bar{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; gap:6px; height:100%; cursor:pointer; min-width:0; }
+#p-ana2 .a2-bar i{ display:block; width:100%; background:#D8DCE3; border-radius:4px 4px 0 0; }
+#p-ana2 .a2-bar.on i{ background:var(--blue); }
+#p-ana2 .a2-bar span{ font-size:10.5px; color:var(--txt3); white-space:nowrap; }
+#p-ana2 .a2-bar.on span{ color:var(--txt); font-weight:700; }
+
+/* 카테고리 아코디언 */
+#p-ana2 .a2-cat{ border-top:1px solid #F2F4F6; }
+#p-ana2 .a2-cat:first-child{ border-top:0; }
+#p-ana2 .a2-cathead{ display:flex; align-items:center; gap:8px; padding:10px 0; cursor:pointer; }
+#p-ana2 .a2-cathead:active{ background:var(--card2); }
+#p-ana2 .a2-car{ flex:none; width:12px; font-size:11px; color:var(--blue); font-weight:700; }
+#p-ana2 .a2-dot{ flex:none; width:9px; height:9px; border-radius:50%; }
+#p-ana2 .a2-cname{ flex:1; min-width:0; font-size:13px; font-weight:600; color:var(--txt); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#p-ana2 .a2-share{ flex:none; font-size:11.5px; color:var(--txt3); font-variant-numeric:tabular-nums; min-width:30px; text-align:right; }
+#p-ana2 .a2-amt{ flex:none; font-size:13px; font-weight:700; color:var(--txt); font-variant-numeric:tabular-nums; white-space:nowrap; }
+#p-ana2 .a2-tag{ font-size:9px; font-weight:700; color:var(--blue); background:var(--blue-bg); padding:1px 6px; border-radius:5px; margin-left:4px; }
+#p-ana2 .a2-detail{ display:none; margin:0 0 10px; padding:12px 14px; background:var(--card2); border-radius:12px; }
+#p-ana2 .a2-meta{ font-size:11.5px; color:var(--txt2); line-height:1.6; margin-bottom:8px; }
+#p-ana2 .a2-memo{ border:1px solid #E5E8EB; background:var(--card); border-radius:9px; padding:7px 10px; font-size:12px; font-family:inherit; color:var(--txt2); width:100%; box-sizing:border-box; outline:none; }
+#p-ana2 .a2-memo:focus{ border-color:var(--blue); }
+#p-ana2 .a2-memo.in{ border:none; background:transparent; padding:0; width:90px; font-size:12px; color:var(--txt3); }
+#p-ana2 .a2-memo.in:focus{ background:var(--card2); border-radius:6px; padding:3px 5px; }
+#p-ana2 .a2-sub{ border-top:1px solid #E9ECEF; }
+#p-ana2 .a2-subhead{ display:flex; align-items:center; gap:6px; padding:7px 0; cursor:pointer; }
+#p-ana2 .a2-subname{ flex:1; min-width:0; font-size:12.5px; color:var(--txt); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#p-ana2 .a2-subname small{ font-size:10px; color:var(--txt3); margin-left:3px; }
+#p-ana2 .a2-subbud{ flex:none; font-size:10px; color:var(--txt3); }
+#p-ana2 .a2-subamt{ flex:none; font-size:12.5px; font-weight:600; font-variant-numeric:tabular-nums; white-space:nowrap; }
+#p-ana2 .a2-subtx{ display:none; padding:0 0 8px 18px; }
+#p-ana2 .a2-tx{ display:flex; align-items:center; gap:7px; padding:3px 0; font-size:11.5px; color:var(--txt2); }
+#p-ana2 .a2-tx .d{ flex:none; width:26px; font-size:10px; color:var(--txt3); }
+#p-ana2 .a2-tx .m{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#p-ana2 .a2-tx .m em{ font-style:normal; font-size:10px; color:var(--txt3); margin-left:5px; }
+#p-ana2 .a2-tx .a{ flex:none; font-variant-numeric:tabular-nums; white-space:nowrap; }
+#p-ana2 .a2-neg{ color:var(--green-vivid); }
+
+/* 고정비/변동비 */
+#p-ana2 .a2-fv{ display:flex; align-items:center; gap:10px; padding:6px 0; cursor:pointer; }
+#p-ana2 .a2-fv b{ width:46px; flex:none; font-size:12.5px; font-weight:600; color:var(--txt2); }
+#p-ana2 .a2-fvtrack{ flex:1; height:14px; background:#E8ECF1; border-radius:4px; overflow:hidden; }
+#p-ana2 .a2-fvtrack div{ height:100%; border-radius:4px; }
+#p-ana2 .a2-fv span.v{ width:84px; flex:none; text-align:right; font-size:12.5px; font-weight:700; font-variant-numeric:tabular-nums; }
+
+/* 표 */
+#p-ana2 .a2-tblwrap{ background:var(--card); border-radius:18px; border:1px solid #EEF0F3; overflow-x:auto; -webkit-overflow-scrolling:touch; position:relative; }
+#p-ana2 table.a2-tbl{ border-collapse:collapse; min-width:640px; width:100%; }
+#p-ana2 .a2-tbl th{ background:var(--bg); text-align:right; font-size:11.5px; color:var(--txt3); font-weight:600; padding:9px 10px; white-space:nowrap; border-bottom:1px solid #E5E8EB; }
+#p-ana2 .a2-tbl td{ text-align:right; font-size:13px; padding:10px; white-space:nowrap; border-bottom:1px solid #F2F4F6; font-variant-numeric:tabular-nums; }
+#p-ana2 .a2-tbl th:first-child, #p-ana2 .a2-tbl td:first-child{ text-align:left; position:sticky; left:0; background:var(--card); z-index:1; box-shadow:1px 0 0 #EEF0F3; }
+#p-ana2 .a2-tbl th:first-child{ background:var(--bg); }
+#p-ana2 .a2-tbl th:last-child, #p-ana2 .a2-tbl td:last-child{ text-align:left; }
+#p-ana2 .a2-tbl tr.a2-r{ cursor:pointer; }
+#p-ana2 .a2-tbl tr.a2-r:active td{ background:var(--card2); }
+#p-ana2 .a2-tbl tr.a2-dr > td{ padding:0; background:var(--card2); white-space:normal; text-align:left; }
+#p-ana2 .a2-tbl tr.a2-dr > td:first-child{ position:static; box-shadow:none; background:var(--card2); }
+#p-ana2 .a2-tbl tr.a2-sum td{ font-weight:700; background:var(--bg); }
+#p-ana2 .a2-tbl tr.a2-sum td:first-child{ background:var(--bg); }
+#p-ana2 .a2-tbl tr.a2-sep td{ padding:6px 10px; font-size:11px; color:var(--txt3); background:var(--bg); text-align:left; font-weight:600; }
+#p-ana2 .a2-tbl tr.a2-sep td:first-child{ background:var(--bg); }
+#p-ana2 .a2-tdwrap{ position:sticky; left:0; box-sizing:border-box; width:var(--a2w,330px); max-width:100%; padding:12px 14px; }
+#p-ana2 .a2-tdwrap .a2-detail{ display:block; margin:0; padding:0; background:transparent; }
+
+/* 연간 */
+#p-ana2 .a2-stats{ display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:14px; }
+#p-ana2 .a2-stat2{ display:flex; flex-direction:column; gap:3px; min-width:0; }
+#p-ana2 .a2-stat2 .n{ font-size:17px; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:-.3px; }
+#p-ana2 .a2-legend{ display:flex; gap:14px; margin:10px 0 4px; }
+#p-ana2 .a2-legend span{ display:flex; align-items:center; gap:5px; font-size:11.5px; color:var(--txt2); }
+#p-ana2 .a2-legend i{ width:16px; height:2.5px; display:inline-block; }
+#p-ana2 .a2-mlabels{ display:grid; margin-top:4px; }
+#p-ana2 .a2-mlabels span{ text-align:center; font-size:10.5px; color:var(--txt3); cursor:pointer; padding:3px 0; }
+#p-ana2 .a2-mlabels span.on{ color:var(--txt); font-weight:700; }
+#p-ana2 .a2-spark{ flex:none; }
+#p-ana2 .a2-ybars{ display:flex; align-items:flex-end; gap:4px; height:92px; margin:6px 0 10px; }
+#p-ana2 .a2-yb{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; gap:3px; height:100%; cursor:pointer; min-width:0; }
+#p-ana2 .a2-yb i{ display:block; width:100%; background:#C9D6F2; border-radius:3px 3px 0 0; }
+#p-ana2 .a2-yb.on i{ background:var(--blue); }
+#p-ana2 .a2-yb em{ font-style:normal; font-size:8.5px; color:var(--txt3); white-space:nowrap; }
+#p-ana2 .a2-yb span{ font-size:9.5px; color:var(--txt3); }
+#p-ana2 .a2-pace{ display:grid; grid-template-columns:1fr 84px; gap:9px; align-items:center; padding:7px 0; cursor:pointer; }
+#p-ana2 .a2-pace .nm{ font-size:12px; color:var(--txt2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-bottom:4px; }
+#p-ana2 .a2-pace .tr{ position:relative; height:14px; background:#E8ECF1; border-radius:4px; overflow:visible; }
+#p-ana2 .a2-pace .tr div.f{ height:100%; border-radius:4px; }
+#p-ana2 .a2-pace .rt{ text-align:right; font-size:10.5px; color:var(--txt3); line-height:1.35; }
+#p-ana2 .a2-pace .rt b{ font-size:12.5px; }
+</style>
+
 </head>
 <body>
 
@@ -663,6 +793,7 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
   <button class="tab-btn sb-item on" data-tab="home" onclick="changeTab('home', this)"><span class="icon">🏠</span><span>홈</span></button>
   <button class="tab-btn sb-item" data-tab="ledger" onclick="changeTab('ledger', this)"><span class="icon">💰</span><span>가계부</span></button>
   <button class="tab-btn sb-item" data-tab="analysis" onclick="changeTab('analysis', this)"><span class="icon">📊</span><span>분석</span></button>
+  <button class="tab-btn sb-item" data-tab="ana2" onclick="changeTab('ana2', this)"><span class="icon">✨</span><span>새 분석</span></button>
   <button class="tab-btn sb-item" data-tab="invest" onclick="changeTab('invest', this)"><span class="icon">📈</span><span>투자</span></button>
   <div class="sb-net"><div class="lb">순자산</div><div class="vv" id="sb-net-worth">—</div></div>
 </nav>
@@ -670,7 +801,7 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
 <div class="app-main">
 <!-- ── 상단바 ── -->
 <header class="topnav">
-  <div class="topnav-logo">asset.io <span id="app-build" style="font-size:9.5px;font-weight:500;color:var(--txt3);letter-spacing:0;vertical-align:middle">v36.1</span></div>
+  <div class="topnav-logo">asset.io <span id="app-build" style="font-size:9.5px;font-weight:500;color:var(--txt3);letter-spacing:0;vertical-align:middle">v37.0</span></div>
   <div style="display:flex;align-items:center;gap:8px">
     <button class="sync-btn" onclick="fetchFromSheet()">↺ 시트 불러오기</button>
     <button onclick="goToSettingsTab()" title="설정" style="width:32px;height:32px;border-radius:50%;border:none;background:var(--card2);color:var(--txt2);font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex:none">⚙️</button>
@@ -1136,6 +1267,31 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
 </main>
 
 <!-- ════════════════════════════════════════════
+  TAB 2-b: 새 분석 (대시보드 · 표 · 연간)
+  기존 '분석' 탭(#p-analysis)은 그대로 두고 따로 추가한 화면.
+  기존 탭의 계산 함수(buildOutCats · majorTxPred · computeAnnualInsight 등)를
+  그대로 불러다 쓰므로 숫자가 기존 분석과 같다.
+═════════════════════════════════════════════ -->
+<main id="p-ana2" class="panel">
+  <div class="a2-head">
+    <div class="a2-headrow">
+      <span class="a2-title">가계부 분석</span>
+      <div class="a2-nav">
+        <button class="a2-navbtn" onclick="a2Nav(-1)" aria-label="이전">‹</button>
+        <span class="a2-pill" id="a2-label"></span>
+        <button class="a2-navbtn" onclick="a2Nav(1)" aria-label="다음">›</button>
+      </div>
+    </div>
+    <div class="a2-tabs">
+      <button class="a2-tab on" data-sub="dash" onclick="a2SetSub('dash')">대시보드</button>
+      <button class="a2-tab" data-sub="table" onclick="a2SetSub('table')">표</button>
+      <button class="a2-tab" data-sub="year" onclick="a2SetSub('year')">연간</button>
+    </div>
+  </div>
+  <div id="a2-body"></div>
+</main>
+
+<!-- ════════════════════════════════════════════
   TAB 3: INVESTMENT (투자)
 ═════════════════════════════════════════════ -->
 <main id="p-invest" class="panel">
@@ -1433,6 +1589,7 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
   <button class="tab-btn on" data-tab="home" onclick="changeTab('home', this)"><span class="icon">🏠</span><span>홈</span></button>
   <button class="tab-btn" data-tab="ledger" onclick="changeTab('ledger', this)"><span class="icon">💰</span><span>가계부</span></button>
   <button class="tab-btn" data-tab="analysis" onclick="changeTab('analysis', this)"><span class="icon">📊</span><span>분석</span></button>
+  <button class="tab-btn" data-tab="ana2" onclick="changeTab('ana2', this)"><span class="icon">✨</span><span>새 분석</span></button>
   <button class="tab-btn" data-tab="invest" onclick="changeTab('invest', this)"><span class="icon">📈</span><span>투자</span></button>
 </nav>
 </div><!-- /app-main -->
@@ -2253,6 +2410,7 @@ function changeTab(tabName, btnElement) {
   try{
     if(tabName==='home'){ renderAssetOverview(); if(typeof renderNetWorthTrend==='function') renderNetWorthTrend(); if(typeof renderMonthlyChart==='function') renderMonthlyChart(); }
     if(tabName==='invest') renderInvest();
+    if(tabName==='ana2' && typeof renderAna2==='function') renderAna2();
     if(tabName==='settings'){
       if(typeof renderCatSettings==='function') renderCatSettings();
       // 저축 시뮬레이션이 연간 리포트에서 설정으로 옮겨왔다.
@@ -13733,9 +13891,838 @@ function initFoldableCards(){
     if(RPT_FOLDED[id]) card.classList.add('folded');
   });
 }
+// ══════════════════════════════════════════════════════════════════
+//  ✨ 새 분석 (ana2) — 대시보드 · 표 · 연간                       [v37.0 추가]
+//
+//  기존 '분석' 탭(월간/연간 리포트)은 그대로 남겨두고, 목업(가계부_분석화면)대로
+//  3탭 화면을 따로 만들었다. 기존 코드를 고치지 않고 아래 함수들을 '불러다만' 쓴다:
+//    buildOutCats · majorTxPred · subTxPred · budgetOf · subBudgetOf · txGroupKey
+//    moMonthTotals · isFixedTx · isSaveTx · computeAnnualInsight · outCatPred
+//  → 그래서 월 지출·예산·고정/변동 숫자가 기존 월간/연간 리포트와 항상 같다.
+//
+//  규칙
+//   · 이 블록의 이름은 전부 a2 / A2_ 로 시작한다 (기존 함수와 충돌 방지).
+//   · 카테고리를 누르면 세부(소분류 → 개별 거래)가 펼쳐진다. 펼친 상태는 기억하고,
+//     세부 HTML은 처음 눌렀을 때 만든다(처음부터 전부 만들지 않아 가볍다).
+//   · 메모는 기존 월간 리포트와 같은 저장소(asset_gb_memo / 시트 gb_saveCellMemo)를 쓴다.
+//   · 예산이 BUD_MONTH(기존 월간 화면의 '보고 있는 달')를 읽는 함수가 있어서,
+//     계산하는 동안만 a2WithBud()로 잠깐 바꿨다가 반드시 되돌린다.
+// ══════════════════════════════════════════════════════════════════
+var A2_SUB = 'dash';        // dash | table | year
+var A2_SUB_INIT = false;
+var A2_MONTH = '';          // 'YYYY-MM'
+var A2_YEAR = 0;
+var A2_OPEN = {};           // 'view|인코딩된키' → true (펼침)
+var A2_SEQ = 0;
+var A2_CACHE = null;        // { ym, cats } — 같은 달 안에서 세부 펼칠 때 재계산 방지
+var A2_YCACHE = null;       // { year, d }
+var A2_COLORS = ['#3182F6','#2E9E6B','#9B8AE0','#C08A3E','#E2564F'];
+var A2_GREY = '#C7CCD4';
+
+// ── 작은 도우미 ─────────────────────────────────────────────────
+function a2e(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function a2enc(s){ return encodeURIComponent(String(s==null?'':s)).replace(/'/g,'%27'); }
+function a2dec(s){ try{ return decodeURIComponent(s); }catch(e){ return s; } }
+function a2num(n){ return Math.round(Number(n)||0).toLocaleString('ko-KR'); }
+function a2won(n){ var v=Math.round(Number(n)||0); return (v<0?'-':'')+'₩'+Math.abs(v).toLocaleString('ko-KR'); }
+function a2pad(m){ return String(m).padStart(2,'0'); }
+function a2Month(){ if(!A2_MONTH) A2_MONTH = currentMonthStr(); return A2_MONTH; }
+function a2Year(){ if(!A2_YEAR) A2_YEAR = parseInt(a2Month().slice(0,4),10); return A2_YEAR; }
+function a2NextYm(ym){ var p=ym.split('-'); var y=+p[0], m=+p[1]+1; if(m>12){ m=1; y++; } return y+'-'+a2pad(m); }
+function a2ShortYm(ym){ return parseInt(ym.slice(5,7),10)+'월'; }
+function a2AllTx(){ return (STATE.transactions.length ? STATE.transactions : DEMO).filter(function(t){ return !isRemovedTx(t); }); }
+function a2TxOf(ym){ return a2AllTx().filter(function(t){ return String(t.date).slice(0,7)===ym; }); }
+function a2Sum(list){ return list.reduce(function(s,t){ return s+(Number(t.amount)||0); },0); }
+function a2OutSubs(major){ return CAT_OUT_SUBS[major] || (STATE.catMap && STATE.catMap['지출'] && STATE.catMap['지출'][major]) || []; }
+function a2id(view, enc){ return view+'_'+enc; }
+// 계산하는 동안만 BUD_MONTH를 ym으로 바꿨다가 되돌린다 (기존 예산 함수들이 이 전역을 읽는다)
+function a2WithBud(ym, fn){
+  var keep = BUD_MONTH;
+  try{ BUD_MONTH = ym; return fn(); } finally { BUD_MONTH = keep; }
+}
+
+// ── 월 카테고리 계산 (기존 buildOutCats 결과 + 거래·지난달 금액을 붙인다) ──
+function a2Cats(ym){
+  var tx = a2TxOf(ym), ptx = a2TxOf(moPrevYm(ym));
+  var base = a2WithBud(ym, function(){ return buildOutCats(ym, tx, 'fixed'); });
+  var cats = base.map(function(c){
+    var pred = majorTxPred('지출', c.major, a2OutSubs(c.major));
+    return Object.assign({}, c, {
+      kind:'out', key:c.major, label:(CAT_OUT_LABELS[c.major]||c.major),
+      txs: tx.filter(pred), prev: a2Sum(ptx.filter(pred)), pred: pred
+    });
+  });
+  // 등록되지 않은 대분류로 들어온 지출 — 합계가 안 맞는 걸 숨기지 않고 한 줄로 드러낸다
+  var isOrphan = function(t){ return t.type==='지출' && !cats.some(function(c){ return c.pred(t); }); };
+  var orph = tx.filter(isOrphan);
+  var porph = ptx.filter(isOrphan);
+  if(orph.length || porph.length){
+    cats.push({ kind:'orphan', key:'__orphan', major:'__orphan', label:'❔ 미등록 카테고리', spend:a2Sum(orph), bud:0,
+      prev:a2Sum(porph), txs:orph, cadence:'monthly', pN:1, pElapsed:1, qSpend:0, qBud:0, qBudFull:0,
+      isQuarterEnd:false, fixed:false, pred:isOrphan });
+  }
+  return cats;
+}
+function a2CatsCached(ym){
+  if(A2_CACHE && A2_CACHE.ym===ym) return A2_CACHE.cats;
+  A2_CACHE = { ym:ym, cats:a2Cats(ym) };
+  return A2_CACHE.cats;
+}
+
+// 예산 판정 — 기존 월간 리포트(budCatRowHtml)와 같은 규칙, 색은 %에만
+function a2Judge(c){
+  var cad = c.cadence || 'monthly';
+  if(c.kind==='orphan') return { pct:null, color:'var(--txt3)', txt:'' };
+  if(cad==='event') return { pct:null, color:'var(--txt3)', txt:'누적' };
+  if(c.pN>1){
+    var pLabel = c.pN===6 ? '반기' : c.pN===2 ? '격월' : '분기';
+    var pp = c.qBudFull>0 ? Math.round(c.qSpend/c.qBudFull*100) : null;
+    if(pp===null) return { pct:null, color:'var(--txt3)', txt:'', note:pLabel };
+    var cc = pp>100 ? 'var(--red-vivid)' : pp>=90 ? 'var(--warning-vivid)' : (c.isQuarterEnd ? 'var(--green-vivid)' : 'var(--txt3)');
+    return { pct:pp, color:cc, txt:pp+'%', note:pLabel+(c.isQuarterEnd?'':'중') };
+  }
+  if(c.spend<0) return { pct:null, color:'var(--txt3)', txt:'정산' };
+  if(!(c.bud>0)) return { pct:null, color:'var(--txt3)', txt:'' };
+  var p = budPct(c.spend, c.bud);
+  var col = p===0 ? 'var(--txt3)' : (p<90 ? 'var(--green-vivid)' : p<=100 ? 'var(--warning-vivid)' : 'var(--red-vivid)');
+  return { pct:p, color:col, txt:p+'%' };
+}
+// 예산 합계 — 신호등 판정 대상(월간·주기)만. 누적형·예산 미설정은 제외 (기존 게이지와 동일)
+function a2BudTotals(cats){
+  var bud=0, spend=0, reserve=0, excl=0;
+  cats.forEach(function(c){
+    if(c.kind==='orphan'){ excl += Math.max(0,c.spend); return; }
+    if(c.cadence==='event' || !(c.bud>0)){ excl += Math.max(0,c.spend); return; }
+    if(c.pN>1){ bud+=c.qBud; spend+=c.qSpend; reserve += c.bud*(c.pN-c.pElapsed); }
+    else { bud+=c.bud; spend+=c.spend; }
+  });
+  return { bud:bud, spend:spend, reserve:reserve, excl:excl,
+           pct: bud>0 ? Math.round(spend/bud*100) : null, remain: bud-spend };
+}
+function a2SaveBud(ym){
+  return a2WithBud(ym, function(){
+    var s = 0;
+    Object.keys(CAT_MV_SUBS).forEach(function(m){
+      if(SAVE_MAJORS.indexOf(normBudgetKey(m))>=0) s += (budgetOf(m, CAT_MV_SUBS[m]||[], ym)||0);
+    });
+    if(!s && typeof saveGoalTotal==='function') s = saveGoalTotal();
+    return s;
+  });
+}
+function a2InBud(ym){
+  return a2WithBud(ym, function(){
+    var s = 0;
+    Object.keys(CAT_IN_SUBS).forEach(function(m){ s += (budgetOf(m, CAT_IN_SUBS[m]||[], ym)||0); });
+    return s;
+  });
+}
+
+// ── 메모 (기존 월간 리포트와 같은 저장소) ───────────────────────
+function a2MemoGet(ym, major, sub){
+  gbMemoLoad();
+  var k = ym+'|'+major+(sub?('|'+sub):'');
+  if(GB_MEMO[k]) return GB_MEMO[k];
+  if(!sub){ var nk = ym+'|'+normBudgetKey(major); if(GB_MEMO[nk]) return GB_MEMO[nk]; }
+  return '';
+}
+function a2MemoSave(inp){
+  var ym = inp.dataset.ym, major = a2dec(inp.dataset.major||''), sub = a2dec(inp.dataset.sub||'');
+  gbMemoLoad();
+  var val = String(inp.value||'').trim();
+  var k = ym+'|'+major+(sub?('|'+sub):'');
+  if(val) GB_MEMO[k] = val; else delete GB_MEMO[k];
+  // 정규화된 키로 저장돼 있던 옛 메모가 비운 뒤에도 되살아나지 않게 같이 지운다
+  if(!sub && !val){ var nk = ym+'|'+normBudgetKey(major); if(nk!==k) delete GB_MEMO[nk]; }
+  try{ LS.set('asset_gb_memo', JSON.stringify(GB_MEMO)); }catch(e){}
+  var url = getUrl();
+  if(url){
+    fetch(url, { method:'POST', headers:{'Content-Type':'text/plain'},
+      body: JSON.stringify({ action:'gb_saveCellMemo', mon:ym, key: major+(sub?('|'+sub):''), memo:val }) }).catch(function(){});
+  }
+}
+function a2MemoInput(ym, major, sub, cls, ph){
+  if(!major || major==='__orphan') return '';
+  return '<input class="a2-memo '+(cls||'')+'" value="'+a2e(a2MemoGet(ym,major,sub))+'" placeholder="'+a2e(ph||'메모')+'"'
+    +' data-ym="'+ym+'" data-major="'+a2enc(major)+'" data-sub="'+a2enc(sub||'')+'"'
+    +' onclick="event.stopPropagation()" onchange="a2MemoSave(this)">';
+}
+
+// ── 세부 내역 (카테고리 → 소분류 → 개별 거래) ───────────────────
+// groups: 소분류 단위로 묶고, 소분류 줄을 누르면 개별 거래가 펼쳐진다.
+function a2GroupsHtml(opts){
+  var txs = opts.txs, ym = opts.ym;
+  var groups = {}, order = [];
+  txs.forEach(function(t){
+    var g = opts.groupKey(t);
+    if(!groups[g]){ groups[g] = []; order.push(g); }
+    groups[g].push(t);
+  });
+  // 예산은 있는데 이번 달 거래가 없는 등록 소분류도 줄을 만들어 둔다 (0원이어도 '예산만큼 안 썼다'가 보이게)
+  (opts.regSubs||[]).forEach(function(s){
+    var z = stripSp(s);
+    if(order.some(function(g){ return stripSp(g)===z; })) return;
+    if(opts.subBud && opts.subBud(s)>0){ groups[s] = []; order.push(s); }
+  });
+  var tot = txs.reduce(function(s,t){ return s+(Number(t.amount)||0); },0);
+  var sum = function(g){ return groups[g].reduce(function(s,t){ return s+(Number(t.amount)||0); },0); };
+  order.sort(function(a,b){ return sum(b)-sum(a); });
+  if(!order.length) return '<div class="a2-empty" style="padding:6px 0">내역 없음</div>';
+  return order.map(function(g){
+    var items = groups[g].slice().sort(function(a,b){ return String(b.date).localeCompare(String(a.date)); });
+    var amt = sum(g);
+    var sid = 'a2s'+(++A2_SEQ);
+    var sb = opts.subBud ? (opts.subBud(g)||0) : 0;
+    var over = sb>0 && amt>sb;
+    var share = (tot>0 && amt>0) ? Math.round(amt/tot*100)+'%' : '';
+    var rows = items.map(function(t){
+      var a = Number(t.amount)||0;
+      var acct = String(t.account||t.outAcct||'').trim();
+      return '<div class="a2-tx"><span class="d">'+parseInt(String(t.date).slice(8,10),10)+'일</span>'
+        +'<span class="m">'+a2e(t.memo||t.category||t.sub||g)+(acct?'<em>'+a2e(acct)+'</em>':'')+'</span>'
+        +'<span class="a'+(a<0?' a2-neg':'')+'">'+a2won(a)+'</span></div>';
+    }).join('');
+    var memo = (opts.subMemo && g!=='(소분류 없음)' && g!=='(메모 없음)')
+      ? '<div style="margin:2px 0 6px">'+a2MemoInput(ym, opts.major, g, '', '이 항목 메모')+'</div>' : '';
+    return '<div class="a2-sub">'
+      +'<div class="a2-subhead" onclick="a2ToggleSub(\''+sid+'\')">'
+        +'<span class="a2-car" id="'+sid+'_c">▸</span>'
+        +'<span class="a2-subname">'+a2e(g)+'<small>'+groups[g].length+'건</small></span>'
+        +(sb>0 ? '<span class="a2-subbud">예산 '+a2num(sb)+'</span>' : '')
+        +'<span class="a2-subamt'+(amt<0?' a2-neg':'')+'"'+(over?' style="color:var(--red-vivid)"':'')+'>'+a2won(amt)+'</span>'
+        +(share ? '<span class="a2-share" style="min-width:26px">'+share+'</span>' : '')
+      +'</div>'
+      +'<div class="a2-subtx" id="'+sid+'">'+memo+rows+'</div>'
+    +'</div>';
+  }).join('');
+}
+function a2ToggleSub(id){
+  var el = document.getElementById(id), car = document.getElementById(id+'_c');
+  if(!el) return;
+  var open = el.style.display!=='block';
+  el.style.display = open ? 'block' : 'none';
+  if(car) car.textContent = open ? '▾' : '▸';
+}
+// 지출 카테고리 한 개의 세부
+function a2OutBody(c, ym, withMeta){
+  var meta = '';
+  if(withMeta){
+    var j = a2Judge(c), parts = [];
+    if(c.cadence==='event') parts.push('누적형 항목이라 예산 판정은 하지 않아요');
+    else if(c.pN>1 && c.qBudFull>0) parts.push((j.note||'주기')+' 누적 '+a2won(c.qSpend)+' / '+a2won(c.qBudFull));
+    else if(c.bud>0){
+      var gap = c.bud-c.spend;
+      parts.push('예산 '+a2won(c.bud)+' · '+(gap>=0 ? a2won(gap)+' 남음' : a2won(-gap)+' 초과'));
+    }
+    var dd = c.spend-c.prev;
+    if(c.prev!==0 || c.spend!==0) parts.push('지난달 '+a2won(c.prev)+(dd!==0?' ('+(dd>0?'▲ ':'▼ ')+a2won(Math.abs(dd))+')':''));
+    if(parts.length) meta = '<div class="a2-meta">'+parts.join('<br>')+'</div>';
+  }
+  var memoRow = (c.kind==='out' && withMeta)
+    ? '<div style="margin-bottom:8px"><div class="a2-note" style="margin-bottom:4px">📝 이 달 메모</div>'+a2MemoInput(ym, c.major, '', '', '왜 이랬는지 메모')+'</div>' : '';
+  var regSubs = c.kind==='out' ? a2OutSubs(c.major) : [];
+  var body = a2GroupsHtml({
+    txs: c.txs, ym: ym, major: c.major, regSubs: regSubs,
+    groupKey: function(t){ return txGroupKey(c.major, t); },
+    subBud: (c.kind==='out' && withMeta) ? function(s){ return a2WithBud(ym, function(){ return subBudgetOf(c.major, s, ym); }); } : null,
+    subMemo: (c.kind==='out' && withMeta && !txGroupIsTagBased(c.major))
+  });
+  return meta + memoRow + body;
+}
+// 수입 · 저축 세부 (대분류별로 묶음)
+function a2FlowBody(kind, ym){
+  var tx = a2TxOf(ym);
+  var txs = kind==='save' ? tx.filter(isSaveTx) : tx.filter(function(t){ return t.type==='수입'; });
+  var ptx = a2TxOf(moPrevYm(ym));
+  var prev = a2Sum(kind==='save' ? ptx.filter(isSaveTx) : ptx.filter(function(t){ return t.type==='수입'; }));
+  var cur = a2Sum(txs);
+  var meta = '<div class="a2-meta">이 달 '+a2won(cur)+' · 지난달 '+a2won(prev)+'</div>';
+  return meta + a2GroupsHtml({
+    txs: txs, ym: ym, major: '',
+    groupKey: function(t){
+      var m = t.major ? majorLabel(t.type==='수입'?'수입':'이동', t.major) : '(대분류 없음)';
+      return m;
+    }
+  });
+}
+// 세부 본문을 종류별로 만든다 — a2Toggle 이 처음 펼칠 때 부른다
+function a2DetailFor(view, id, kind){
+  var ym = a2Month();
+  if(view==='year' || view==='ypace') return a2YearDetailHtml(id);
+  if(kind==='save' || kind==='in') return a2FlowBody(kind, ym);
+  var cats = a2CatsCached(ym);
+  var c = cats.filter(function(x){ return x.key===id; })[0];
+  if(!c) return '<div class="a2-empty">내역 없음</div>';
+  if(view==='dfix' || view==='dvar'){
+    var flag = view==='dfix';
+    var sub = c.txs.filter(function(t){ return isFixedTx(t)===flag; });
+    var c2 = Object.assign({}, c, { txs: sub, spend: a2Sum(sub) });
+    return a2OutBody(c2, ym, false);
+  }
+  return a2OutBody(c, ym, true);
+}
+// 카테고리 줄 펼침/접힘 (대시보드·표·연간 공용)
+function a2Toggle(view, enc, kind){
+  var el = document.getElementById('a2d_'+a2id(view,enc));
+  var car = document.getElementById('a2c_'+a2id(view,enc));
+  if(!el) return;
+  var open = el.style.display==='none' || el.style.display==='';
+  // 처음엔 display:none 을 인라인으로 박아 두므로 '' 인 경우는 방어용
+  if(open && !el.getAttribute('data-filled')){
+    var html = a2DetailFor(view, a2dec(enc), kind);
+    var host = el.tagName==='TR' ? el.firstElementChild : el;
+    host.innerHTML = el.tagName==='TR' ? '<div class="a2-tdwrap"><div class="a2-detail">'+html+'</div></div>' : html;
+    el.setAttribute('data-filled','1');
+    if(el.tagName==='TR') a2FitTable();
+  }
+  el.style.display = open ? (el.tagName==='TR' ? 'table-row' : 'block') : 'none';
+  if(car) car.textContent = open ? '▾' : '▸';
+  A2_OPEN[view+'|'+enc] = open;
+}
+function a2ToggleBlock(id){
+  var el = document.getElementById(id);
+  if(!el) return;
+  el.style.display = (el.style.display==='block') ? 'none' : 'block';
+}
+// 펼침 상태를 기억해 두었다가 다시 그릴 때 그대로 복원한다
+function a2IsOpen(view, enc){ return !!A2_OPEN[view+'|'+enc]; }
+function a2DetailHostHtml(view, key, kind, open){
+  var enc = a2enc(key);
+  return '<div class="a2-detail" id="a2d_'+a2id(view,enc)+'" style="display:'+(open?'block':'none')+'"'+(open?' data-filled="1"':'')+'>'
+    +(open ? a2DetailFor(view, key, kind) : '')+'</div>';
+}
+
+// ── 이동 · 이동 후 다시 그리기 ──────────────────────────────────
+function a2Nav(d){
+  if(A2_SUB==='year'){
+    var y = a2Year()+d;
+    if(y > new Date().getFullYear()) return;
+    A2_YEAR = y;
+    var mm = parseInt(a2Month().slice(5,7),10);
+    var ym = y+'-'+a2pad(mm);
+    if(ym > currentMonthStr()) ym = currentMonthStr();
+    A2_MONTH = ym;
+  } else {
+    var nx = d>0 ? a2NextYm(a2Month()) : moPrevYm(a2Month());
+    if(nx > currentMonthStr()) return;
+    A2_MONTH = nx; A2_YEAR = parseInt(nx.slice(0,4),10);
+  }
+  A2_OPEN = {};
+  renderAna2();
+}
+function a2SetSub(sub){
+  A2_SUB = sub;
+  try{ LS.set('a2_sub', sub); }catch(e){}
+  renderAna2();
+}
+function a2GoMonth(ym, sub){
+  A2_MONTH = ym; A2_YEAR = parseInt(ym.slice(0,4),10);
+  A2_OPEN = {};
+  if(sub){ A2_SUB = sub; try{ LS.set('a2_sub', sub); }catch(e){} }
+  renderAna2();
+  window.scrollTo({ top:0, behavior:'smooth' });
+}
+
+function renderAna2(){
+  var host = document.getElementById('a2-body');
+  if(!host) return;
+  if(!A2_SUB_INIT){
+    A2_SUB_INIT = true;
+    var s = LS.get('a2_sub');
+    if(s==='dash' || s==='table' || s==='year') A2_SUB = s;
+  }
+  gbMemoLoad();
+  var lab = document.getElementById('a2-label');
+  if(lab){
+    lab.textContent = A2_SUB==='year' ? (a2Year()+'년')
+      : (a2Month().slice(0,4)+'년 '+parseInt(a2Month().slice(5,7),10)+'월');
+  }
+  document.querySelectorAll('#p-ana2 .a2-tab').forEach(function(b){ b.classList.toggle('on', b.dataset.sub===A2_SUB); });
+  A2_CACHE = null; A2_YCACHE = null;
+  try{
+    if(!(STATE.transactions.length || DEMO.length)){
+      host.innerHTML = '<div class="a2-card"><div class="a2-empty">거래 내역이 아직 없어요.<br>설정에서 시트를 연동하거나 가계부에 내역을 입력하면 여기에 분석이 나와요.</div></div>';
+      return;
+    }
+    host.innerHTML = A2_SUB==='dash' ? a2DashHtml() : A2_SUB==='table' ? a2TableHtml() : a2YearHtml();
+    if(A2_SUB==='table') a2FitTable();
+  }catch(e){
+    console.error(e);
+    host.innerHTML = '<div class="a2-card"><div class="a2-empty">화면을 그리다 오류가 났어요<br><span style="font-size:11px">'+a2e(e&&e.message||e)+'</span></div></div>';
+  }
+}
+// 표 안의 세부 박스 폭을 보이는 폭에 맞춘다 (표가 가로로 스크롤돼도 세부는 화면 안에 머물게)
+function a2FitTable(){
+  var w = document.querySelector('#p-ana2 .a2-tblwrap');
+  if(w) w.style.setProperty('--a2w', Math.max(260, w.clientWidth-2)+'px');
+}
+window.addEventListener('resize', function(){ try{ a2FitTable(); }catch(e){} });
+
+// ══════════════════════════════════════════════════════════════════
+//  ① 대시보드
+// ══════════════════════════════════════════════════════════════════
+function a2DashHtml(){
+  var ym = a2Month();
+  var cats = a2CatsCached(ym);
+  var cur = moMonthTotals(ym), prev = moMonthTotals(moPrevYm(ym));
+  var bt = a2BudTotals(cats);
+  var isCur = ym===currentMonthStr();
+
+  // 지난달 대비 문구 — 이번 달이 진행 중이면 그렇다고 밝힌다 (반 달치를 한 달치와 비교하는 거라)
+  var delta;
+  if(prev.mOut>0){
+    var dp = (cur.mOut-prev.mOut)/prev.mOut*100;
+    if(Math.abs(dp)<0.05) delta = '<span class="a2-note">지난달과 같아요</span>';
+    else if(dp<0) delta = '<span class="a2-dn">▼ 지난달보다 '+Math.abs(dp).toFixed(1)+'% 줄었어요</span>';
+    else delta = '<span class="a2-up">▲ 지난달보다 '+dp.toFixed(1)+'% 늘었어요</span>';
+  } else delta = '<span class="a2-note">지난달 비교 데이터가 없어요</span>';
+  if(isCur) delta += '<span class="a2-note"> · 이번 달 진행 중</span>';
+
+  // 예산 막대
+  var bud = '';
+  if(bt.pct!==null){
+    var dim = new Date(+ym.slice(0,4), +ym.slice(5,7), 0).getDate();
+    var elapsed = isCur ? Math.round(new Date().getDate()/dim*100) : 100;
+    bud = '<div class="a2-track" style="margin-top:14px"><div class="a2-fill" style="width:'+Math.min(100,bt.pct)+'%;'+(bt.pct>100?'background:var(--red-vivid)':'')+'"></div>'
+      +(isCur?'<div class="a2-mark" style="left:'+elapsed+'%"></div>':'')+'</div>'
+      +'<div class="a2-row" style="margin-top:8px"><span class="a2-note" style="font-size:12.5px">예산 '+bt.pct+'% 사용'+(isCur?' · 기간 '+elapsed+'% 경과':'')+'</span>'
+      +'<span class="a2-note" style="font-size:12.5px">'+(bt.remain>=0 ? a2won(bt.remain)+' 남음' : '<b style="color:var(--red-vivid)">'+a2won(-bt.remain)+' 초과</b>')+'</span></div>';
+  } else {
+    bud = '<div class="a2-note" style="margin-top:12px">예산이 설정돼 있지 않아요 (설정 › 카테고리)</div>';
+  }
+
+  var rate = cur.mIn>0 ? Math.round(cur.mSave/cur.mIn*100)+'%' : '—';
+  var stat = function(label, val, kind, extra){
+    var enc = a2enc('__'+kind);
+    return '<div class="a2-stat" onclick="a2Toggle(\'dash\',\''+enc+'\',\''+kind+'\')">'
+      +'<div class="a2-lbl">'+label+' <span id="a2c_'+a2id('dash',enc)+'" style="color:var(--blue);font-size:10px">'+(a2IsOpen('dash',enc)?'▾':'▸')+'</span></div>'
+      +'<div class="a2-val">'+val+'</div></div>';
+  };
+  var hero = '<div class="a2-card a2-full">'
+    +'<div class="a2-lbl" style="font-size:13px">'+(isCur?'이번 달':a2ShortYm(ym))+' 지출</div>'
+    +'<div class="a2-big">'+a2won(cur.mOut)+'</div>'
+    +'<div style="margin-top:6px;font-size:13px">'+delta+'</div>'
+    +bud
+    +'<div class="a2-hr"></div>'
+    +'<div class="a2-row" style="align-items:flex-start">'
+      +stat('수입', a2won(cur.mIn), 'in')
+      +stat('저축·투자', a2won(cur.mSave), 'save')
+      +'<div style="text-align:right"><div class="a2-lbl">저축률</div><div class="a2-val">'+rate+'</div></div>'
+    +'</div>'
+    +a2DetailHostHtml('dash','__in','in',a2IsOpen('dash',a2enc('__in')))
+    +a2DetailHostHtml('dash','__save','save',a2IsOpen('dash',a2enc('__save')))
+    +'</div>';
+
+  return '<div class="a2-grid">'+hero+a2FlowCardHtml(ym)+a2WhereCardHtml(cats, cur, ym)+a2FixedVarCardHtml(cats, cur)+'</div>';
+}
+
+// 지출 흐름 — 최근 6개월 막대 (막대를 누르면 그 달로 이동)
+function a2FlowCardHtml(ym){
+  var list = [], m = ym;
+  for(var i=0;i<6;i++){ list.unshift(m); m = moPrevYm(m); }
+  var has = monthsWithData();
+  var vals = list.map(function(x){ return has.has(x) ? moMonthTotals(x).mOut : 0; });
+  var mx = Math.max.apply(null, vals.concat([1]));
+  var past = vals.slice(0,-1).filter(function(v){ return v>0; });
+  var avg = past.length ? past.reduce(function(a,b){ return a+b; },0)/past.length : 0;
+  var cv = vals[vals.length-1];
+  var cap = !past.length ? '비교할 이전 달 데이터가 없어요'
+    : cv < avg*0.97 ? '평균보다 적게 썼어요' : cv > avg*1.03 ? '평균보다 많이 썼어요' : '평균 수준이에요';
+  if(ym===currentMonthStr() && past.length) cap += ' (진행 중)';
+  var bars = list.map(function(x,i){
+    var h = vals[i]>0 ? Math.max(4, Math.round(vals[i]/mx*70)) : 3;
+    return '<div class="a2-bar'+(i===list.length-1?' on':'')+'" onclick="a2GoMonth(\''+x+'\')" title="'+a2won(vals[i])+'">'
+      +'<i style="height:'+h+'px"></i><span>'+a2ShortYm(x)+'</span></div>';
+  }).join('');
+  return '<div class="a2-card"><div class="a2-ct"><span>지출 흐름</span><small>'+cap+'</small></div><div class="a2-bars">'+bars+'</div></div>';
+}
+
+// 어디에 썼을까요? — 도넛 + 카테고리 아코디언(누르면 세부)
+function a2WhereCardHtml(cats, cur, ym){
+  var all = cats.filter(function(c){ return c.spend!==0; }).sort(function(a,b){ return b.spend-a.spend; });
+  var pos = all.filter(function(c){ return c.spend>0; });
+  var tot = pos.reduce(function(s,c){ return s+c.spend; },0);
+  if(!all.length) return '<div class="a2-card"><div class="a2-ct"><span>어디에 썼을까요?</span></div><div class="a2-empty">이 달 지출 내역이 없어요</div></div>';
+  var top = pos.slice(0,5), restSum = pos.slice(5).reduce(function(s,c){ return s+c.spend; },0);
+  var colorOf = {}; top.forEach(function(c,i){ colorOf[c.key] = A2_COLORS[i]; });
+  var R=40, C=2*Math.PI*R, off=0, segs='';
+  var segList = top.map(function(c,i){ return { v:c.spend, col:A2_COLORS[i] }; });
+  if(restSum>0) segList.push({ v:restSum, col:A2_GREY });
+  segList.forEach(function(s){
+    var len = tot>0 ? s.v/tot*C : 0;
+    segs += '<circle cx="52" cy="52" r="40" fill="none" stroke="'+s.col+'" stroke-width="16" stroke-dasharray="'+len.toFixed(1)+' '+(C-len).toFixed(1)+'" stroke-dashoffset="'+(-off).toFixed(1)+'" transform="rotate(-90 52 52)"/>';
+    off += len;
+  });
+  var donut = '<svg width="104" height="104" viewBox="0 0 104 104" role="img" aria-label="카테고리별 지출 비중" style="flex:none">'
+    +'<circle cx="52" cy="52" r="40" fill="none" stroke="#E8ECF1" stroke-width="16"/>'+segs
+    +'<text x="52" y="49" text-anchor="middle" font-size="9" fill="#8B95A1">지출 합계</text>'
+    +'<text x="52" y="62" text-anchor="middle" font-size="11" font-weight="700" fill="#191F28">'+a2won(cur.mOut)+'</text></svg>';
+  var lg = top.slice(0,4).map(function(c,i){
+    return '<div class="a2-row"><span style="display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600;min-width:0"><span class="a2-dot" style="background:'+A2_COLORS[i]+'"></span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+a2e(c.label)+'</span></span>'
+      +'<span style="font-size:13px;font-weight:700">'+Math.round(c.spend/tot*100)+'%</span></div>';
+  }).join('');
+  var other = pos.slice(4).reduce(function(s,c){ return s+c.spend; },0);
+  if(other>0) lg += '<div class="a2-row"><span style="display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600"><span class="a2-dot" style="background:'+A2_GREY+'"></span>그 외</span><span style="font-size:13px;font-weight:700">'+Math.round(other/tot*100)+'%</span></div>';
+
+  var rows = all.map(function(c){
+    var enc = a2enc(c.key), open = a2IsOpen('dash', enc), j = a2Judge(c);
+    var col = colorOf[c.key] || A2_GREY;
+    return '<div class="a2-cat">'
+      +'<div class="a2-cathead" onclick="a2Toggle(\'dash\',\''+enc+'\',\'out\')">'
+        +'<span class="a2-car" id="a2c_'+a2id('dash',enc)+'">'+(open?'▾':'▸')+'</span>'
+        +'<span class="a2-dot" style="background:'+col+'"></span>'
+        +'<span class="a2-cname">'+a2e(c.label)+(c.fixed?'<span class="a2-tag">고정</span>':'')+'</span>'
+        +(j.txt ? '<span class="a2-share" style="color:'+j.color+';font-weight:700">'+j.txt+'</span>' : '')
+        +'<span class="a2-amt'+(c.spend<0?' a2-neg':'')+'">'+a2won(c.spend)+'</span>'
+      +'</div>'
+      +a2DetailHostHtml('dash', c.key, 'out', open)
+    +'</div>';
+  }).join('');
+  return '<div class="a2-card"><div class="a2-ct"><span>어디에 썼을까요?</span><small>카테고리를 누르면 세부 내역</small></div>'
+    +'<div style="display:flex;align-items:center;gap:18px;margin-top:14px">'+donut+'<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:9px">'+lg+'</div></div>'
+    +'<div class="a2-hr"></div>'+rows+'</div>';
+}
+
+// 고정비 vs 변동비 — 막대를 누르면 어떤 카테고리가 얼마인지
+function a2FixedVarCardHtml(cats, cur){
+  var tot = cur.mOut;
+  var block = function(flag, id){
+    var items = cats.map(function(c){
+      var sub = c.txs.filter(function(t){ return isFixedTx(t)===flag; });
+      return { c:c, v:a2Sum(sub) };
+    }).filter(function(x){ return x.v!==0; }).sort(function(a,b){ return b.v-a.v; });
+    var view = flag ? 'dfix' : 'dvar';
+    var rows = items.map(function(x){
+      var enc = a2enc(x.c.key), open = a2IsOpen(view, enc);
+      return '<div class="a2-cat"><div class="a2-cathead" onclick="a2Toggle(\''+view+'\',\''+enc+'\',\'out\')">'
+        +'<span class="a2-car" id="a2c_'+a2id(view,enc)+'">'+(open?'▾':'▸')+'</span>'
+        +'<span class="a2-cname">'+a2e(x.c.label)+'</span>'
+        +'<span class="a2-share">'+(tot>0?Math.round(x.v/tot*100)+'%':'')+'</span>'
+        +'<span class="a2-amt">'+a2won(x.v)+'</span></div>'
+        +a2DetailHostHtml(view, x.c.key, 'out', open)+'</div>';
+    }).join('');
+    return '<div id="'+id+'" style="display:none;margin:2px 0 8px">'+(rows || '<div class="a2-empty">없음</div>')+'</div>';
+  };
+  var fp = tot>0 ? Math.max(0, Math.min(100, cur.mFix/tot*100)) : 0;
+  var vp = tot>0 ? Math.max(0, Math.min(100, cur.mVar/tot*100)) : 0;
+  return '<div class="a2-card"><div class="a2-ct"><span>고정비 vs 변동비</span><small>누르면 카테고리별</small></div>'
+    +'<div style="margin-top:8px">'
+    +'<div class="a2-fv" onclick="a2ToggleBlock(\'a2fv_fix\')"><b>고정비</b><div class="a2-fvtrack"><div style="width:'+fp.toFixed(1)+'%;background:var(--blue)"></div></div><span class="v">'+a2won(cur.mFix)+'</span></div>'
+    +block(true,'a2fv_fix')
+    +'<div class="a2-fv" onclick="a2ToggleBlock(\'a2fv_var\')"><b>변동비</b><div class="a2-fvtrack"><div style="width:'+vp.toFixed(1)+'%;background:var(--green-vivid)"></div></div><span class="v">'+a2won(cur.mVar)+'</span></div>'
+    +block(false,'a2fv_var')
+    +'</div></div>';
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  ② 표 — 카테고리 · 금액 · 예산 · 예산대비 · 지난달대비 · 메모
+// ══════════════════════════════════════════════════════════════════
+function a2DiffCell(diff, upIsGood, empty){
+  if(empty) return '<span style="color:var(--txt3)">—</span>';
+  if(diff===0) return '<span style="color:var(--txt3)">— 0</span>';
+  var good = upIsGood ? diff>0 : diff<0;
+  return '<span style="color:'+(good?'var(--green-vivid)':'var(--red-vivid)')+'">'+(diff>0?'▲ ':'▼ ')+a2num(Math.abs(diff))+'</span>';
+}
+function a2TblRow(view, key, kind, labelHtml, amtHtml, budHtml, pctHtml, diffHtml, memoHtml){
+  var enc = a2enc(key), open = a2IsOpen(view, enc);
+  return '<tr class="a2-r" onclick="a2Toggle(\''+view+'\',\''+enc+'\',\''+kind+'\')">'
+    +'<td><span class="a2-car" id="a2c_'+a2id(view,enc)+'" style="display:inline-block">'+(open?'▾':'▸')+'</span>'+labelHtml+'</td>'
+    +'<td>'+amtHtml+'</td><td>'+budHtml+'</td><td>'+pctHtml+'</td><td>'+diffHtml+'</td><td>'+memoHtml+'</td></tr>'
+    +'<tr class="a2-dr" id="a2d_'+a2id(view,enc)+'" style="display:'+(open?'table-row':'none')+'"'+(open?' data-filled="1"':'')+'><td colspan="6">'
+    +(open ? '<div class="a2-tdwrap"><div class="a2-detail">'+a2DetailFor(view, key, kind)+'</div></div>' : '')+'</td></tr>';
+}
+function a2TableHtml(){
+  var ym = a2Month();
+  var cats = a2CatsCached(ym);
+  var cur = moMonthTotals(ym), prev = moMonthTotals(moPrevYm(ym));
+  var bt = a2BudTotals(cats);
+  var rows = cats.filter(function(c){ return c.spend!==0 || c.bud>0 || c.prev!==0; });
+  var body = rows.map(function(c){
+    var j = a2Judge(c);
+    var budTxt = c.cadence==='event' ? '<span style="color:var(--txt3)">—</span>'
+      : c.pN>1 ? (c.qBudFull>0 ? a2num(c.qBudFull)+'<span class="a2-note"> '+(c.pN===6?'반기':c.pN===2?'격월':'분기')+'</span>' : '<span style="color:var(--txt3)">—</span>')
+      : (c.bud>0 ? a2num(c.bud) : '<span style="color:var(--txt3)">—</span>');
+    var pctTxt = j.txt ? '<b style="color:'+j.color+'">'+j.txt+'</b>'+(j.note?'<span class="a2-note"> '+j.note+'</span>':'') : '<span style="color:var(--txt3)">—</span>';
+    return a2TblRow('table', c.key, 'out',
+      ' '+a2e(c.label)+(c.fixed?'<span class="a2-tag">고정</span>':''),
+      '<span'+(c.spend<0?' class="a2-neg"':'')+'>'+a2num(c.spend)+'</span>', budTxt, pctTxt,
+      a2DiffCell(c.spend-c.prev, false, c.prev===0 && c.spend===0),
+      a2MemoInput(ym, c.key, '', 'in', '메모'));
+  }).join('');
+
+  // 합계
+  var sumRow = '<tr class="a2-sum"><td>지출 합계</td><td>'+a2num(cur.mOut)+'</td><td style="color:var(--txt3)">'+(bt.bud>0?a2num(bt.bud):'—')+'</td>'
+    +'<td>'+(bt.pct!==null ? '<span style="color:'+(bt.pct>100?'var(--red-vivid)':bt.pct>=90?'var(--warning-vivid)':'var(--green-vivid)')+'">'+bt.pct+'%</span>' : '—')+'</td>'
+    +'<td>'+a2DiffCell(cur.mOut-prev.mOut, false, prev.mOut===0 && cur.mOut===0)+'</td><td></td></tr>';
+
+  // 저축·투자 / 수입 — 같은 방식으로 누르면 세부
+  var saveBud = a2SaveBud(ym), inBud = a2InBud(ym);
+  var goalPct = function(v, b){ if(!(b>0)) return '<span style="color:var(--txt3)">—</span>'; var p=Math.round(v/b*100); return '<b style="color:'+(p>=100?'var(--green-vivid)':'var(--txt2)')+'">'+p+'%</b>'; };
+  var flow = '<tr class="a2-sep"><td colspan="6">저축 · 수입</td></tr>'
+    + a2TblRow('table','__save','save',' 💰 저축·투자', a2num(cur.mSave), saveBud>0?a2num(saveBud):'<span style="color:var(--txt3)">—</span>', goalPct(cur.mSave,saveBud), a2DiffCell(cur.mSave-prev.mSave, true, prev.mSave===0 && cur.mSave===0), '')
+    + a2TblRow('table','__in','in',' 💵 수입', a2num(cur.mIn), inBud>0?a2num(inBud):'<span style="color:var(--txt3)">—</span>', goalPct(cur.mIn,inBud), a2DiffCell(cur.mIn-prev.mIn, true, prev.mIn===0 && cur.mIn===0), '');
+
+  var note = '';
+  if(bt.excl>0 || bt.reserve>0){
+    note = '<div class="a2-note" style="margin:8px 4px 0;line-height:1.6">합계의 예산대비는 월간·주기 예산이 있는 항목만 집계해요'
+      +(bt.excl>0?' (누적형·예산 미설정 '+a2won(bt.excl)+' 제외)':'')
+      +(bt.reserve>0?' · 아직 도래하지 않은 분기·반기 예산 '+a2won(bt.reserve)+'은 뺐어요':'')+'</div>';
+  }
+  return '<div class="a2-note" style="margin:0 4px 8px">행을 누르면 소분류 → 개별 거래까지 펼쳐져요 · ← 옆으로 끌어서 더 보기</div>'
+    +'<div class="a2-tblwrap"><table class="a2-tbl"><thead><tr><th>카테고리</th><th>금액</th><th>예산</th><th>예산대비</th><th>지난달대비</th><th style="text-align:left">메모</th></tr></thead><tbody>'
+    +body+sumRow+flow+'</tbody></table></div>'+note;
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  ③ 연간 — 총괄 · 월별 추이 · 카테고리 추이 · 예산 페이스
+// ══════════════════════════════════════════════════════════════════
+function a2Spark(vals, color){
+  var W=140, H=30, n=vals.length;
+  if(!n) return '';
+  var mn=Math.min.apply(null,vals), mx=Math.max.apply(null,vals), rg=mx-mn;
+  var pts = vals.map(function(v,i){
+    var x = n>1 ? i*(W/(n-1)) : W/2;
+    var y = rg>0 ? 5+(1-(v-mn)/rg)*20 : 15;
+    return x.toFixed(1)+','+y.toFixed(1);
+  });
+  return '<svg class="a2-spark" width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" aria-hidden="true">'
+    +(n>1 ? '<polyline points="'+pts.join(' ')+'" fill="none" stroke="'+color+'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
+          : '<circle cx="'+pts[0].split(',')[0]+'" cy="'+pts[0].split(',')[1]+'" r="2.5" fill="'+color+'"/>')+'</svg>';
+}
+function a2BudFull(c, year, nMonths){
+  var subs = a2OutSubs(c.key);
+  return a2WithBud(currentMonthStr(), function(){
+    if(majorHasPeriodSub(c.key, subs)){
+      var s=0; for(var m=1;m<=12;m++) s += (budgetOf(c.key, subs, year+'-'+a2pad(m))||0);
+      return s;
+    }
+    return (c.budTotal/(nMonths||1))*12;
+  });
+}
+
+// 연간 표: 1~12월을 가로로 비교하는 PC 우선 요약표
+function a2AnnualMonthlyTableHtml(year){
+  var src=(STATE.transactions && STATE.transactions.length ? STATE.transactions : DEMO).filter(function(t){
+    return !isRemovedTx(t) && String(t.date||'').slice(0,4)===String(year);
+  });
+  var months=[];
+  for(var m=1;m<=12;m++){
+    var ym=String(year)+'-'+a2pad(m);
+    var tx=src.filter(function(t){ return String(t.date||'').slice(0,7)===ym; });
+    var income=tx.filter(function(t){return t.type==='수입';}).reduce(function(s,t){return s+(Number(t.amount)||0);},0);
+    var expense=tx.filter(function(t){return t.type==='지출';}).reduce(function(s,t){return s+(Number(t.amount)||0);},0);
+    var fixed=tx.filter(function(t){return t.type==='지출' && isFixedTx(t);}).reduce(function(s,t){return s+(Number(t.amount)||0);},0);
+    var save=tx.filter(function(t){return isSaveTx(t);}).reduce(function(s,t){return s+(Number(t.amount)||0);},0);
+    months.push({m:m,ym:ym,has:tx.length>0,income:income,expense:expense,fixed:fixed,variable:expense-fixed,save:save,net:income-expense,rate:income>0?Math.round(save/income*100):null});
+  }
+  var rows=[
+    {label:'수입',key:'income',cls:'income'},
+    {label:'지출',key:'expense',cls:'expense'},
+    {label:'고정비',key:'fixed',cls:''},
+    {label:'변동비',key:'variable',cls:''},
+    {label:'저축·이동',key:'save',cls:'save'},
+    {label:'수입−지출',key:'net',cls:'net'},
+    {label:'저축률',key:'rate',pct:true,cls:''}
+  ];
+  function fmt(v,pct){return pct?(v==null?'—':v+'%'):a2num(v||0);}
+  var head='<div class="a2-annual-table-wrap"><table class="a2-annual-table"><thead><tr><th>항목</th>'+months.map(function(m){return '<th><button onclick="a2GoMonth(\''+m.ym+'\',\'dash\')">'+m.m+'월</button></th>';}).join('')+'<th>연간 합계</th></tr></thead><tbody>';
+  var body=rows.map(function(r){
+    var total=r.pct?null:months.reduce(function(sum,m){return sum+(Number(m[r.key])||0);},0);
+    return '<tr class="'+r.cls+'"><th scope="row">'+r.label+'</th>'+months.map(function(m){
+      var v=m[r.key], empty=!m.has;
+      return '<td class="'+(empty?'empty':'')+'">'+fmt(v,r.pct)+'</td>';
+    }).join('')+'<td class="annual-total">'+(r.pct?'—':fmt(total,false))+'</td></tr>';
+  }).join('');
+  return '<section class="a2-card a2-full a2-annual-month-card"><div class="a2-ct"><span>월별 요약표</span><small>1~12월 가로 비교 · 월을 누르면 해당 월 대시보드로 이동</small></div><div class="a2-annual-note">금액은 원 단위 표시를 줄여 만원 단위로 표기함. 거래가 없는 달은 회색으로 표시함.</div>'+head+body+'</tbody></table></div></section>';
+}
+
+function a2YearHtml(){
+  var y = a2Year();
+  var d = computeAnnualInsight(y);
+  A2_YCACHE = { year:y, d:d };
+  if(!d) return '<div class="a2-card"><div class="a2-empty">'+y+'년에는 아직 데이터가 없어요</div></div>';
+  var n = d.months.length, yo = d.yoy;
+  var pctOf = function(diff, base){ return (base>0 && diff!=null) ? (diff/base*100) : null; };
+  var yTxt = function(p, upIsGood){
+    if(p==null) return '<span class="a2-note">작년 데이터 없음</span>';
+    if(Math.abs(p)<0.05) return '<span class="a2-note">작년과 같아요</span>';
+    var good = upIsGood ? p>0 : p<0;
+    return '<span style="font-size:11px;font-weight:600;color:'+(good?'var(--green-vivid)':'var(--red-vivid)')+'">'+(p>0?'▲':'▼')+' 작년보다 '+Math.abs(p).toFixed(1)+'%</span>';
+  };
+  var goal = (typeof CFG!=='undefined' && CFG.settings && Number(CFG.settings['저축률목표'])) || null;
+  var kpi = '<div class="a2-card a2-full"><div class="a2-ct"><span>연간 총괄</span><small>합계 · 월평균 · 작년 같은 기간 대비</small></div>'
+    +'<div class="a2-stats">'
+    +'<div class="a2-stat2"><span class="a2-lbl">수입 합계</span><span class="n">'+a2won(d.totalIncome)+'</span>'+yTxt(yo?pctOf(yo.incomeDiff,yo.income):null,true)+'</div>'
+    +'<div class="a2-stat2"><span class="a2-lbl">지출 합계</span><span class="n">'+a2won(d.totalExpense)+'</span>'+yTxt(yo?pctOf(yo.expenseDiff,yo.expense):null,false)+'</div>'
+    +'<div class="a2-stat2"><span class="a2-lbl">저축 합계</span><span class="n">'+a2won(d.totalSave)+'</span><span class="a2-note">월평균 '+a2num(d.totalSave/n)+'</span></div>'
+    +'<div class="a2-stat2"><span class="a2-lbl">저축률</span><span class="n">'+(d.saveRate!=null?d.saveRate+'%':'—')+'</span><span class="a2-note">'+(goal?'목표 '+goal+'%':'목표 미설정')+'</span></div>'
+    +'</div></div>';
+
+  // 월별 수입·지출 추이
+  var mx = Math.max.apply(null, d.incomeVals.concat(d.expenseVals).concat([1]));
+  var colW = 350/n;
+  var line = function(vals, col){
+    var pts = vals.map(function(v,i){ return ((i+0.5)*colW).toFixed(1)+','+(8+(1-v/mx)*104).toFixed(1); });
+    var last = pts[pts.length-1].split(',');
+    return (n>1 ? '<polyline points="'+pts.join(' ')+'" fill="none" stroke="'+col+'" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>' : '')
+      +'<path d="M'+last[0]+' '+last[1]+'h0" stroke="'+col+'" stroke-width="7" stroke-linecap="round" vector-effect="non-scaling-stroke"/>';
+  };
+  var curYm = a2Month();
+  var labels = d.months.map(function(ym){
+    return '<span class="'+(ym===curYm?'on':'')+'" onclick="a2GoMonth(\''+ym+'\',\'dash\')">'+parseInt(ym.slice(5,7),10)+'월</span>';
+  }).join('');
+  var trend = '<div class="a2-card"><div class="a2-ct"><span>월별 수입·지출 추이</span><small>월 이름을 누르면 그 달 대시보드</small></div>'
+    +'<div class="a2-legend"><span><i style="background:var(--blue)"></i>수입</span><span><i style="background:#CC8A87"></i>지출</span></div>'
+    +'<svg width="100%" height="120" viewBox="0 0 350 120" preserveAspectRatio="none" role="img" aria-label="월별 수입과 지출 추이">'
+    +line(d.incomeVals,'#3182F6')+line(d.expenseVals,'#CC8A87')+'</svg>'
+    +'<div class="a2-mlabels" style="grid-template-columns:repeat('+n+',1fr)">'+labels+'</div></div>';
+
+  // 카테고리별 추이 — 최근 6개월 스파크라인, 누르면 월별·소분류 세부
+  var cs = d.catStats.filter(function(c){ return c.total!==0; }).sort(function(a,b){ return b.total-a.total; });
+  var palette = ['#3182F6','#2E9E6B','#C08A3E','#9B8AE0','#E2564F'];
+  var catRows = cs.map(function(c,i){
+    var enc = a2enc(c.key), open = a2IsOpen('year', enc);
+    var v6 = c.vals.slice(-6);
+    var rising = c.relSlope!=null && c.relSlope>=0.06;
+    var col = rising ? '#E2564F' : palette[i%palette.length];
+    return '<div class="a2-cat"><div class="a2-cathead" onclick="a2Toggle(\'year\',\''+enc+'\',\'out\')">'
+      +'<span class="a2-car" id="a2c_'+a2id('year',enc)+'">'+(open?'▾':'▸')+'</span>'
+      +'<span class="a2-cname" style="flex:none;width:76px">'+a2e(c.label)+'</span>'
+      +a2Spark(v6, col)
+      +'<span class="a2-amt" style="flex:1;text-align:right;'+(rising?'color:var(--red-vivid)':'')+'">'+a2num(c.vals[c.vals.length-1])+'</span></div>'
+      +a2DetailHostHtml('year', c.key, 'out', open)+'</div>';
+  }).join('');
+  var catCard = '<div class="a2-card"><div class="a2-ct"><span>카테고리별 추이</span><small>최근 '+Math.min(6,n)+'개월 · 누르면 세부</small></div>'
+    +'<div style="margin-top:6px">'+(catRows||'<div class="a2-empty">지출 내역이 없어요</div>')+'</div>'
+    +'<div class="a2-note" style="margin-top:8px">빨간색 = 최근 몇 달 꾸준히 늘고 있는 카테고리</div></div>';
+
+  // 연간 예산 페이스 — 올해 전체 예산 대비 지금까지 쓴 비율 vs 경과 비율
+  var elapsed = Math.round(n/12*100);
+  var bc = d.catStats.map(function(c){ return { c:c, full:a2BudFull(c, y, n) }; }).filter(function(x){ return x.full>0; });
+  var paceCard;
+  if(!bc.length){
+    paceCard = '<div class="a2-card"><div class="a2-ct"><span>🏁 연간 예산 페이스</span></div><div class="a2-empty">예산이 설정된 카테고리가 없어요</div></div>';
+  } else {
+    var sumFull = bc.reduce(function(s,x){ return s+x.full; },0);
+    var sumUsed = bc.reduce(function(s,x){ return s+x.c.total; },0);
+    var usedPct = Math.round(sumUsed/sumFull*100);
+    var rows2 = bc.map(function(x){
+      var up = Math.round(x.c.total/x.full*100), diff = up-elapsed;
+      return { c:x.c, full:x.full, up:up, diff:diff, col: diff>=15?'var(--c-over)':diff>=5?'var(--c-warn)':'var(--c-ok)',
+               txtc: diff>=15?'var(--red-vivid)':diff>=5?'var(--warning-vivid)':'var(--green-vivid)' };
+    }).sort(function(a,b){ return b.diff-a.diff; });
+    var prow = rows2.map(function(r){
+      var enc = a2enc(r.c.key), open = a2IsOpen('ypace', enc);
+      return '<div class="a2-cat"><div class="a2-pace" onclick="a2Toggle(\'ypace\',\''+enc+'\',\'out\')">'
+        +'<div><div class="nm"><span class="a2-car" id="a2c_'+a2id('ypace',enc)+'" style="display:inline-block">'+(open?'▾':'▸')+'</span> '+a2e(r.c.label)+'</div>'
+        +'<div class="tr"><div class="f" style="width:'+Math.min(100,r.up)+'%;background:'+r.col+'"></div><div class="a2-mark" style="left:'+elapsed+'%;height:20px;top:-3px"></div></div></div>'
+        +'<div class="rt"><b style="color:'+r.txtc+'">'+r.up+'%</b><br>'+manW(r.c.total)+'/'+manW(r.full)+'</div></div>'
+        +a2DetailHostHtml('ypace', r.c.key, 'out', open)+'</div>';
+    }).join('');
+    paceCard = '<div class="a2-card"><div class="a2-ct"><span>🏁 연간 예산 페이스</span><small>올해 전체 예산 기준</small></div>'
+      +'<div class="a2-track" style="height:14px;margin-top:14px;background:#E8ECF1"><div class="a2-fill" style="width:'+Math.min(100,usedPct)+'%;'+(usedPct>elapsed+5?'background:var(--c-over)':'')+'"></div><div class="a2-mark" style="left:'+elapsed+'%;height:20px"></div></div>'
+      +'<div class="a2-row" style="margin-top:8px"><span class="a2-note" style="font-size:12px">연간 예산의 '+usedPct+'% 사용</span><span class="a2-note" style="font-size:12px">'+n+'월 기준 경과 '+elapsed+'%</span></div>'
+      +'<div class="a2-hr"></div><div class="a2-note" style="margin-bottom:4px">검은 눈금 = 정상 페이스 · 넘어선 순서대로 · 누르면 세부</div>'+prow+'</div>';
+  }
+  return '<div class="a2-grid">'+a2AnnualMonthlyTableHtml(y)+kpi+trend+catCard+paceCard+'</div>';
+}
+
+// 연간 탭 카테고리 세부 — 월별 금액 막대 · 합계/월평균/예산 · 소분류별 합계 · 월별 메모
+function a2YearDetailHtml(major){
+  var y = a2Year();
+  var d = (A2_YCACHE && A2_YCACHE.year===y) ? A2_YCACHE.d : computeAnnualInsight(y);
+  var c = d && d.catStats.filter(function(x){ return x.key===major; })[0];
+  if(!c) return '<div class="a2-empty">내역 없음</div>';
+  var n = d.months.length;
+  var mx = Math.max.apply(null, c.vals.concat([1]));
+  var curYm = a2Month();
+  var bars = d.months.map(function(ym,i){
+    var v = c.vals[i], h = v>0 ? Math.max(3, Math.round(v/mx*54)) : 2;
+    return '<div class="a2-yb'+(ym===curYm?' on':'')+'" onclick="event.stopPropagation();a2GoMonth(\''+ym+'\',\'dash\')" title="'+a2won(v)+'">'
+      +'<em>'+(v!==0?manW(v):'')+'</em><i style="height:'+h+'px"></i><span>'+parseInt(ym.slice(5,7),10)+'</span></div>';
+  }).join('');
+  var avg = c.total/n;
+  var meta = '합계 '+a2won(c.total)+' · 월평균 '+a2won(avg);
+  if(c.budTotal>0){
+    var dd = c.total-c.budTotal;
+    meta += '<br>지금까지 예산 '+a2won(c.budTotal)+' · '+(dd>0 ? '<b style="color:var(--red-vivid)">'+a2won(dd)+' 초과</b>' : a2won(-dd)+' 아낌');
+  }
+  // 소분류별 연간 합계
+  var pred = outCatPred(major);
+  var txs = a2AllTx().filter(function(t){ return String(t.date).slice(0,4)===String(y) && pred(t); });
+  var g = {}, ord = [];
+  txs.forEach(function(t){ var k = txGroupKey(major,t); if(!(k in g)){ g[k]=0; ord.push(k); } g[k] += Number(t.amount)||0; });
+  ord.sort(function(a,b){ return g[b]-g[a]; });
+  var tot = c.total;
+  var subRows = ord.slice(0,10).map(function(k){
+    return '<div class="a2-tx"><span class="m" style="color:var(--txt)">'+a2e(k)+'</span>'
+      +'<span class="d" style="width:34px;text-align:right">'+(tot>0&&g[k]>0?Math.round(g[k]/tot*100)+'%':'')+'</span>'
+      +'<span class="a">'+a2won(g[k])+'</span></div>';
+  }).join('') + (ord.length>10 ? '<div class="a2-note" style="padding:3px 0">… 외 '+(ord.length-10)+'개 소분류</div>' : '');
+  // 월별 메모
+  var memos = d.months.map(function(ym){ var m = a2MemoGet(ym, major, ''); return m ? '<div class="a2-tx"><span class="d" style="width:30px">'+parseInt(ym.slice(5,7),10)+'월</span><span class="m" style="white-space:normal">'+a2e(m)+'</span></div>' : ''; }).join('');
+  return '<div class="a2-meta">'+meta+'</div>'
+    +'<div class="a2-ybars">'+bars+'</div>'
+    +(subRows ? '<div class="a2-note" style="margin:4px 0 2px">소분류별 올해 합계</div>'+subRows : '')
+    +(memos ? '<div class="a2-note" style="margin:10px 0 2px">📝 월별 메모</div>'+memos : '');
+}
+
 document.addEventListener('DOMContentLoaded', ()=>{ initFoldableCards(); if(typeof cfgSeedIfEmpty==='function'){ cfgSeedIfEmpty(); cfgApply(); } if(typeof renderAllSettings==='function') renderAllSettings(); if(typeof applySavedFolds==='function') applySavedFolds(); });
 window.addEventListener('load', ()=>{ initFoldableCards(); if(typeof renderAllSettings==='function') renderAllSettings(); if(typeof applySavedFolds==='function') applySavedFolds(); });
 
 </script>
+
+<style id="pc-first-annual-redesign">
+/* PC 우선: 넓은 화면을 실제 작업 공간으로 쓰고, 모바일 전용 폭/여백 제한을 해제 */
+@media (min-width: 860px){
+  body{max-width:none!important;margin:0!important;padding-bottom:32px!important;}
+  .app-main{margin-left:172px!important;}
+  .topnav{max-width:none!important;width:100%!important;margin:0!important;padding:0 30px!important;}
+  .panel{max-width:none!important;width:100%!important;margin:0!important;padding:22px 28px!important;}
+  #p-analysis.panel,#p-ana2.panel{max-width:none!important;width:100%!important;}
+  #p-ana2 .a2-head{position:relative;top:auto;margin:0 0 16px;padding:0 0 8px;box-shadow:none;}
+  #p-ana2 .a2-title{font-size:24px;}
+  #p-ana2 .a2-tabs{max-width:460px;margin-top:14px;}
+  #p-ana2 .a2-tab{flex:0 0 auto;padding:12px 22px;font-size:14px;}
+  #p-ana2 .a2-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;align-items:stretch;}
+  #p-ana2 .a2-grid .a2-full{grid-column:1/-1;}
+  #p-ana2 .a2-card{padding:18px 20px;border-radius:14px;}
+  #p-ana2 .a2-big{font-size:28px;}
+  #p-ana2 .a2-stats{grid-template-columns:repeat(4,minmax(0,1fr));gap:20px;}
+  #p-ana2 .a2-annual-month-card{grid-column:1/-1;}
+  #p-ana2 .a2-annual-table-wrap{overflow-x:auto;width:100%;}
+  #p-ana2 table.a2-annual-table{width:100%;min-width:1120px;border-collapse:separate;border-spacing:0;table-layout:fixed;font-variant-numeric:tabular-nums;}
+  #p-ana2 .a2-annual-table th,#p-ana2 .a2-annual-table td{padding:10px 8px;text-align:right;border-bottom:1px solid #EEF0F3;white-space:nowrap;font-size:12px;}
+  #p-ana2 .a2-annual-table thead th{background:#F7F8FA;color:#667085;font-weight:700;text-align:center;position:sticky;top:0;z-index:2;}
+  #p-ana2 .a2-annual-table thead th:first-child{width:120px;text-align:left;left:0;z-index:4;}
+  #p-ana2 .a2-annual-table thead button{border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;padding:2px 4px;}
+  #p-ana2 .a2-annual-table tbody th{position:sticky;left:0;text-align:left;background:#fff;z-index:1;font-weight:700;color:#344054;}
+  #p-ana2 .a2-annual-table td{color:#344054;}
+  #p-ana2 .a2-annual-table td.empty{color:#C5CBD3;background:#FAFBFC;}
+  #p-ana2 .a2-annual-table tr.income td{color:#2E7D5B;}
+  #p-ana2 .a2-annual-table tr.expense td{color:#B85E5A;}
+  #p-ana2 .a2-annual-table tr.save td{color:#2868B2;}
+  #p-ana2 .a2-annual-table tr.net th,#p-ana2 .a2-annual-table tr.net td{background:#F2F7FF;font-weight:800;}
+  #p-ana2 .a2-annual-table td.annual-total{font-weight:800;background:#F7F8FA;color:#191F28;}
+  #p-ana2 .a2-annual-note{font-size:11px;color:#8B95A1;margin:8px 0 10px;}
+  /* 연간 카드의 불필요한 세로 여백을 줄이고 동일 성격 정보는 가로로 묶음 */
+  #p-ana2 .a2-ct{margin-bottom:10px;}
+  #p-ana2 .a2-legend{margin-top:4px;}
+}
+@media (min-width:1400px){
+  #p-ana2 .a2-grid{grid-template-columns:repeat(4,minmax(0,1fr));}
+  #p-ana2 .a2-grid .a2-full{grid-column:1/-1;}
+  #p-ana2 .a2-annual-month-card{grid-column:1/-1;}
+}
+@media (max-width:859px){
+  #p-ana2 .a2-annual-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  #p-ana2 table.a2-annual-table{min-width:1080px;border-collapse:collapse;table-layout:fixed;}
+  #p-ana2 .a2-annual-table th,#p-ana2 .a2-annual-table td{padding:9px 7px;border-bottom:1px solid #EEF0F3;white-space:nowrap;text-align:right;font-size:11px;}
+  #p-ana2 .a2-annual-table th:first-child{position:sticky;left:0;text-align:left;background:#fff;z-index:1;}
+  #p-ana2 .a2-annual-table thead th{background:#F7F8FA;}
+  #p-ana2 .a2-annual-table thead th:first-child{z-index:2;}
+  #p-ana2 .a2-annual-note{font-size:10px;color:#8B95A1;margin:8px 0;}
+}
+</style>
+
 </body>
 </html>
