@@ -14359,8 +14359,9 @@ function a2DetailFor(view, id, kind){
   if(view==='year' || view==='ypace') return a2YearDetailHtml(id,'out');
   if(view==='yin') return a2YearDetailHtml(id,'in');
   if(view==='ysave') return a2YearDetailHtml(id,'save');
-  if((kind==='save' || kind==='in') && view==='table'){
-    var fcats = a2FlowCats(kind, ym);
+  if((kind==='inItem' || kind==='saveItem') && view==='table'){
+    var baseKind = kind==='inItem' ? 'in' : 'save';
+    var fcats = a2FlowCats(baseKind, ym);
     var fc = fcats.filter(function(x){ return x.key===id; })[0];
     return fc ? a2FlowMajorBody(fc, ym) : '<div class="a2-empty">내역 없음</div>';
   }
@@ -14681,7 +14682,7 @@ function a2TableHtml(){
     var pct = c.bud>0 ? Math.round(c.spend/c.bud*100) : null;
     var pctTxt = pct!==null ? '<b style="color:'+(pct>=100?'var(--green-vivid)':'var(--txt2)')+'">'+pct+'%</b>' : '<span style="color:var(--txt3)">—</span>';
     var budTxt = c.bud>0 ? a2num(c.bud) : '<span style="color:var(--txt3)">—</span>';
-    return a2TblRow('table', c.key, c.kind, ' '+a2e(c.label),
+    return a2TblRow('table', c.key, c.kind+'Item', ' '+a2e(c.label),
       '<span>'+a2num(c.spend)+'</span>', budTxt, pctTxt,
       a2DiffCell(c.spend-c.prev, true, false),
       a2MemoInput(ym, c.key, '', 'in', '메모'));
@@ -14689,10 +14690,10 @@ function a2TableHtml(){
   var inBody = inCats.map(flowRow).join('');
   var saveBody = saveCats.map(flowRow).join('');
   var flow = '<tr class="a2-summary-head"><td colspan="6">월간 요약</td></tr>'
-    + '<tr class="a2-sum"><td>수입 합계</td><td>'+a2num(cur.mIn)+'</td><td style="color:var(--txt3)">'+(inBud>0?a2num(inBud):'—')+'</td>'
+    + '<tr class="a2-sum a2-expense-summary"><td>수입 합계</td><td>'+a2num(cur.mIn)+'</td><td style="color:var(--txt3)">'+(inBud>0?a2num(inBud):'—')+'</td>'
     + '<td>'+goalPct(cur.mIn,inBud)+'</td><td>'+a2DiffCell(cur.mIn-prev.mIn, true, prev.mIn===0 && cur.mIn===0)+'</td><td></td></tr>'
     + (inCats.length ? '<tr class="a2-sep"><td colspan="6">수입 세부 내용</td></tr>'+inBody : '')
-    + '<tr class="a2-sum"><td>저축·투자 합계</td><td>'+a2num(cur.mSave)+'</td><td style="color:var(--txt3)">'+(saveBud>0?a2num(saveBud):'—')+'</td>'
+    + '<tr class="a2-sum a2-expense-summary"><td>저축·투자 합계</td><td>'+a2num(cur.mSave)+'</td><td style="color:var(--txt3)">'+(saveBud>0?a2num(saveBud):'—')+'</td>'
     + '<td>'+goalPct(cur.mSave,saveBud)+'</td><td>'+a2DiffCell(cur.mSave-prev.mSave, true, prev.mSave===0 && cur.mSave===0)+'</td><td></td></tr>'
     + (saveCats.length ? '<tr class="a2-sep"><td colspan="6">저축·투자 세부 내용</td></tr>'+saveBody : '')
     + '<tr class="a2-sum a2-expense-summary"><td>지출 합계</td><td>'+a2num(cur.mOut)+'</td><td style="color:var(--txt3)">'+(bt.bud>0?a2num(bt.bud):'—')+'</td>'
@@ -14899,22 +14900,9 @@ function a2TableToggleAll(open){
   var rows=Array.prototype.slice.call(document.querySelectorAll('#p-ana2 .a2-tbl tr.a2-r[data-view="table"]'));
   rows.forEach(function(row){
     var enc=row.getAttribute('data-enc'), kind=row.getAttribute('data-kind');
-    var key=a2dec(enc);
     var detail=document.getElementById('a2d_'+a2id('table',enc));
     var isOpen=!!detail && detail.style.display!=='none';
-    // 모두 접기는 수입·저축 합계 아래의 대분류 목록까지 숨기지 않고, 거래 세부만 접는다.
-    var keepSummary=(key==='__in'||key==='__save');
-    var targetOpen= open || keepSummary;
-    if(targetOpen!==isOpen) a2Toggle('table',enc,kind);
-  });
-  // 수입·저축의 대분류 아래 소분류/거래 펼침은 '모두 펼치기'에서만 열고, '모두 접기'에서는 닫는다.
-  ['__in','__save'].forEach(function(k){
-    var detail=document.getElementById('a2d_'+a2id('table',a2enc(k)));
-    if(!detail) return;
-    Array.prototype.forEach.call(detail.querySelectorAll('.a2-subtx'),function(el){
-      el.style.display=open?'block':'none';
-      var car=document.getElementById(el.id+'_c'); if(car) car.textContent=open?'▾':'▸';
-    });
+    if(open!==isOpen) a2Toggle('table',enc,kind);
   });
 }
 function a2AnnualToggleAll(open){
