@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Asset.io - 개인 자산관리</title>
+<title>Asset.io - 자산관리 템플릿</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@400;500;600;700;800&display=swap');
 
@@ -51,7 +51,7 @@ body { background: var(--bg); color: var(--txt); min-height: 100vh; max-width: 4
 }
 
 /* ── 비밀번호 잠금 ── */
-#lock { position: fixed; max-width: 460px; width:100%; inset: 0; background: #0F172A; display: flex; align-items: center; justify-content: center; z-index: 9999; flex-direction: column; gap: 24px; left: 50%; transform: translateX(-50%); }
+#lock { display:none !important; position: fixed; max-width: 460px; width:100%; inset: 0; background: #0F172A; display: flex; align-items: center; justify-content: center; z-index: 9999; flex-direction: column; gap: 24px; left: 50%; transform: translateX(-50%); }
 #lock .logo { font-size: 28px; font-weight: 800; color: var(--blue); }
 #lock .box { background: #1E293B; border-radius: var(--radius); padding: 32px; display: flex; flex-direction: column; gap: 16px; width: 85%; }
 #lock input { background: #0F172A; border: 1px solid #334155; border-radius: 14px; padding: 16px; color: #FFF; font-size: 18px; text-align: center; letter-spacing: 6px; outline: none; }
@@ -800,7 +800,7 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
 <div class="app-main">
 <!-- ── 상단바 ── -->
 <header class="topnav">
-  <div class="topnav-logo">asset.io <span id="app-build" style="font-size:9.5px;font-weight:500;color:var(--txt3);letter-spacing:0;vertical-align:middle">v37.0</span></div>
+  <div class="topnav-logo">asset.io <span id="app-build" style="font-size:9.5px;font-weight:500;color:var(--txt3);letter-spacing:0;vertical-align:middle">Template</span></div>
   <div style="display:flex;align-items:center;gap:8px">
     <button class="sync-btn" onclick="fetchFromSheet()">↺ 시트 불러오기</button>
     <button onclick="goToSettingsTab()" title="설정" style="width:32px;height:32px;border-radius:50%;border:none;background:var(--card2);color:var(--txt2);font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex:none">⚙️</button>
@@ -1097,7 +1097,7 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
       <div id="mo-overspend-rank"></div>
     </section>
 
-    <!-- [v16 추가] 덕질·비상금은 통장+카드를 섞어 쓰고, 목적 자체가 "잘 지켰나"가 아니라
+    <!-- [v16 추가] 취미·비상금은 통장+카드를 섞어 쓰고, 목적 자체가 "잘 지켰나"가 아니라
          "얼마 규모로 어디에 썼나"라서 예산 판정 대상에서 뺐다. 대신 규모만 조용히 추적한다. -->
     <section class="card" id="mo-purpose-scale-card" style="padding:16px 18px;display:none">
       <h2 class="card-title" style="margin-bottom:2px">📊 규모만 추적 중 <small style="font-size:11px;color:var(--txt3);font-weight:500">판정 없이 얼마·어디에 썼는지만</small></h2>
@@ -1230,7 +1230,7 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
 
     <!-- ④-b2 목적통장 (🎯 목적자금 계좌 ↔ 연동 지출 카테고리) — 연동 계좌가 없으면 카드 자체를 숨김 -->
     <div id="rpt-purpose-card" style="display:none">
-      <div class="card-title" style="margin-bottom:8px;padding-left:2px">🎯 목적통장 <small style="font-size:11px;color:var(--txt3);font-weight:500">덕질·비상금처럼 연동해둔 계좌 · 분기 적립 제안</small></div>
+      <div class="card-title" style="margin-bottom:8px;padding-left:2px">🎯 목적통장 <small style="font-size:11px;color:var(--txt3);font-weight:500">취미·비상금처럼 연동해둔 계좌 · 분기 적립 제안</small></div>
       <div id="purpose-body"></div>
     </div>
 
@@ -1566,7 +1566,7 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
     <div class="card-title">📤 내역 골라 내보내기</div>
     <div style="font-size:12px;color:var(--txt3);line-height:1.6;margin-bottom:10px">
       계좌나 카테고리로 걸러낸 <b>거래 원본</b>을 뽑아 구글 시트에 붙여넣을 수 있어요.
-      덕질 통장, 비상금 통장처럼 따로 정리하는 내역을 시트로 옮길 때 쓰세요.
+      취미 통장, 비상금 통장처럼 따로 정리하는 내역을 시트로 옮길 때 쓰세요.
       자주 쓰는 조건은 이름을 붙여 저장해두면 다음엔 한 번에 불러옵니다.
     </div>
     <div id="xp-body"></div>
@@ -1600,7 +1600,7 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
 //  겹쳐서 예전 데이터(급여액·고정지출 일정 등)를 그대로 물려받는다.
 //  모든 키에 접두어를 붙여 이 앱의 저장 공간을 완전히 분리한다.
 // ══════════════════════════════════════════════════════════════════
-const LS_NS = 'aio1:';
+const LS_NS = 'assetio_template_v1:';
 const LS = {
   get(k){ try{ return localStorage.getItem(LS_NS + k); }catch(e){ return null; } },
   set(k, v){ try{ localStorage.setItem(LS_NS + k, v); }catch(e){} },
@@ -1618,7 +1618,7 @@ const LS = {
 // ── 카테고리 기본값 ────────────────────────────────────────────────
 // 여기 값은 '처음 켰을 때의 초안'일 뿐이다. 설정 탭에서 고치면 CFG가 이 객체들을
 // 통째로 다시 채운다(cfgApplyCategories). 그래서 const 가 아니라 let 이다.
-let CAT_OUT_SUBS = {'주거비':['월세/이자','관리비','공과금'],'보험':['보험료'],'통신비':['휴대폰','인터넷'],'식비':['장보기','배달','외식','카페'],'생활용품':['생활소모품','가전/가구'],'꾸밈비':['의류/잡화','미용'],'자기계발':['수강료','도서','운동'],'건강':['병원/약국','건강보조'],'교통비':['대중교통','택시','주유'],'경조사':['경조사비'],'문화생활':['공연/전시','기타 입장료','OTT','덕질'],'기타':['기타']};
+let CAT_OUT_SUBS = {'주거비':['월세/이자','관리비','공과금'],'보험':['보험료'],'통신비':['휴대폰','인터넷'],'식비':['장보기','배달','외식','카페'],'생활용품':['생활소모품','가전/가구'],'꾸밈비':['의류/잡화','미용'],'자기계발':['수강료','도서','운동'],'건강':['병원/약국','건강보조'],'교통비':['대중교통','택시','주유'],'경조사':['경조사비'],'문화생활':['공연/전시','기타 입장료','OTT','취미'],'기타':['기타']};
 let CAT_IN_SUBS = {'근로소득':['월급','상여'],'금융소득':['이자','배당'],'기타소득':['환급','부수입']};
 let CAT_MV_SUBS = {'카드납부':[],'예적금':['적금','청약','대출원금'],'연금':['개인연금'],'주식':['ISA','일반투자'],'목적':['목적자금'],'비상금':['비상금'],'계좌이체':['계좌이체']};
 
@@ -2499,7 +2499,7 @@ let pfHoldings = [];    // 시트 [투자_보유종목]에서 불러온 현재�
 // ══════════════════════════════════════════════════════════════════
 //  [v26] 가계부 ↔ 투자 계좌 연동
 //  같은 입금을 가계부와 투자 시트에 두 번 적던 걸 없앤다. 원본은 가계부 하나.
-//   ① 계좌명은 하이픈·공백·대소문자를 지운 값으로 맞춰본다 (미래ISA = 미래-ISA).
+//   ① 계좌명은 하이픈·공백·대소문자를 지운 값으로 맞춰본다 (투자계좌A = 투자계좌-A).
 //   ② 연동 계좌로 지정된 곳은 가계부의 '이동' 거래를 입금·출금으로 읽는다.
 //   ③ 그 계좌에 대해서는 투자 시트의 입금·출금 행을 무시한다 — 날짜가 하루 어긋난
 //      중복을 흐릿하게 짝지어 지우는 것보다, 원본을 하나로 못 박는 쪽이 안전하다.
@@ -2534,8 +2534,8 @@ function invLinkMap(){
   return m;
 }
 // [v31] 계좌명 통일 — 예전엔 '가계부에 연동된 계좌'만 통일했다. 그래서 시트에 표기가
-//   바뀐 채로 적힌 계좌(미래ISA → 미래-ISA)가 연동 목록에 없으면 두 계좌로 쪼개져서,
-//   같은 종목이 'SK하이닉스 미래ISA 2주 / 미래-ISA 2주'처럼 두 줄로 갈라졌다.
+//   바뀐 채로 적힌 계좌(투자계좌A → 투자계좌-A)가 연동 목록에 없으면 두 계좌로 쪼개져서,
+//   같은 종목이 'SK하이닉스 투자계좌A 2주 / 투자계좌-A 2주'처럼 두 줄로 갈라졌다.
 //   이제 연동 여부와 무관하게, 공백·하이픈만 다른 표기는 항상 한 이름으로 모은다.
 //   대표 이름은 가계부 표기 > 설정 계좌 > 시트에서 가장 많이 쓰인 표기 순으로 고른다.
 let _INV_ALIAS = null, _INV_ALIAS_SIG = '';
@@ -4832,7 +4832,7 @@ function renderNetWorthTrend(){
 
 // ══════════════════════════════════════════════════════════════════
 //  목적통장 (🎯 목적자금 계좌 ↔ 연동 지출 카테고리)
-//  덕질통장·비상금통장처럼 "이 계좌로 저 카테고리 지출을 충당한다"고 연결해두면,
+//  취미통장·비상금통장처럼 "이 계좌로 저 카테고리 지출을 충당한다"고 연결해두면,
 //  분기당 얼마를 더 채워둬야 하는지 제안한다.
 //  기준: 목표금액이 있으면 (목표-현재잔액)을 남은 개월수로 나눔 (목표시점 없으면 올해 12월 기준),
 //        목표금액이 없으면 최근 12개월 그 카테고리 실제 지출 평균으로 폴백.
@@ -5263,7 +5263,7 @@ function renderBalanceList() {
     }).join('') +
     `<div class="item-row" style="border-top:1px solid #E5E8EB;margin-top:4px;"><div class="item-left"><span class="item-name" style="font-weight:700">합계</span></div><div class="item-right" style="color:var(--blue);font-weight:700">${fmtWon(cashT)}</div></div>`;
 
-  // [v9 추가] 저축·투자 — 케이-집계약용처럼 group이 'invest'인 계좌는 여태 이 화면 어디에도
+  // [v9 추가] 저축·투자 — 목적계좌처럼 group이 'invest'인 계좌는 여태 이 화면 어디에도
   //   안 보였다("잔고 확인할 때 같이 보고 싶다"고 하신 부분). 현금 합계와는 분리해서 따로 보여준다.
   const investCard = document.getElementById('bal-invest-card');
   if(invA.length){
@@ -5525,7 +5525,7 @@ function isFixedTx(t){
   if((STATE.fixedExceptions||[]).map(stripSp).indexOf(sub) >= 0) return false;
 
   // [v43] 소분류를 다른 대분류로 옮겨도 옛 거래에는 옛 대분류가 그대로 남는다.
-  //   ('엄마건강'을 '엄마'에서 '엄마 2'로 옮겼는데 거래는 여전히 대분류 '엄마')
+  //   ('건강관리'을 '건강관리'에서 '건강관리 2'로 옮겼는데 거래는 여전히 대분류 '건강관리')
   //   그러면 설정에서 고정비 체크를 껐는데도 옛 거래가 계속 고정비로 잡힌다.
   //   소분류가 설정 트리에서 '한 대분류에만' 속해 있으면 그쪽을 진짜 소속으로 본다.
   //   여러 대분류에 같은 이름이 있으면 majorOfSub가 ''를 돌려주므로 이 경로는 건너뛴다.
@@ -6235,17 +6235,17 @@ function majorTxPred(type, major, subList){
   return function(t){
     if(t.type!==type) return false;
     // [핵심] 소분류가 설정에 등록돼 있으면, 그 소분류가 속한 대분류로 귀속한다.
-    //   카테고리를 쪼갠 뒤(엄마 → 엄마 / 엄마2) 예전 거래에는 옛 대분류('엄마')가 그대로
+    //   카테고리를 쪼갠 뒤(가족 → 가족 / 가족2) 예전 거래에는 옛 대분류('건강관리')가 그대로
     //   남아 있다. 거래에 적힌 대분류를 그대로 믿으면 새 대분류는 0원이고 옛 대분류만
     //   부풀어서, 소분류가 전부 100% 이하인데 대분류만 157%로 뜨는 일이 생긴다.
     //   설정이 최신이므로 설정을 정본으로 본다.
     const own = owner[stripSp(t.category)];
     if(own) return normBudgetKey(own) === normBudgetKey(major);
     if(t.major===major) return true;
-    // 이모지·괄호 차이만 있는 같은 대분류도 인정 ('☀️ 엄마고정2' ↔ '엄마고정2')
+    // 이모지·괄호 차이만 있는 같은 대분류도 인정 ('☀️ 가족고정2' ↔ '가족고정2')
     if(normBudgetKey(t.major) === normBudgetKey(major)) return true;
-    // [버그] 소분류로 끌어오는 규칙에 조건이 없어서, 대분류가 '엄마고정'인 거래가
-    //        소분류만 '엄마고정2' 목록에 있으면 양쪽 대분류에 모두 더해졌다(이중 계상).
+    // [버그] 소분류로 끌어오는 규칙에 조건이 없어서, 대분류가 '가족고정'인 거래가
+    //        소분류만 '가족고정2' 목록에 있으면 양쪽 대분류에 모두 더해졌다(이중 계상).
     //        소분류 매칭은 '대분류를 못 읽는 거래'를 구제하는 장치이므로,
     //        이미 등록된 다른 대분류에 속한 거래는 그쪽 것으로 남긴다.
     if(subList && subList.indexOf(t.category)>=0 && !isRegisteredMajor(type, t.major)) return true;
@@ -6259,7 +6259,7 @@ function majorTxPred(type, major, subList){
 }
 // ── [공용] 지출 대분류 판정자 ──
 // 화면마다 제각각 txCatKey(t)===키 로 비교하던 걸 하나로 모은다. 그 방식은 거래에 적힌
-// 대분류만 믿기 때문에, 카테고리를 쪼갠 뒤(엄마 → 엄마/엄마2) 옛 대분류가 남은 거래를
+// 대분류만 믿기 때문에, 카테고리를 쪼갠 뒤(가족 → 가족/가족2) 옛 대분류가 남은 거래를
 // 계속 옛 쪽에 쌓았다. 등록된 소분류가 있으면 소분류의 주인에게 귀속하는 규칙을 공유한다.
 function outCatPred(major){
   const subs = CAT_OUT_SUBS[major] || (STATE.catMap && STATE.catMap['지출'] && STATE.catMap['지출'][major]) || [];
@@ -6270,7 +6270,7 @@ function majorSpend(type, major, subList){
   return majorSpendTxs(type, major, subList).reduce((s,t)=>s+(Number(t.amount)||0),0);
 }
 // 소분류에 속하는지 판정 — subSpendBud와 '미등록 거래 골라내기'가 같은 규칙을 쓰게 분리해둔다
-// 원래는 t.category===sub 완전일치만 인정했는데, 거래엔 "엄마생활비"처럼 대분류명이
+// 원래는 t.category===sub 완전일치만 인정했는데, 거래엔 "가족지원비"처럼 대분류명이
 // 소분류 앞에 그대로 붙어 들어오는 경우가 있어(수기입력·은행 적요 그대로 옮겨적기 등)
 // 실제로 낸 돈인데도 0원으로 잡히는 문제가 있었다. 공백 차이 무시 + "대분류+소분류"
 // 접두어 결합 형태까지 같은 항목으로 인정하도록 넓힌다(subBudgetOf의 완화 매칭과 동일 정신).
@@ -6287,7 +6287,7 @@ function subTxPred(type, major, sub){
     if(t.category===sub && inMajorOrMap) return true;               // 기존: 완전 일치
     const catZ = stripSp(t.category);
     if(catZ===subZ && inMajorOrMap) return true;                    // 공백 차이만 있는 경우
-    if(t.major===major && catZ===(majorZ+subZ)) return true;        // "엄마"+"생활비" = "엄마생활비"
+    if(t.major===major && catZ===(majorZ+subZ)) return true;        // "가족"+"생활비" = "가족지원비"
     return false;
   };
 }
@@ -7333,7 +7333,7 @@ function renderCfgAccounts(){
     </div>
     ${a.group==='contract' ? `
     <div style="display:flex;gap:6px;padding:2px 0 6px 0;margin-left:2px">
-      <input value="${esc(a.linkedCat||'')}" list="cfg-purpose-cats" placeholder="연동 지출 카테고리 (예: 덕질 / 여러 개는 콤마: 경조사,기타)"
+      <input value="${esc(a.linkedCat||'')}" list="cfg-purpose-cats" placeholder="연동 지출 카테고리 (예: 취미 / 여러 개는 콤마: 경조사,기타)"
         title="이 계좌로 충당하는 지출 대분류. 연간 리포트 · 목적통장 카드의 분기 적립 제안 계산에 쓰여요"
         oninput="cfgSetAcct(${i},'linkedCat',this.value)" style="${CT.inp}flex:2;font-size:11px">
       <input value="${esc(a.goalDate||'')}" placeholder="목표 시점 YYYY-MM (선택)"
@@ -7370,7 +7370,7 @@ function renderCfgAccounts(){
       카드는 <b>소분류에 카드사</b>를 적어주세요 — 같은 카드사 카드끼리 묶어서 결제일·실적을 계산합니다.<br>
       <b>목표금액</b>은 그 계좌로 최종적으로 모으려는 돈이에요 (예: 전세금 1억). 넣으면 <b>연간 리포트</b>에 진행률로 나옵니다.
       부채(카드·대출)는 <b>갚아야 할 금액</b>을 양수로 적으면 순자산에서 빠집니다.<br>
-      <b>🎯 목적자금</b> 계좌(덕질통장·비상금통장 등)는 <b>연동 지출 카테고리</b>를 적어두면, 연간 리포트에서 그 카테고리 지출을 근거로 분기당 얼마를 더 채워둬야 하는지 제안해드려요. 목표금액이 있으면 그걸로, 없으면 최근 지출 평균으로 계산합니다.
+      <b>🎯 목적자금</b> 계좌(취미통장·비상금통장 등)는 <b>연동 지출 카테고리</b>를 적어두면, 연간 리포트에서 그 카테고리 지출을 근거로 분기당 얼마를 더 채워둬야 하는지 제안해드려요. 목표금액이 있으면 그걸로, 없으면 최근 지출 평균으로 계산합니다.
     </div>
     ${datalists}
     <div style="${AT.head}">
@@ -8215,7 +8215,7 @@ function renderCfgRawExport(){
       </div>
       <!-- [v49] 예전엔 상태 문구(cfg-raw-status)가 프리셋마다 따로 안 두고, 카드 맨 아래
            "+ 목적 통장 추가" 버튼 밑에 딱 하나만 있었다. 프리셋이 2개 이상이면, 위쪽
-           프리셋(예: 덕질)의 버튼을 눌러도 결과 문구는 맨 아래 다른 프리셋(비상금) 카드
+           프리셋(예: 취미)의 버튼을 눌러도 결과 문구는 맨 아래 다른 프리셋(비상금) 카드
            밑에 뜬다 — 화면을 스크롤해서 거기까지 안 내려보면 "눌러도 반응 없음"으로
            보인다. 이게 계속 보고된 "반응 없음"의 진짜 원인이었을 가능성이 크다. 이제
            프리셋마다 자기 버튼 바로 밑에 자기만의 상태 문구를 둔다. -->
@@ -9085,9 +9085,9 @@ function txGroupToggle(gid){
 }
 let TX_GROUP_RERENDER = null; // 클릭 직전에 각 렌더 함수가 자기 자신을 재호출하도록 등록해둔다
 
-// [v16 추가] 덕질·비상금 "규모만 추적" 카드 — 예산 대비 판정 없이, 이번 달 얼마를
+// [v16 추가] 취미·비상금 "규모만 추적" 카드 — 예산 대비 판정 없이, 이번 달 얼마를
 //   어느 결제수단으로 어디에 썼는지만 보여준다. 목적통장 등록(rawPresets) + 이름 자동
-//   인식(비상금·덕질)을 그대로 재활용한다.
+//   인식(비상금·취미)을 그대로 재활용한다.
 function renderPurposeScale(){
   const card = document.getElementById('mo-purpose-scale-card');
   const el = document.getElementById('mo-purpose-scale');
@@ -9095,15 +9095,15 @@ function renderPurposeScale(){
   const ym = (typeof BUD_MONTH!=='undefined' && BUD_MONTH) || currentMonthStr();
   const prevYm = (function(){ let y=parseInt(ym.slice(0,4)), m=parseInt(ym.slice(5,7))-1; if(m<1){m=12;y--;} return y+'-'+String(m).padStart(2,'0'); })();
 
-  // 추적 대상 — 목적통장에 등록된 것 + 계좌 이름에 비상금·덕질이 들어간 것(자동 인식)
+  // 추적 대상 — 목적통장에 등록된 것 + 계좌 이름에 비상금·취미이 들어간 것(자동 인식)
   const acctsAll = (CFG.accounts||[]).map(a=>a.key);
   const list = rawPresets().slice();
-  acctsAll.filter(k=>/비상금|덕질/.test(k)).forEach(k=>{
+  acctsAll.filter(k=>/비상금|취미/.test(k)).forEach(k=>{
     const nm = k.replace(/^케이-?/,'').trim() || k;
     if(list.some(p=>(p.accounts||[]).indexOf(k)>=0)) return;
-    // [v16 수정] 계좌만 보면 카드로 낸 덕질 지출을 놓친다(그 결제는 케이-덕질 계좌를
-    //   안 거치니까). "덕질" 계좌는 문화생활›덕 소분류도 같이 잡아서 카드 결제도 포함한다.
-    // [v41] 예전엔 계좌 이름에 '덕질'이 들어가면 소분류 '덕'을 자동으로 붙였다.
+    // [v16 수정] 계좌만 보면 카드로 낸 취미 지출을 놓친다(그 결제는 취미계좌 계좌를
+    //   안 거치니까). "취미" 계좌는 문화생활›덕 소분류도 같이 잡아서 카드 결제도 포함한다.
+    // [v41] 예전엔 계좌 이름에 '취미'이 들어가면 소분류 '덕'을 자동으로 붙였다.
     //   내 데이터에만 맞는 규칙이라 걷어내고, 설정의 연동 카테고리만 쓴다.
     const subs = [];
     list.push({ name:nm, accounts:[k], majors:[], subs });
@@ -9361,7 +9361,7 @@ function buildOutCats(ym, tx, sortBy){
   const allTxAll = (STATE.transactions.length ? STATE.transactions : DEMO).filter(t=>!isRemovedTx(t));
   return ALL_OUT_MAJORS.map((major, idx) => {
     // [버그] 예전엔 거래에 적힌 대분류(txCatKey)만 보고 합산했다. 그래서 카테고리를
-    //        쪼갠 뒤(엄마 → 엄마/엄마2) 옛 대분류가 남은 거래가 계속 옛 쪽에 쌓여,
+    //        쪼갠 뒤(가족 → 가족/가족2) 옛 대분류가 남은 거래가 계속 옛 쪽에 쌓여,
     //        소분류는 전부 100% 이하인데 대분류만 157%로 뜨고 합계도 안 맞았다.
     //        이제 리포트·예산 화면과 같은 귀속 규칙(majorTxPred)을 쓴다.
     const subListM = CAT_OUT_SUBS[major] || (STATE.catMap['지출'] && STATE.catMap['지출'][major]) || [];
@@ -10932,33 +10932,9 @@ function loadCashPlan(){
 function saveCashPlanObj(p){ try{ LS.set(CASH_PLAN_KEY, JSON.stringify(p)); }catch(e){} }
 let CASH_PLAN = null;
 
-// ── 이전 앱(portfolio_combined)의 고정 지출 일정 가져오기 ──
-// 이 앱은 현금흐름 항목을 '설정 › 카테고리'의 결제수단·결제일에서 자동으로 만든다(auto:true).
-// 그래서 카테고리에 등록되지 않은 항목 — 엄마생활비, 전세대출 원금·이자, 급여이체 같은 것 —
-// 은 타임라인에 아예 안 뜬다. 아래는 그걸 수동 항목(auto 아님)으로 넣어주는 도구다.
-// [설계 결정] 이 항목들은 고정비 예산 판정(isFixedMajor/isFixedTx)과 절대 엮지 않는다.
-// 고정비는 오직 '설정 › 카테고리'만 보고, 현금흐름(CASH_PLAN.items)은 완전히 별개 트랙으로 둔다.
-// 이유: 전세대출원금(부채상환)·급여이체(계좌이동)처럼 '지출'로 잡히면 안 되는 항목이 섞여있어서,
-// 대분류에 억지로 매핑하면 예산 집계가 더 틀어진다. 현금흐름은 "이 돈이 언제 빠져나가는가"만 추적한다.
-// [v6 추가] moveTo — 이 돈이 내 다른 계좌로 들어가는 항목은 목적지를 적어둔다.
-//   목적지가 '1차(가용) 잔고'에 남아있는 계좌면, 총 현금은 그대로라 필요현금 계산에서 뺀다.
-//   목적지가 없으면(엄마생활비·전세대출이자처럼 남에게 나가는 돈) 지금처럼 그대로 뺀다.
-const LEGACY_CASH_ITEMS = [
-  {name:'엄마생활비',      amount:350000,  day:1,  source:'bank'},
-  {name:'전세대출이자',    amount:640000,  day:13, source:'bank'},
-  {name:'KB뱅크 급여이체', amount:500000,  day:13, source:'bank', moveTo:'KB뱅크'},
-  {name:'가족곗돈',        amount:50000,   day:21, source:'bank'},
-  {name:'전세대출원금',    amount:600000,  day:21, source:'bank'},
-  {name:'집계약용',        amount:1000000, day:21, source:'bank', moveTo:'케이-집계약용'},
-  {name:'비상금저축',      amount:200000,  day:21, source:'bank', moveTo:'케이-비상금'},
-  {name:'덕질저축',        amount:50000,   day:21, source:'bank', moveTo:'케이-덕질'},
-  {name:'개인연금(자동)',  amount:500000,  day:25, source:'bank', moveTo:'미래-종합'},
-  {name:'ISA',             amount:400000,  day:25, source:'bank', moveTo:'미래-ISA'},
-  {name:'우체국보험',      amount:74220,   day:25, source:'bank'},
-  {name:'관리비',          amount:120000,  day:31, source:'bank'},
-  {name:'대딩곗돈',        amount:50000,   day:31, source:'bank'},
-  {name:'친척곗돈',        amount:20000,   day:31, source:'bank'}
-];
+// ── 이전 앱의 고정 지출 일정 가져오기 ──
+// 배포용 템플릿에는 개인별 거래·계좌·고정지출 예시를 포함하지 않습니다.
+const LEGACY_CASH_ITEMS = [];
 // 체크한 항목만 골라 넣을 수 있도록 모달로 전환 (기존엔 confirm() 한 번으로 전부 아니면 전무였음)
 function openCashImportModal(){
   CASH_PLAN = CASH_PLAN || loadCashPlan();
@@ -11006,17 +10982,17 @@ function cashImportConfirm(){
 // (예전 버전은 항목별 매칭 규칙이 코드에 하드코딩돼 있었다)
 const CASH_ITEM_MATCH = {};
 // [버그] 예전 규칙은 항목명과 필드가 서로를 '조금이라도' 품으면 무조건 같은 건으로 봤다.
-//        그래서 '저축'·'이체' 같은 일반 대분류 한 단어가 '덕질저축'·'비상금저축' 같은 항목을
+//        그래서 '저축'·'이체' 같은 일반 대분류 한 단어가 '취미저축'·'비상금저축' 같은 항목을
 //        전부 납부완료로 만들어버렸다(체크가 미리 켜지던 주요 원인).
 const CASH_GENERIC_FIELDS = ['저축','지출','수입','이동','이체','기타','현금','카드','투자','보험','대출',
   '계좌이체','카드납부','예적금','연금','주식','목적','고정비','변동비',
   '납부','입금','출금','정산','환급','월급','급여'];
-// 공백을 무시하고 비교한다. '엄마생활비' 항목이 메모에 '엄마 생활비'로 적혀 있어도 같은 건이다.
+// 공백을 무시하고 비교한다. '가족지원비' 항목이 메모에 '가족 생활비'로 적혀 있어도 같은 건이다.
 // (가져오기 모달도 이미 공백을 지워 비교하고 있었는데 여기만 안 하고 있었다)
 const cashNorm = x => String(x||'').replace(/\s+/g,'');
 // 항목명이 거래의 분류·소분류(카테고리)와 같거나 그것에 '포함'될 때만 그 항목의 납부로 본다.
-// [수정] 예전엔 반대 방향(항목명이 분류명을 품음)도 인정해서, 소분류 '곗돈'·'전세대출'·'이자' 같은
-//        공통 단어가 가족곗돈·대딩곗돈, 전세대출원금·이자, 예금이자까지 전부 끌어왔다.
+// [수정] 예전엔 반대 방향(항목명이 분류명을 품음)도 인정해서, 소분류 '곗돈'·'주거대출'·'이자' 같은
+//        공통 단어가 모임회비·기타 회비, 주거대출원금·이자, 예금이자까지 전부 끌어왔다.
 function cashMatchStrength(name){
   const target = cashNorm(name);
   if(target.length < 2) return () => 0;   // 한 글자 항목명은 오매칭만 만든다
@@ -11198,10 +11174,10 @@ function renderCashPlan(){
   const purposeAccts = (function(){
     const set = new Set();
     (rawPresets()||[]).forEach(p=>(p.accounts||[]).forEach(a=>set.add(a)));
-    // [v13 추가] 설정에서 등록 안 해도, 이름에 "비상금"·"덕질"이 들어간 계좌는 자동으로
+    // [v13 추가] 설정에서 등록 안 해도, 이름에 "비상금"·"취미"이 들어간 계좌는 자동으로
     //   2차 잔고 취급한다. 매번 설정 화면까지 가서 등록해야 하는 게 계속 누락·유실의
     //   원인이었어서, 가장 많이 요청하신 이 두 계좌는 이름만으로 바로 잡는다.
-    CASH_ACCTS_ALL.filter(k=>/비상금|덕질/.test(k)).forEach(k=>set.add(k));
+    CASH_ACCTS_ALL.filter(k=>/비상금|취미/.test(k)).forEach(k=>set.add(k));
     return set;
   })();
   const CASH_ACCTS = CASH_ACCTS_ALL.filter(k=>!purposeAccts.has(k));
@@ -11299,9 +11275,9 @@ function renderCashPlan(){
         <div style="display:flex;justify-content:space-between"><span>2차 잔고 <span style="opacity:.7">(🎯 목적통장 · 평소엔 제외)</span></span><b style="color:#D6F5E3">${won(cashSecondary)}</b></div>
         <div style="font-size:10.5px;color:rgba(255,255,255,0.6);display:flex;flex-wrap:wrap;gap:2px 8px;margin-top:2px">${CASH_ACCTS_2ND.map(k=>`<span style="white-space:nowrap">${k} ${won(cb2(k))}</span>`).join('<span style="opacity:0.5"> · </span>')}</div>
       </div>` : (function(){
-        // [v12 추가] 비상금·덕질처럼 이름으로 바로 알아볼 수 있는 계좌가 있는데 아직
+        // [v12 추가] 비상금·취미처럼 이름으로 바로 알아볼 수 있는 계좌가 있는데 아직
         //   목적통장으로 등록 안 된 경우, 설정까지 찾아가지 않아도 여기서 한 번에 등록한다.
-        const guess = CASH_ACCTS_ALL.filter(k=>/비상금|덕질/.test(k));
+        const guess = CASH_ACCTS_ALL.filter(k=>/비상금|취미/.test(k));
         return guess.length ? `<div style="margin-top:12px;padding-top:10px;border-top:1px dashed rgba(255,255,255,0.25)">
           <button onclick="cashQuickSplitPurpose()" style="width:100%;padding:9px;border:1px solid rgba(255,255,255,0.4);border-radius:10px;background:rgba(255,255,255,0.12);color:#fff;font-size:12px;font-weight:700;cursor:pointer">🎯 ${guess.join('·')} 2차 잔고로 빼기</button>
         </div>` : '';
@@ -11479,7 +11455,7 @@ function renderCashEdit(){
   }).join('');
   b.innerHTML=`
     <div style="font-size:12px;color:var(--txt3);margin-bottom:10px;line-height:1.6">항목별로 금액·날짜·출금처(통장/비상금/정보용)를 수정하세요. ‘정보’는 현금 계산에서 제외됩니다.<br>
-      이 목록은 <b>설정 › 카테고리</b>에 결제수단·결제일을 넣은 항목에서 자동으로 만들어져요. 카테고리에 없는 항목(엄마생활비·전세대출 원금/이자 등)은 아래 버튼으로 직접 넣습니다. 여기 있는 항목은 <b>고정비 예산과는 별개</b>로만 관리돼요 — 얼마가 언제 나가는지만 추적하고, 예산 집계엔 영향을 주지 않습니다.</div>
+      이 목록은 <b>설정 › 카테고리</b>에 결제수단·결제일을 넣은 항목에서 자동으로 만들어져요. 카테고리에 없는 항목(가족지원비·주거대출 원금/이자 등)은 아래 버튼으로 직접 넣습니다. 여기 있는 항목은 <b>고정비 예산과는 별개</b>로만 관리돼요 — 얼마가 언제 나가는지만 추적하고, 예산 집계엔 영향을 주지 않습니다.</div>
     <button onclick="openCashImportModal()" style="width:100%;padding:9px;margin-bottom:12px;border:1px solid var(--blue);border-radius:10px;background:var(--blue-bg);color:var(--blue);font-size:12.5px;font-weight:700;cursor:pointer">⬇︎ 이전 앱 고정 일정 가져오기</button>
     <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px;flex-wrap:wrap">
       <span style="font-size:13px;color:var(--txt2)">급여일</span>
@@ -11519,11 +11495,11 @@ function cashEditField(i,key,val){
   renderCashPlan();
 }
 // [v12 추가] 현금흐름 화면에서 바로 누르는 원터치 등록 — 설정 화면까지 갈 필요 없이
-//   이름에 "비상금"·"덕질"이 들어간 계좌를 목적통장으로 등록한다.
+//   이름에 "비상금"·"취미"이 들어간 계좌를 목적통장으로 등록한다.
 function cashQuickSplitPurpose(){
   const acctsAll = (CFG.accounts||[]).filter(a=>a.group==='cash'||a.group==='invest').map(a=>a.key);
-  const guess = acctsAll.filter(k=>/비상금|덕질/.test(k));
-  if(!guess.length){ showToast('비상금·덕질이 이름에 들어간 계좌를 못 찾았어요'); return; }
+  const guess = acctsAll.filter(k=>/비상금|취미/.test(k));
+  if(!guess.length){ showToast('비상금·취미이 이름에 들어간 계좌를 못 찾았어요'); return; }
   const list = rawPresets();
   guess.forEach(k=>{
     const name = k.replace(/^케이-?/,'').trim() || k;
@@ -13892,7 +13868,7 @@ function initFoldableCards(){
   });
 }
 // ══════════════════════════════════════════════════════════════════
-//  분석 (ana2) — 대시보드 · 표 · 연간                       [v37.0 추가]
+//  분석 (ana2) — 대시보드 · 표 · 연간                       [Template 추가]
 //
 //  통합 분석 탭은 목업(가계부_분석화면)대로
 //  3탭 화면을 따로 만들었다. 기존 코드를 고치지 않고 아래 함수들을 '불러다만' 쓴다:
