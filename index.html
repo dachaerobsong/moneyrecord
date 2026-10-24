@@ -4407,9 +4407,7 @@ function fetchFromSheet(silent) {
 
       // ④ 카테고리별 실시간 메모 (시트 '메모_항목별'을 원본으로 병합 — 다른 기기에서 쓴 메모도 반영)
       if(data.cellMemos){
-        gbMemoLoad();
-        Object.assign(GB_MEMO, data.cellMemos);
-        try{ LS.set('asset_gb_memo', JSON.stringify(GB_MEMO)); }catch(e){}
+        gbMemoMergeFromSheet(data.cellMemos);
       }
 
       // [수정] 예전엔 여기서 화면을 그리다 에러가 나도 아래 .catch로 떨어져
@@ -6043,8 +6041,69 @@ let BUD_MONTH = currentMonthStr();
 let BUD_EXPAND = (()=>{ try{ return JSON.parse(LS.get('budExpandV2'))||{}; }catch(e){ return {}; } })();
 let BUD_ALL_OPEN = (()=>{ try{ return JSON.parse(LS.get('budAllOpenV2'))||false; }catch(e){ return false; } })();
 function saveBudExpand(){ try{ LS.set('budExpandV2', JSON.stringify(BUD_EXPAND)); LS.set('budAllOpenV2', JSON.stringify(BUD_ALL_OPEN)); }catch(e){} }
-let GB_MEMO = {};
-function gbMemoLoad(){ try{ GB_MEMO = JSON.parse(LS.get('asset_gb_memo')||'{}'); }catch(e){ GB_MEMO={}; } }
+// ── 메모 키 통일 ─────────────────────────────────────────────
+// 화면마다 '🍽️ 식비' / '식비' / '엄마 2' / '엄마2' 처럼 다른 키로 저장해서 서로의 메모가 안 보였다.
+// 이모지·공백을 뺀 한 가지 형태로 맞추고, GB_MEMO 를 Proxy 로 감싸 어디서 읽고 써도 같은 키가 되게 한다.
+function gbMemoCanon(k){
+  var parts = String(k==null?'':k).split('|');
+  var ym = '';
+  if(/^\d{4}-\d{2}$/.test(parts[0].trim()) && parts.length>1){ ym = parts.shift().trim(); }
+  var major = normBudgetKey(parts.shift()||'').replace(/\s+/g,'');
+  var sub = normMajor(parts.join('|')).replace(/\s+/g,'');
+  return (ym?ym+'|':'') + major + (sub?'|'+sub:'');
+}
+function gbMemoJoin(cur, v){
+  if(!cur) return v;
+  if(cur===v || cur.indexOf(v)>=0) return cur;
+  if(v.indexOf(cur)>=0) return v;
+  return cur+' / '+v;
+}
+function gbMemoWrap(obj){
+  var t = {};
+  Object.keys(obj||{}).forEach(function(k){
+    var v = String(obj[k]==null?'':obj[k]).trim(); if(!v) return;
+    var ck = gbMemoCanon(k);
+    t[ck] = gbMemoJoin(t[ck], v);   // 예전 키(이모지/공백 차이)로 흩어진 메모는 합쳐서 보존
+  });
+  return new Proxy(t, {
+    get: function(o,p){ return typeof p==='string' ? o[gbMemoCanon(p)] : o[p]; },
+    set: function(o,p,v){ o[typeof p==='string'?gbMemoCanon(p):p] = v; return true; },
+    has: function(o,p){ return typeof p==='string' ? (gbMemoCanon(p) in o) : (p in o); },
+    deleteProperty: function(o,p){ delete o[typeof p==='string'?gbMemoCanon(p):p]; return true; }
+  });
+}
+// 시트에서 받은 메모 합치기: 이모지·공백만 다른 옛 키의 메모는 버리지 않고 하나로 합친다.
+// 합친 뒤에는 시트의 옛 줄을 비워서(빈 메모 저장) 다음 동기화 때 되살아나지 않게 한다.
+function gbMemoMergeFromSheet(src){
+  gbMemoLoad();
+  var by = {};
+  Object.keys(src||{}).forEach(function(k){
+    var ck = gbMemoCanon(k), v = String(src[k]==null?'':src[k]).trim();
+    var o = by[ck] || (by[ck] = { canon:null, legacy:[] });
+    if(ck===k) o.canon = v; else if(v) o.legacy.push({ k:k, v:v });
+  });
+  var url = getUrl(), fixes = [];
+  Object.keys(by).forEach(function(ck){
+    var o = by[ck];
+    var val = (o.canon!==null) ? o.canon : (GB_MEMO[ck]||'');   // 통일된 키는 시트 값이 우선
+    o.legacy.forEach(function(l){ val = gbMemoJoin(val, l.v); });
+    if(val) GB_MEMO[ck] = val; else delete GB_MEMO[ck];
+    if(o.legacy.length) fixes.push({ ck:ck, val:val, legacy:o.legacy.map(function(l){ return l.k; }) });
+  });
+  try{ LS.set('asset_gb_memo', JSON.stringify(GB_MEMO)); }catch(e){}
+  if(!url) return;
+  var send = function(full, memo){
+    var i = full.indexOf('|'); if(i<0) return;
+    fetch(url, { method:'POST', headers:{'Content-Type':'text/plain'},
+      body: JSON.stringify({ action:'gb_saveCellMemo', mon: full.slice(0,i), key: full.slice(i+1), memo: memo }) }).catch(function(){});
+  };
+  fixes.forEach(function(f){
+    send(f.ck, f.val);
+    f.legacy.forEach(function(k){ send(k, ''); });
+  });
+}
+let GB_MEMO = gbMemoWrap({});
+function gbMemoLoad(){ try{ GB_MEMO = gbMemoWrap(JSON.parse(LS.get('asset_gb_memo')||'{}')); }catch(e){ GB_MEMO = gbMemoWrap({}); } }
 function gbMemoKey(major, sub){ return BUD_MONTH + '|' + (major||'') + (sub?('|'+sub):''); }
 function gbGetMemo(major, sub){ gbMemoLoad(); return GB_MEMO[gbMemoKey(major,sub)] || ''; }
 function budSaveMemo(inp){
@@ -6058,7 +6117,7 @@ function budSaveMemo(inp){
   const url = getUrl();
   if(url){
     const key = major + (sub ? ('|'+sub) : '');
-    fetch(url, { method:'POST', headers:{'Content-Type':'text/plain'}, body: JSON.stringify({ action:'gb_saveCellMemo', mon: BUD_MONTH, key: key, memo: val }) }).catch(()=>{});
+    fetch(url, { method:'POST', headers:{'Content-Type':'text/plain'}, body: JSON.stringify({ action:'gb_saveCellMemo', mon: BUD_MONTH, key: gbMemoCanon(key), memo: val }) }).catch(()=>{});
   }
 }
 function memoInputHtml(major, sub, placeholder){
@@ -12371,7 +12430,7 @@ function rptSaveDrillMemo(ym, key, val){
   try{ LS.set('asset_gb_memo', JSON.stringify(GB_MEMO)); }catch(e){}
   const url = getUrl();
   if(url){
-    fetch(url, { method:'POST', headers:{'Content-Type':'text/plain'}, body: JSON.stringify({ action:'gb_saveCellMemo', mon: ym, key: key, memo: val }) }).catch(()=>{});
+    fetch(url, { method:'POST', headers:{'Content-Type':'text/plain'}, body: JSON.stringify({ action:'gb_saveCellMemo', mon: ym, key: gbMemoCanon(key), memo: val }) }).catch(()=>{});
   }
   // 메모 아이콘(📝)이 붙는 화면들을 갱신 — 지금 보이는 화면만 저렴하게 다시 그림
   if(typeof renderMonthBudgetBrief==='function') renderMonthBudgetBrief();
@@ -14014,7 +14073,7 @@ function a2MemoSave(inp){
   var url = getUrl();
   if(url){
     fetch(url, { method:'POST', headers:{'Content-Type':'text/plain'},
-      body: JSON.stringify({ action:'gb_saveCellMemo', mon:ym, key: major+(sub?('|'+sub):''), memo:val }) }).catch(function(){});
+      body: JSON.stringify({ action:'gb_saveCellMemo', mon:ym, key: gbMemoCanon(major+(sub?('|'+sub):'')), memo:val }) }).catch(function(){});
   }
 }
 function a2MemoInput(ym, major, sub, cls, ph){
