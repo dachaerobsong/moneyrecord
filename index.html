@@ -14702,7 +14702,8 @@ function a2AnnualRowGroup(type, major){
 
 // 연간 상세표: 카테고리와 소분류를 행으로, 1~12월을 열로 표시.
 // 수입 → 저축 → 고정비 → 비고정비 순으로 표시하고, 지출 카테고리는 사용자가 지정한 순서를 따른다.
-function a2AnnualDetailTableHtml(){
+// 연간 표의 행 구성·정렬·금액 집계 — 화면과 시트 저장이 같은 순서를 쓰도록 한 곳에서 만든다.
+function a2AnnualDetailModel(){
   var y=a2Year(), txs=a2AllTx().filter(function(t){return String(t.date||'').slice(0,4)===String(y);});
   var months=[]; for(var m=1;m<=12;m++) months.push(String(y)+'-'+a2pad(m));
   var kinds=['수입','이동','저축','지출'];
@@ -14760,6 +14761,10 @@ function a2AnnualDetailTableHtml(){
     return !r.sub || normBudgetKey(t.sub||t.category||'기타')===normBudgetKey(r.sub);
   });}
   function amount(list){return list.reduce(function(s,t){return s+(Number(t.amount)||0);},0);}
+  return {y:y,txs:txs,months:months,rows:rows,rowTx:rowTx,amount:amount};
+}
+function a2AnnualDetailTableHtml(){
+  var M=a2AnnualDetailModel(), y=M.y, txs=M.txs, months=M.months, rows=M.rows, rowTx=M.rowTx, amount=M.amount;
   function money(v){return v? a2num(v):'—';}
   var colgroup='<colgroup><col style="width:60px"><col style="width:190px">'+months.map(function(){return '<col style="width:88px">';}).join('')+'<col style="width:110px"><col style="width:100px"></colgroup>';
   var head='<div class="a2-annual-detail-wrap"><table class="a2-annual-detail">'+colgroup+'<thead><tr><th class="kind">구분</th><th class="major">항목</th>'+months.map(function(ym){return '<th>'+parseInt(ym.slice(5,7),10)+'월</th>';}).join('')+'<th class="total">연간 합계</th><th class="avg">연간 평균</th></tr></thead><tbody>';
@@ -14823,14 +14828,13 @@ function a2AnnualToggleGroup(group, btn){
 function a2ExportAnnualDetail(){
   var status=document.getElementById('a2-annual-export-status'), url=getUrl();
   if(!url){if(status)status.textContent='먼저 설정에서 구글 시트를 연동해야 함.';return;}
-  var y=a2Year(), txs=a2AllTx().filter(function(t){return String(t.date||'').slice(0,4)===String(y);});
-  var months=[];for(var m=1;m<=12;m++)months.push(String(y)+'-'+a2pad(m));
-  var kinds=['수입','이동','지출'], rows=[], seen={};
-  function add(type,major,sub){var id=type+'|'+major+'|'+(sub||'');if(seen[id])return;seen[id]=1;rows.push({type:type,major:major,sub:sub||''});}
-  if(typeof CFG!=='undefined'&&CFG.categories) kinds.forEach(function(type){(CFG.categories[type]||[]).forEach(function(c){add(type,c.major,'');(c.subs||[]).forEach(function(s){add(type,c.major,s);});});});
-  txs.forEach(function(t){add(t.type||'지출',t.major||'미분류','');add(t.type||'지출',t.major||'미분류',t.sub||'기타');});
-  rows.sort(function(a,b){var k=kinds.indexOf(a.type)-kinds.indexOf(b.type);if(k)return k;var m=a.major.localeCompare(b.major,'ko');if(m)return m;return a.sub?(b.sub?a.sub.localeCompare(b.sub,'ko'):1):(b.sub?-1:0);});
-  rows=rows.map(function(r){var vals={};months.forEach(function(ym){vals[ym]=txs.filter(function(t){return String(t.date||'').slice(0,7)===ym&&t.type===r.type&&String(t.major||'미분류')===r.major&&(!r.sub||String(t.sub||'기타')===r.sub);}).reduce(function(s,t){return s+(Number(t.amount)||0);},0);});var total=months.reduce(function(s,ym){return s+vals[ym];},0);return {type:r.type,major:r.major,sub:r.sub,months:vals,total:total,avg:Math.round(total/12),memo:months.map(function(ym){return a2MemoGet(ym,r.major,r.sub);})};});
+  // 화면의 연간 표와 동일한 행 구성·순서·금액을 그대로 보낸다 (구분 열도 화면 표기 기준).
+  var M=a2AnnualDetailModel(), y=M.y, months=M.months;
+  var rows=M.rows.map(function(r,idx){
+    var vals={}; months.forEach(function(ym){vals[ym]=M.amount(M.rowTx(r,ym));});
+    var total=months.reduce(function(s,ym){return s+vals[ym];},0);
+    return {order:idx+1,type:r.displayType||r.type,rawType:r.type,major:r.major,sub:r.sub,months:vals,total:total,avg:Math.round(total/12),memo:months.map(function(ym){return a2MemoGet(ym,r.major,r.sub);})};
+  });
   if(status)status.textContent='저장 중…';
   fetch(url,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'syncAnnualDetail',year:y,months:months,rows:rows})})
     .then(function(r){return r.json();}).then(function(d){if(status)status.textContent=d&&d.ok?'연간상세표 시트 저장 완료 ('+(d.rows||rows.length)+'행) · '+new Date().toLocaleTimeString('ko-KR'):'저장 실패: '+((d&&d.error)||'알 수 없는 오류');})
