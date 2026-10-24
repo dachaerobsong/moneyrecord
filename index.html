@@ -553,6 +553,8 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
 #p-ana2 .a2-stat:active{ opacity:.6; }
 #p-ana2 .a2-empty{ text-align:center; color:var(--txt3); font-size:12.5px; padding:14px 0; line-height:1.6; }
 
+/* 선택된 분석 서브탭도 비선택 탭과 같은 글자 크기·굵기로 유지 */
+#p-ana2 .a2-tab.on{ font-size:13px; font-weight:600; }
 /* 6개월 막대 */
 #p-ana2 .a2-bars{ display:flex; align-items:flex-end; gap:10px; height:96px; padding:0 2px; margin-top:12px; }
 #p-ana2 .a2-bar{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; gap:6px; height:100%; cursor:pointer; min-width:0; }
@@ -11674,7 +11676,7 @@ function computeAnnualInsight(year){
   Object.keys(CAT_OUT_LABELS||{}).forEach(addAnnualCatKey);
   Object.keys((STATE.catMap||{})['지출']||{}).forEach(addAnnualCatKey);
   allTx.forEach(t=>{ if(t && t.type==='지출' && t.major) addAnnualCatKey(t.major); });
-  const catKeys = catKeyList.filter(k=>catCadence(k)!=='event');
+  const catKeys = catKeyList.slice();
   const catStats = catKeys.map(k=>{
     const nk = normBudgetKey(k);
     const _p = outCatPred(k);
@@ -13653,6 +13655,12 @@ function isEventTx(t){
 const SAVE_MAJORS = ['예적금','연금','주식','목적'];
 function isSaveTx(t){
   if(!t || (t.type!=='이동' && t.type!=='저축')) return false;
+  if(t.type==='저축') return true;
+  // 설정에서 '저축'으로 체크한 이동 대분류를 우선 적용한다.
+  // 해당 대분류가 설정에 없을 때만 과거 데이터 호환용 기본 목록을 사용한다.
+  var configured = (typeof CFG!=='undefined' && CFG.categories && Array.isArray(CFG.categories['이동'])) ? CFG.categories['이동'] : [];
+  var match = configured.find(function(c){return normBudgetKey(c.major||'')===normBudgetKey(t.major||'');});
+  if(match) return String(match.flags||'').toLowerCase().indexOf('save')>=0;
   return SAVE_MAJORS.indexOf(normBudgetKey(t.major||'')) >= 0;
 }
 // 총평(저축 부족 판정)도 같은 정의를 쓴다 — 목표와 실적의 범위를 어긋나게 두지 않기 위함
@@ -14517,17 +14525,17 @@ function a2TableHtml(){
       a2MemoInput(ym, c.key, '', 'in', '메모'));
   }).join('');
 
-  // 합계
-  var sumRow = '<tr class="a2-sum"><td>지출 합계</td><td>'+a2num(cur.mOut)+'</td><td style="color:var(--txt3)">'+(bt.bud>0?a2num(bt.bud):'—')+'</td>'
-    +'<td>'+(bt.pct!==null ? '<span style="color:'+(bt.pct>100?'var(--red-vivid)':bt.pct>=90?'var(--warning-vivid)':'var(--green-vivid)')+'">'+bt.pct+'%</span>' : '—')+'</td>'
-    +'<td>'+a2DiffCell(cur.mOut-prev.mOut, false, prev.mOut===0 && cur.mOut===0)+'</td><td></td></tr>';
 
-  // 저축·투자 / 수입 — 같은 방식으로 누르면 세부
+  // 월간 표 상단 요약은 수입 / 저축·투자 / 지출 합계의 3개 대항목으로 통일
   var saveBud = a2SaveBud(ym), inBud = a2InBud(ym);
   var goalPct = function(v, b){ if(!(b>0)) return '<span style="color:var(--txt3)">—</span>'; var p=Math.round(v/b*100); return '<b style="color:'+(p>=100?'var(--green-vivid)':'var(--txt2)')+'">'+p+'%</b>'; };
-  var flow = '<tr class="a2-sep"><td colspan="6">수입 · 저축</td></tr>'
-    + a2TblRow('table','__in','in',' 💵 수입', a2num(cur.mIn), inBud>0?a2num(inBud):'<span style="color:var(--txt3)">—</span>', goalPct(cur.mIn,inBud), a2DiffCell(cur.mIn-prev.mIn, true, prev.mIn===0 && cur.mIn===0), '')
-    + a2TblRow('table','__save','save',' 💰 저축·투자', a2num(cur.mSave), saveBud>0?a2num(saveBud):'<span style="color:var(--txt3)">—</span>', goalPct(cur.mSave,saveBud), a2DiffCell(cur.mSave-prev.mSave, true, prev.mSave===0 && cur.mSave===0), '');
+  var flow = '<tr class="a2-summary-head"><td colspan="6">월간 요약</td></tr>'
+    + a2TblRow('table','__in','in','수입', a2num(cur.mIn), inBud>0?a2num(inBud):'<span style="color:var(--txt3)">—</span>', goalPct(cur.mIn,inBud), a2DiffCell(cur.mIn-prev.mIn, true, prev.mIn===0 && cur.mIn===0), '')
+    + a2TblRow('table','__save','save','저축·투자', a2num(cur.mSave), saveBud>0?a2num(saveBud):'<span style="color:var(--txt3)">—</span>', goalPct(cur.mSave,saveBud), a2DiffCell(cur.mSave-prev.mSave, true, prev.mSave===0 && cur.mSave===0), '')
+    + '<tr class="a2-sum a2-expense-summary"><td>지출 합계</td><td>'+a2num(cur.mOut)+'</td><td style="color:var(--txt3)">'+(bt.bud>0?a2num(bt.bud):'—')+'</td>'
+    + '<td>'+(bt.pct!==null ? '<span style="color:'+(bt.pct>100?'var(--red-vivid)':bt.pct>=90?'var(--warning-vivid)':'var(--green-vivid)')+'">'+bt.pct+'%</span>' : '—')+'</td>'
+    + '<td>'+a2DiffCell(cur.mOut-prev.mOut, false, prev.mOut===0 && cur.mOut===0)+'</td><td></td></tr>'
+    + '<tr class="a2-sep a2-detail-heading"><td colspan="6">지출 세부 내용</td></tr>';
 
   var note = '';
   if(bt.excl>0 || bt.reserve>0){
@@ -14537,7 +14545,7 @@ function a2TableHtml(){
   }
   return '<div class="a2-table-toolbar"><div class="a2-note" style="margin:0">행을 누르면 소분류 → 개별 거래까지 펼쳐져요 · ← 옆으로 끌어서 더 보기</div><div class="a2-collapse-tools"><button type="button" onclick="a2TableToggleAll(false)">모두 접기</button><button type="button" onclick="a2TableToggleAll(true)">모두 펼치기</button></div></div>'
     +'<div class="a2-tblwrap"><table class="a2-tbl"><thead><tr><th>카테고리</th><th>금액</th><th>예산</th><th>예산대비</th><th>지난달대비</th><th style="text-align:left">메모</th></tr></thead><tbody>'
-    +flow+body+sumRow+'</tbody></table></div>'+note;
+    +flow+body+'</tbody></table></div>'+note;
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -14610,21 +14618,27 @@ function a2AnnualOrderName(major){
   return aliases[n] || n;
 }
 function a2AnnualCategoryPriority(major){
-  var order = ['주거비','보험','통신','곗돈','엄마','엄마2','식','생활용품','꾸밈비','자기계발','건강','교통','경조사','문화','기타'];
-  var i = order.indexOf(a2AnnualOrderName(major));
-  return i<0 ? 1000 : i;
+  // 개인별 카테고리명을 HTML에 고정하지 않는다.
+  // 설정 화면/앱설정 시트에 등록된 지출 대분류의 순서를 그대로 사용한다.
+  var configured = (typeof CFG!=='undefined' && CFG.categories && CFG.categories['지출'])
+    ? CFG.categories['지출'] : [];
+  var target = a2AnnualOrderName(major);
+  for(var i=0;i<configured.length;i++){
+    if(a2AnnualOrderName(configured[i].major)===target) return i;
+  }
+  // 설정에 없는 과거 거래 카테고리는 설정 항목 뒤에 표시한다.
+  return 1000;
 }
 function a2AnnualRowGroup(type, major){
   var n = a2AnnualOrderName(major);
   if(type==='수입') return {rank:0, label:'수입'};
-  var isSaveMajor = type==='저축' || ((type==='이동') && (SAVE_MAJORS||[]).some(function(k){return normBudgetKey(k)===normBudgetKey(major);}));
-  if(isSaveMajor) return {rank:1, label:'저축'};
-  if(type==='지출'){
-    var fixedPreferred = ['주거비','보험','통신','곗돈','엄마','엄마2'];
-    var variablePreferred = ['식','생활용품','꾸밈비','자기계발','건강','교통','경조사','문화','기타'];
-    var fixed = fixedPreferred.indexOf(n)>=0 ? true : variablePreferred.indexOf(n)>=0 ? false : isFixedMajor(major);
-    return fixed ? {rank:2, label:'고정'} : {rank:3, label:'비고정'};
-  }
+  // 카드 납부는 지출/저축과 분리된 최상위 그룹으로 표시
+  if(type==='이동' && /카드\s*납부/.test(String(major||''))) return {rank:3, label:'카드납부'};
+  var configuredSave = (typeof CFG!=='undefined' && CFG.categories && CFG.categories['이동'])
+    ? CFG.categories['이동'].filter(function(c){return String(c.flags||'').toLowerCase().indexOf('save')>=0;}).map(function(c){return normBudgetKey(c.major);}) : [];
+  var isSaveMajor = type==='저축' || (type==='이동' && (((SAVE_MAJORS||[]).some(function(k){return normBudgetKey(k)===normBudgetKey(major);})) || configuredSave.indexOf(normBudgetKey(major))>=0));
+  if(isSaveMajor) return {rank:1, label:'저축·투자'};
+  if(type==='지출') return {rank:2, label:'지출'};
   return {rank:4, label:type||'기타'};
 }
 
@@ -14637,9 +14651,10 @@ function a2AnnualDetailTableHtml(){
   var rows=[], seen={}, seq=0;
   function addRow(type,major,sub){
     major=String(major||'미분류').trim(); sub=String(sub||'').trim();
-    var id=type+'|'+a2AnnualOrderName(major)+'|'+normBudgetKey(sub).replace(/\s+/g,''); if(seen[id]) return; seen[id]=true;
     var group=a2AnnualRowGroup(type,major);
-    rows.push({type:type,displayType:group.label,groupRank:group.rank,major:major,sub:sub,id:id,seq:seq++});
+    var canonicalType = group.rank===1 ? '저축·투자' : group.rank===3 ? '카드납부' : type;
+    var id=canonicalType+'|'+a2AnnualOrderName(major)+'|'+normBudgetKey(sub).replace(/\s+/g,''); if(seen[id]) return; seen[id]=true;
+    rows.push({type:type,canonicalType:canonicalType,displayType:group.label,groupRank:group.rank,major:major,sub:sub,id:id,seq:seq++});
   }
   if(typeof CFG!=='undefined' && CFG.categories){
     kinds.forEach(function(type){(CFG.categories[type]||[]).forEach(function(c){
@@ -14656,7 +14671,7 @@ function a2AnnualDetailTableHtml(){
   txs.forEach(function(t){addRow(t.type||'지출',t.major||'미분류',''); addRow(t.type||'지출',t.major||'미분류',t.sub||t.category||'기타');});
   rows.sort(function(a,b){
     if(a.groupRank!==b.groupRank) return a.groupRank-b.groupRank;
-    if(a.groupRank===2 || a.groupRank===3){
+    if(a.groupRank===2){
       var ap=a2AnnualCategoryPriority(a.major), bp=a2AnnualCategoryPriority(b.major);
       if(ap!==bp) return ap-bp;
     }
@@ -14666,13 +14681,16 @@ function a2AnnualDetailTableHtml(){
       if(a.sub && b.sub) return a.sub.localeCompare(b.sub,'ko');
       return a.seq-b.seq;
     }
-    if(a.groupRank===0 || a.groupRank===1 || (a.groupRank>=4 && a2AnnualCategoryPriority(a.major)>=1000 && a2AnnualCategoryPriority(b.major)>=1000)) return a.seq-b.seq;
+    if(a.groupRank===0 || a.groupRank===1 || a.groupRank===3 || (a.groupRank>=4 && a2AnnualCategoryPriority(a.major)>=1000 && a2AnnualCategoryPriority(b.major)>=1000)) return a.seq-b.seq;
     if(a2AnnualCategoryPriority(a.major)>=1000 && a2AnnualCategoryPriority(b.major)<1000) return 1;
     if(a2AnnualCategoryPriority(a.major)<1000 && a2AnnualCategoryPriority(b.major)>=1000) return -1;
     return am.localeCompare(bm,'ko');
   });
   function rowTx(r,ym){return txs.filter(function(t){
-    if(String(t.date||'').slice(0,7)!==ym || t.type!==r.type) return false;
+    if(String(t.date||'').slice(0,7)!==ym) return false;
+    if(r.groupRank===1){if(!isSaveTx(t)) return false;}
+    else if(r.groupRank===3){if(!(t.type==='이동' && /카드\s*납부/.test(String(t.major||'')))) return false;}
+    else if(t.type!==r.type) return false;
     if(a2AnnualOrderName(t.major||'미분류')!==a2AnnualOrderName(r.major)) return false;
     return !r.sub || normBudgetKey(t.sub||t.category||'기타')===normBudgetKey(r.sub);
   });}
@@ -14684,7 +14702,7 @@ function a2AnnualDetailTableHtml(){
     var majorRow=!r.sub, vals=months.map(function(ym){return amount(rowTx(r,ym));}), total=vals.reduce(function(a,b){return a+b;},0), avg=total/12;
     var group=a2enc(r.type+'|'+r.major);
     var cells=months.map(function(ym,i){
-      var memo=a2MemoGet(ym,r.major,r.sub), v=vals[i], encType=a2enc(r.type), encMajor=a2enc(r.major), encSub=a2enc(r.sub);
+      var memo=a2MemoGet(ym,r.major,r.sub), v=vals[i], encType=a2enc(r.groupRank===1?'저축·투자':r.groupRank===3?'카드납부':r.type), encMajor=a2enc(r.major), encSub=a2enc(r.sub);
       return '<td class="'+(v?'has-value':'')+'"><button class="a2-annual-cell" onclick="a2AnnualShowDetail(\''+ym+'\',\''+encType+'\',\''+encMajor+'\',\''+encSub+'\')" title="'+a2e(r.major+(r.sub?' · '+r.sub:''))+' / '+ym+' 내역 보기">'+money(v)+(memo?'<small class="memo-mark">📝 '+a2e(memo.slice(0,24))+(memo.length>24?'…':'')+'</small>':'')+'</button></td>';
     }).join('');
     var itemText=majorRow?'<button class="a2-major-toggle" onclick="a2AnnualToggleGroup(\''+group+'\',this)" title="세부 항목 접기/펼치기"><span class="a2-fold-icon">▾</span> '+a2e(r.major)+'</button>':'<span class="a2-sub-indent">↳ '+a2e(r.sub)+'</span>';
@@ -14742,7 +14760,10 @@ function a2AnnualPickMonth(ym){A2_ANNUAL_PICK={ym:ym,type:'지출',major:'',sub:
 function a2AnnualShowDetail(ym,typeEnc,majorEnc,subEnc){A2_ANNUAL_PICK={ym:ym,type:a2dec(typeEnc),major:a2dec(majorEnc),sub:a2dec(subEnc)}; var el=document.getElementById('a2-annual-selected'); if(el) el.innerHTML=a2AnnualSelectedDetailHtml(A2_ANNUAL_PICK);}
 function a2AnnualSelectedDetailHtml(p){
   if(!p || !p.major) return '<div class="a2-card a2-full"><div class="a2-empty">위 표에서 월별 금액을 누르면 해당 월의 세부 거래와 메모가 여기에 표시됨.</div></div>';
-  var txs=a2AllTx().filter(function(t){return String(t.date||'').slice(0,7)===p.ym && t.type===p.type && String(t.major||'미분류')===p.major && (!p.sub || String(t.sub||'기타')===p.sub);}).sort(function(a,b){return String(a.date).localeCompare(String(b.date));});
+  var txs=a2AllTx().filter(function(t){
+    var typeMatch = p.type==='저축·투자' ? isSaveTx(t) : p.type==='카드납부' ? (t.type==='이동' && /카드\s*납부/.test(String(t.major||''))) : t.type===p.type;
+    return String(t.date||'').slice(0,7)===p.ym && typeMatch && String(t.major||'미분류')===p.major && (!p.sub || String(t.sub||'기타')===p.sub);
+  }).sort(function(a,b){return String(a.date).localeCompare(String(b.date));});
   var memo=a2MemoGet(p.ym,p.major,p.sub);
   var list=txs.map(function(t){return '<tr><td>'+a2e(String(t.date||'').slice(5))+'</td><td>'+a2e(t.sub||'')+'</td><td>'+a2e(t.memo||t.description||'')+'</td><td class="num">'+a2num(Number(t.amount)||0)+'</td><td>'+a2e(t.note||'')+'</td></tr>';}).join('');
   var encM=a2enc(p.major), encS=a2enc(p.sub);
@@ -14851,7 +14872,7 @@ function a2YearHtml(){
       +'<div class="a2-row" style="margin-top:8px"><span class="a2-note" style="font-size:12px">연간 예산의 '+usedPct+'% 사용</span><span class="a2-note" style="font-size:12px">'+n+'월 기준 경과 '+elapsed+'%</span></div>'
       +'<div class="a2-hr"></div><div class="a2-note" style="margin-bottom:4px">검은 눈금 = 정상 페이스 · 넘어선 순서대로 · 누르면 세부</div>'+prow+'</div>';
   }
-  return '<div class="a2-grid">'+a2AnnualMonthlyTableHtml(y)+kpi+trend+catCard+saveCatCard+paceCard+'</div>';
+  return '<div class="a2-grid">'+a2AnnualMonthlyTableHtml(y)+kpi+trend+saveCatCard+catCard+paceCard+'</div>';
 }
 
 // 연간 탭 카테고리 세부 — 월별 금액 막대 · 합계/월평균/예산 · 소분류별 합계 · 월별 메모
@@ -14907,10 +14928,11 @@ window.addEventListener('load', ()=>{ initFoldableCards(); if(typeof renderAllSe
   .topnav{max-width:none!important;width:100%!important;margin:0!important;padding:0 30px!important;}
   .panel{max-width:none!important;width:100%!important;margin:0!important;padding:22px 28px!important;}
   #p-analysis.panel,#p-ana2.panel{max-width:none!important;width:100%!important;}
-  #p-ana2 .a2-head{position:relative;top:auto;margin:0 0 16px;padding:0 0 8px;box-shadow:none;}
+  #p-ana2 .a2-head{position:sticky;top:60px;z-index:60;margin:0 0 16px;padding:10px 0 8px;background:var(--bg);box-shadow:0 10px 0 var(--bg);}
   #p-ana2 .a2-title{font-size:24px;}
   #p-ana2 .a2-tabs{max-width:460px;margin-top:14px;}
-  #p-ana2 .a2-tab{flex:0 0 auto;padding:12px 22px;font-size:14px;}
+  #p-ana2 .a2-tab{flex:0 0 auto;padding:12px 22px;font-size:13px;font-weight:600;}
+  #p-ana2 .a2-tab.on{font-size:13px;font-weight:600;}
   #p-ana2 .a2-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;align-items:stretch;}
   #p-ana2 .a2-grid .a2-full{grid-column:1/-1;}
   #p-ana2 .a2-card{padding:18px 20px;border-radius:14px;}
@@ -14935,6 +14957,18 @@ window.addEventListener('load', ()=>{ initFoldableCards(); if(typeof renderAllSe
   /* 연간 카드의 불필요한 세로 여백을 줄이고 동일 성격 정보는 가로로 묶음 */
   #p-ana2 .a2-ct{margin-bottom:10px;}
   #p-ana2 .a2-legend{margin-top:4px;}
+}
+@media (min-width:860px) and (max-width:1199px){
+  /* 사이드바를 제외한 실제 콘텐츠 폭이 좁을 때 3열로 압축되지 않게 2열로 전환 */
+  #p-ana2 .a2-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
+  #p-ana2 .a2-grid .a2-full,#p-ana2 .a2-annual-month-card,#p-ana2 .a2-annual-detail-card{grid-column:1/-1;}
+  #p-ana2 .a2-card{min-width:0;}
+  #p-ana2 .a2-cathead{gap:8px;}
+  #p-ana2 .a2-cname{max-width:90px;overflow:hidden;text-overflow:ellipsis;}
+}
+@media (min-width:1200px) and (max-width:1399px){
+  #p-ana2 .a2-grid{grid-template-columns:repeat(3,minmax(0,1fr));}
+  #p-ana2 .a2-grid .a2-full,#p-ana2 .a2-annual-month-card,#p-ana2 .a2-annual-detail-card{grid-column:1/-1;}
 }
 @media (min-width:1400px){
   #p-ana2 .a2-grid{grid-template-columns:repeat(4,minmax(0,1fr));}
@@ -15033,6 +15067,23 @@ window.addEventListener('load', ()=>{ initFoldableCards(); if(typeof renderAllSe
     margin-bottom: 18px;
   }
 }
+</style>
+
+
+<style id="monthly-table-summary-redesign">
+#p-ana2 .a2-tblwrap{border:1px solid #E6EAF0;border-radius:14px;background:#fff;box-shadow:0 3px 12px rgba(16,24,40,.035);}
+#p-ana2 table.a2-tbl{border-collapse:separate;border-spacing:0;}
+#p-ana2 .a2-tbl th{background:#F7F9FC;color:#667085;font-size:11px;padding:11px 10px;}
+#p-ana2 .a2-tbl td{padding:12px 10px;border-bottom:1px solid #EEF1F5;}
+#p-ana2 .a2-tbl tr.a2-summary-head td{background:#F3F6FA;color:#667085;font-size:11px;font-weight:800;padding:8px 12px;letter-spacing:.02em;}
+#p-ana2 .a2-tbl tr.a2-r[data-kind="in"] td,#p-ana2 .a2-tbl tr.a2-r[data-kind="save"] td{background:#FAFCFF;font-weight:700;}
+#p-ana2 .a2-tbl tr.a2-r[data-kind="in"] td:first-child{color:#27805A;}
+#p-ana2 .a2-tbl tr.a2-r[data-kind="save"] td:first-child{color:#2868B2;}
+#p-ana2 .a2-tbl tr.a2-expense-summary td{background:#FFF7F5;font-weight:800;border-top:1px solid #F4DDD9;border-bottom:1px solid #F4DDD9;}
+#p-ana2 .a2-tbl tr.a2-expense-summary td:first-child{color:#B85E5A;background:#FFF7F5;}
+#p-ana2 .a2-tbl tr.a2-detail-heading td{padding:10px 12px 7px;background:#F7F8FA;color:#475467;font-weight:800;font-size:11px;}
+#p-ana2 .a2-tbl tr.a2-r:not([data-kind="in"]):not([data-kind="save"]):hover td{background:#FAFBFD;}
+@media(max-width:859px){#p-ana2 .a2-tbl td{padding:10px 8px;} #p-ana2 .a2-tbl th{padding:9px 8px;}}
 </style>
 
 </body>
