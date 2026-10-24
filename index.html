@@ -14217,7 +14217,8 @@ function a2GroupsHtml(opts){
         +'<span class="a'+(a<0?' a2-neg':'')+'">'+a2won(a)+'</span></div>';
     }).join('');
     var memo = (opts.subMemo && g!=='(소분류 없음)' && g!=='(메모 없음)')
-      ? '<div style="margin:2px 0 6px">'+a2MemoInput(ym, opts.major, g, '', '이 항목 메모')+'</div>' : '';
+      ? '<div style="margin:2px 0 6px">'+a2MemoInput(ym, opts.major, g, '', '이 항목 메모')+'</div>'
+      : (opts.groupMemo ? (opts.groupMemo(g)||'') : '');
     return '<div class="a2-sub">'
       +'<div class="a2-subhead" onclick="a2ToggleSub(\''+sid+'\')">'
         +'<span class="a2-car" id="'+sid+'_c">▸</span>'
@@ -14271,11 +14272,21 @@ function a2FlowBody(kind, ym){
   var prev = a2Sum(kind==='save' ? ptx.filter(isSaveTx) : ptx.filter(function(t){ return t.type==='수입'; }));
   var cur = a2Sum(txs);
   var meta = '<div class="a2-meta">이 달 '+a2won(cur)+' · 지난달 '+a2won(prev)+'</div>';
+  // 메모는 연간 표와 같은 키(그 달|대분류 원래 이름)로 저장해서 연간 표·연간 보드에도 그대로 보이게 한다.
+  var rawOf = {};
+  txs.forEach(function(t){
+    if(!t.major) return;
+    rawOf[majorLabel(t.type==='수입'?'수입':'이동', t.major)] = t.major;
+  });
   return meta + a2GroupsHtml({
     txs: txs, ym: ym, major: '',
     groupKey: function(t){
       var m = t.major ? majorLabel(t.type==='수입'?'수입':'이동', t.major) : '(대분류 없음)';
       return m;
+    },
+    groupMemo: function(g){
+      var raw = rawOf[g]; if(!raw) return '';
+      return '<div style="margin:2px 0 6px">'+a2MemoInput(ym, raw, '', '', '이 달 메모')+'</div>';
     }
   });
 }
@@ -15292,7 +15303,7 @@ window.addEventListener('load', ()=>{ initFoldableCards(); if(typeof renderAllSe
 /* 모바일 연간 표: 구분·항목 열 고정(좌측 스티키) + 월별 메모를 숫자 아래 줄로 내려 표시 */
 @media (max-width:859px){
   #p-ana2 .a2-annual-detail-wrap{overflow:auto!important;-webkit-overflow-scrolling:touch;}
-  #p-ana2 table.a2-annual-detail{border-collapse:separate!important;border-spacing:0!important;table-layout:fixed!important;min-width:0!important;width:max-content!important;}
+  #p-ana2 table.a2-annual-detail{border-collapse:separate!important;border-spacing:0!important;table-layout:fixed!important;min-width:1402px!important;width:1402px!important;}
   #p-ana2 .a2-annual-detail col:nth-child(1){width:40px!important;}
   #p-ana2 .a2-annual-detail col:nth-child(2){width:96px!important;}
   #p-ana2 .a2-annual-detail thead th.kind,
