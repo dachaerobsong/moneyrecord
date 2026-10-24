@@ -535,6 +535,13 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
   #p-ana2 .a2-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; }
   #p-ana2 .a2-grid .a2-full{ grid-column:1 / -1; }
 }
+/* 월간 보드: 2행 구성 — 1행 지출 요약(전체폭) / 2행 왼쪽 [지출 흐름 + 고정비·변동비], 오른쪽 [어디에 썼을까요?] */
+#p-ana2 .a2-grid.a2-dash2{ grid-template-columns:minmax(0,1fr); align-items:start; }
+#p-ana2 .a2-dash2 .a2-stack{ display:flex; flex-direction:column; gap:14px; min-width:0; }
+@media (min-width:860px){
+  #p-ana2 .a2-grid.a2-dash2{ grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; }
+  #p-ana2 .a2-grid.a2-dash2 .a2-full{ grid-column:1 / -1; }
+}
 #p-ana2 .a2-card{ background:var(--card); border-radius:18px; padding:20px; border:1px solid #EEF0F3; min-width:0; }
 #p-ana2 .a2-ct{ font-size:15px; font-weight:700; color:var(--txt); display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
 #p-ana2 .a2-ct small{ font-size:11px; font-weight:500; color:var(--txt3); }
@@ -14426,7 +14433,9 @@ function a2DashHtml(){
     +a2DetailHostHtml('dash','__save','save',a2IsOpen('dash',a2enc('__save')))
     +'</div>';
 
-  return '<div class="a2-grid">'+hero+a2FlowCardHtml(ym)+a2WhereCardHtml(cats, cur, ym)+a2FixedVarCardHtml(cats, cur)+'</div>';
+  return '<div class="a2-grid a2-dash2">'+hero
+    +'<div class="a2-stack">'+a2FlowCardHtml(ym)+a2FixedVarCardHtml(cats, cur)+'</div>'
+    +a2WhereCardHtml(cats, cur, ym)+'</div>';
 }
 
 // 지출 흐름 — 최근 6개월 막대 (막대를 누르면 그 달로 이동)
