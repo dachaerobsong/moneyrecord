@@ -14309,12 +14309,61 @@ function a2FlowBody(kind, ym){
     }
   });
 }
+// 수입 · 저축 — 지출처럼 대분류 한 줄씩 (금액/예산/예산대비/지난달대비/메모)
+function a2FlowCats(kind, ym){
+  var tx = a2TxOf(ym), ptx = a2TxOf(moPrevYm(ym));
+  var txsAll = kind==='save' ? tx.filter(isSaveTx) : tx.filter(function(t){ return t.type==='수입'; });
+  var ptxsAll = kind==='save' ? ptx.filter(isSaveTx) : ptx.filter(function(t){ return t.type==='수입'; });
+  var regMajors = kind==='save' ? SAVE_MAJORS.slice() : Object.keys(CAT_IN_SUBS||{});
+  var seen = {}, majors = [];
+  regMajors.forEach(function(m){ var nk=normBudgetKey(m); if(m && !seen[nk]){ seen[nk]=1; majors.push(m); } });
+  txsAll.concat(ptxsAll).forEach(function(t){
+    if(!t.major) return;
+    var nk = normBudgetKey(t.major);
+    if(!seen[nk]){ seen[nk]=1; majors.push(t.major); }
+  });
+  return majors.map(function(m){
+    var nk = normBudgetKey(m);
+    var pred = function(t){ return t.major && normBudgetKey(t.major)===nk; };
+    var txs = txsAll.filter(pred), ptxsM = ptxsAll.filter(pred);
+    var subs = kind==='save' ? (CAT_MV_SUBS[m]||[]) : (CAT_IN_SUBS[m]||[]);
+    var bud = a2WithBud(ym, function(){ return budgetOf(m, subs, ym)||0; });
+    var label = majorLabel(kind==='save'?'이동':'수입', m) || m;
+    return { kind:kind, key:m, major:m, label:label, spend:a2Sum(txs), bud:bud, prev:a2Sum(ptxsM), txs:txs };
+  }).filter(function(c){ return c.spend!==0 || c.bud>0; })
+    .sort(function(a,b){ return b.spend-a.spend; });
+}
+// 수입·저축 대분류 한 줄을 펼쳤을 때 — 지출의 "📝 이 달 메모" + 거래 목록과 같은 모양
+function a2FlowMajorBody(c, ym){
+  var parts = [];
+  if(c.bud>0){
+    var gap = c.spend - c.bud;
+    parts.push('목표 '+a2won(c.bud)+' · '+(gap>=0 ? a2won(gap)+' 초과 달성' : a2won(-gap)+' 부족'));
+  }
+  var dd = c.spend-c.prev;
+  if(c.prev!==0 || c.spend!==0) parts.push('지난달 '+a2won(c.prev)+(dd!==0?' ('+(dd>0?'▲ ':'▼ ')+a2won(Math.abs(dd))+')':''));
+  var meta = parts.length ? '<div class="a2-meta">'+parts.join('<br>')+'</div>' : '';
+  var memoRow = '<div style="margin-bottom:8px"><div class="a2-note" style="margin-bottom:4px">📝 이 달 메모</div>'+a2MemoInput(ym, c.major, '', '', '왜 이랬는지 메모')+'</div>';
+  var rows = c.txs.slice().sort(function(a,b){ return String(b.date).localeCompare(String(a.date)); }).map(function(t){
+    var a = Number(t.amount)||0;
+    var acct = String(t.account||t.inAcct||t.outAcct||'').trim();
+    return '<div class="a2-tx"><span class="d">'+parseInt(String(t.date).slice(8,10),10)+'일</span>'
+      +'<span class="m">'+a2e(t.memo||c.label)+(acct?'<em>'+a2e(acct)+'</em>':'')+'</span>'
+      +'<span class="a">'+a2won(a)+'</span></div>';
+  }).join('') || '<div class="a2-empty" style="padding:6px 0">내역 없음</div>';
+  return meta + memoRow + rows;
+}
 // 세부 본문을 종류별로 만든다 — a2Toggle 이 처음 펼칠 때 부른다
 function a2DetailFor(view, id, kind){
   var ym = a2Month();
   if(view==='year' || view==='ypace') return a2YearDetailHtml(id,'out');
   if(view==='yin') return a2YearDetailHtml(id,'in');
   if(view==='ysave') return a2YearDetailHtml(id,'save');
+  if((kind==='save' || kind==='in') && view==='table'){
+    var fcats = a2FlowCats(kind, ym);
+    var fc = fcats.filter(function(x){ return x.key===id; })[0];
+    return fc ? a2FlowMajorBody(fc, ym) : '<div class="a2-empty">내역 없음</div>';
+  }
   if(kind==='save' || kind==='in') return a2FlowBody(kind, ym);
   var cats = a2CatsCached(ym);
   var c = cats.filter(function(x){ return x.key===id; })[0];
@@ -14604,11 +14653,6 @@ function a2TblRow(view, key, kind, labelHtml, amtHtml, budHtml, pctHtml, diffHtm
     +(open ? '<div class="a2-tdwrap"><div class="a2-detail">'+a2DetailFor(view, key, kind)+'</div></div>' : '')+'</td></tr>';
 }
 function a2TableHtml(){
-  // 월간 표 기본 상태: 수입·저축 합계는 펼쳐 대분류를 보여주고, 각 대분류의 거래는 접어 둔다.
-  ['__in','__save'].forEach(function(k){
-    var stateKey='table|'+a2enc(k);
-    if(!Object.prototype.hasOwnProperty.call(A2_OPEN,stateKey)) A2_OPEN[stateKey]=true;
-  });
   var ym = a2Month();
   var cats = a2CatsCached(ym);
   var cur = moMonthTotals(ym), prev = moMonthTotals(moPrevYm(ym));
@@ -14631,9 +14675,26 @@ function a2TableHtml(){
   // 월간 표 상단 요약은 수입 / 저축·투자 / 지출 합계의 3개 대항목으로 통일
   var saveBud = a2SaveBud(ym), inBud = a2InBud(ym);
   var goalPct = function(v, b){ if(!(b>0)) return '<span style="color:var(--txt3)">—</span>'; var p=Math.round(v/b*100); return '<b style="color:'+(p>=100?'var(--green-vivid)':'var(--txt2)')+'">'+p+'%</b>'; };
+  // 수입·저축도 지출처럼 대분류 한 줄씩 펼쳐서, 같은 열(금액/예산/예산대비/지난달대비/메모)에 보여준다
+  var inCats = a2FlowCats('in', ym), saveCats = a2FlowCats('save', ym);
+  function flowRow(c){
+    var pct = c.bud>0 ? Math.round(c.spend/c.bud*100) : null;
+    var pctTxt = pct!==null ? '<b style="color:'+(pct>=100?'var(--green-vivid)':'var(--txt2)')+'">'+pct+'%</b>' : '<span style="color:var(--txt3)">—</span>';
+    var budTxt = c.bud>0 ? a2num(c.bud) : '<span style="color:var(--txt3)">—</span>';
+    return a2TblRow('table', c.key, c.kind, ' '+a2e(c.label),
+      '<span>'+a2num(c.spend)+'</span>', budTxt, pctTxt,
+      a2DiffCell(c.spend-c.prev, true, false),
+      a2MemoInput(ym, c.key, '', 'in', '메모'));
+  }
+  var inBody = inCats.map(flowRow).join('');
+  var saveBody = saveCats.map(flowRow).join('');
   var flow = '<tr class="a2-summary-head"><td colspan="6">월간 요약</td></tr>'
-    + a2TblRow('table','__in','in','수입 합계', a2num(cur.mIn), inBud>0?a2num(inBud):'<span style="color:var(--txt3)">—</span>', goalPct(cur.mIn,inBud), a2DiffCell(cur.mIn-prev.mIn, true, prev.mIn===0 && cur.mIn===0), '')
-    + a2TblRow('table','__save','save','저축·투자 합계', a2num(cur.mSave), saveBud>0?a2num(saveBud):'<span style="color:var(--txt3)">—</span>', goalPct(cur.mSave,saveBud), a2DiffCell(cur.mSave-prev.mSave, true, prev.mSave===0 && cur.mSave===0), '')
+    + '<tr class="a2-sum"><td>수입 합계</td><td>'+a2num(cur.mIn)+'</td><td style="color:var(--txt3)">'+(inBud>0?a2num(inBud):'—')+'</td>'
+    + '<td>'+goalPct(cur.mIn,inBud)+'</td><td>'+a2DiffCell(cur.mIn-prev.mIn, true, prev.mIn===0 && cur.mIn===0)+'</td><td></td></tr>'
+    + (inCats.length ? '<tr class="a2-sep"><td colspan="6">수입 세부 내용</td></tr>'+inBody : '')
+    + '<tr class="a2-sum"><td>저축·투자 합계</td><td>'+a2num(cur.mSave)+'</td><td style="color:var(--txt3)">'+(saveBud>0?a2num(saveBud):'—')+'</td>'
+    + '<td>'+goalPct(cur.mSave,saveBud)+'</td><td>'+a2DiffCell(cur.mSave-prev.mSave, true, prev.mSave===0 && cur.mSave===0)+'</td><td></td></tr>'
+    + (saveCats.length ? '<tr class="a2-sep"><td colspan="6">저축·투자 세부 내용</td></tr>'+saveBody : '')
     + '<tr class="a2-sum a2-expense-summary"><td>지출 합계</td><td>'+a2num(cur.mOut)+'</td><td style="color:var(--txt3)">'+(bt.bud>0?a2num(bt.bud):'—')+'</td>'
     + '<td>'+(bt.pct!==null ? '<span style="color:'+(bt.pct>100?'var(--red-vivid)':bt.pct>=90?'var(--warning-vivid)':'var(--green-vivid)')+'">'+bt.pct+'%</span>' : '—')+'</td>'
     + '<td>'+a2DiffCell(cur.mOut-prev.mOut, false, prev.mOut===0 && cur.mOut===0)+'</td><td></td></tr>'
