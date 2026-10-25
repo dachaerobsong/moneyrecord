@@ -542,6 +542,13 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
   #p-ana2 .a2-grid.a2-dash2{ grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; }
   #p-ana2 .a2-grid.a2-dash2 .a2-full{ grid-column:1 / -1; }
 }
+/* 연간 보드: 넓은 화면(1200px~)에서는 3단 — 1단 추이/수입/저축, 2단 지출 카테고리, 3단 예산 페이스. 그보다 좁으면 2단 + 페이스는 전체폭 */
+@media (min-width:860px) and (max-width:1199px){
+  #p-ana2 .a2-grid.a2-dash3 .a2-stack-pace{ grid-column:1 / -1; }
+}
+@media (min-width:1200px){
+  #p-ana2 .a2-grid.a2-dash3{ grid-template-columns:repeat(3,minmax(0,1fr)); }
+}
 #p-ana2 .a2-card{ background:var(--card); border-radius:18px; padding:20px; border:1px solid #EEF0F3; min-width:0; }
 #p-ana2 .a2-ct{ font-size:15px; font-weight:700; color:var(--txt); display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
 #p-ana2 .a2-ct small{ font-size:11px; font-weight:500; color:var(--txt3); }
@@ -638,6 +645,14 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
 #p-ana2 .a2-mlabels span{ text-align:center; font-size:10.5px; color:var(--txt3); cursor:pointer; padding:3px 0; }
 #p-ana2 .a2-mlabels span.on{ color:var(--txt); font-weight:700; }
 #p-ana2 .a2-spark{ flex:none; }
+#p-ana2 .a2-ybars-wrap{ position:relative; padding-right:26px; }
+/* 참고선: 막대가 1순위로 보이도록 가늘고 연한 점선. 선은 막대 끝에서 멈추고, 라벨은 그 끝(오른쪽 여백)에 선과 같은 높이로 둔다 */
+#p-ana2 .a2-budline, #p-ana2 .a2-avgline{ position:absolute; left:0; right:26px; height:0; border-top:1px dotted; opacity:.55; z-index:1; pointer-events:none; }
+#p-ana2 .a2-budline{ border-top-color:#C99A3E; }
+#p-ana2 .a2-avgline{ border-top-color:#8E7FD6; }
+#p-ana2 .a2-rl{ position:absolute; right:0; width:25px; padding-left:3px; box-sizing:border-box; transform:translateY(50%); font-size:8.5px; font-weight:700; line-height:1; letter-spacing:-.3px; white-space:nowrap; pointer-events:none; }
+#p-ana2 .a2-rl.bud{ color:#AD7F2B; }
+#p-ana2 .a2-rl.avg{ color:#6F5FC2; }
 #p-ana2 .a2-ybars{ display:flex; align-items:flex-end; gap:4px; height:92px; margin:6px 0 10px; }
 #p-ana2 .a2-yb{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; gap:3px; height:100%; cursor:pointer; min-width:0; }
 #p-ana2 .a2-yb i{ display:block; width:100%; background:#C9D6F2; border-radius:3px 3px 0 0; }
@@ -11768,7 +11783,21 @@ function computeAnnualInsight(year){
     const nonZeroN = vals.filter(v=>v>0).length;
     const slope = nonZeroN>=4 ? linRegSlope(vals) : null;
     const avg = total/months.length;
-    return { key:k, label:(CAT_MV_LABELS && CAT_MV_LABELS[k]) || k, total, vals, relSlope:(slope!=null && avg>0)?slope/avg:null };
+    // 저축 예산: ① 이동 카테고리 예산(budgetOf) ② 없으면 설정 › 카테고리 › 이동의 월목표(대분류 예산 또는 소분류 예산 합)
+    let budTotal = 0;
+    try{
+      const _subsSv = (CAT_MV_SUBS && CAT_MV_SUBS[k]) || ((STATE.catMap||{})['이동']||{})[k] || [];
+      budTotal = months.reduce((a,ym)=> a + (budgetOf(k, _subsSv, ym)||0), 0);
+      if(!(budTotal>0)){
+        const cc = ((CFG.categories||{})['이동']||[]).filter(c=>c && normBudgetKey(c.major||'')===normBudgetKey(k))[0];
+        if(cc){
+          const sb = cc.subBudget||{}, ssum = (cc.subs||[]).reduce((a,sn)=>a+(Number(sb[sn])||0),0);
+          const mo = ssum>0 ? ssum : (Number(cc.budget)||0);
+          budTotal = mo * months.length;
+        }
+      }
+    }catch(e){ budTotal = 0; }
+    return { key:k, label:(CAT_MV_LABELS && CAT_MV_LABELS[k]) || k, total, vals, relSlope:(slope!=null && avg>0)?slope/avg:null, budTotal };
   });
 
   // 수입도 대분류별 월별 추이를 제공한다 (지출·저축과 같은 구성으로 세부를 펼치기 위함).
@@ -11785,7 +11814,10 @@ function computeAnnualInsight(year){
     const vals = months.map(ym=>txByMonth[ym].filter(t=>t.type==='수입' && normBudgetKey(t.major||'')===normBudgetKey(k))
       .reduce((sum,t)=>sum+(Number(t.amount)||0),0));
     const total = vals.reduce((a,b)=>a+b,0);
-    return { key:k, label:(CAT_IN_LABELS && CAT_IN_LABELS[k]) || k, total, vals, relSlope:null };
+    // 수입 예산: 지출과 같은 방식으로 각 달 기준 예산을 더한다 (budgetOf가 소분류·기간별 금액까지 처리)
+    let budTotal = 0;
+    try{ const _subsIn = (CAT_IN_SUBS && CAT_IN_SUBS[k]) || ((STATE.catMap||{})['수입']||{})[k] || []; budTotal = months.reduce((a,ym)=> a + (budgetOf(k, _subsIn, ym)||0), 0); }catch(e){ budTotal = 0; }
+    return { key:k, label:(CAT_IN_LABELS && CAT_IN_LABELS[k]) || k, total, vals, relSlope:null, budTotal };
   });
 
   const saveRate = totalIncome>0 ? Math.round(totalSave/totalIncome*100) : null;
@@ -11907,8 +11939,8 @@ function sparklineSVG(vals, color){
   const last = pts[pts.length-1];
   return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="display:block">
     <path d="${areaPath}" fill="${color}" opacity="0.10"></path>
-    <path d="${path}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path>
-    <circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="2.2" fill="${color}"></circle>
+    <path d="${path}" fill="none" stroke="${color}" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" opacity=".9"></path>
+    <circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="1.8" fill="${color}"></circle>
   </svg>`;
 }
 
@@ -11945,7 +11977,7 @@ function rptLineSVG(vals, color, opts){
     <circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="9" fill="transparent"${clickAttr(i)}><title>${titleOf(i)}</title></circle>`).join('');
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none" style="display:block;overflow:visible">
     <path d="${area}" fill="${color}" opacity="0.10"></path>
-    <path d="${line}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+    <path d="${line}" fill="none" stroke="${color}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" opacity=".9"></path>
     ${dots}
   </svg>`;
 }
@@ -14275,7 +14307,15 @@ function a2FlowBody(kind, ym){
   var ptx = a2TxOf(moPrevYm(ym));
   var prev = a2Sum(kind==='save' ? ptx.filter(isSaveTx) : ptx.filter(function(t){ return t.type==='수입'; }));
   var cur = a2Sum(txs);
-  var meta = '<div class="a2-meta">이 달 '+a2won(cur)+' · 지난달 '+a2won(prev)+'</div>';
+  var totBud = kind==='save' ? a2SaveBud(ym) : a2InBud(ym);
+  var metaParts = [];
+  if(totBud>0){
+    var gap = cur - totBud;
+    metaParts.push('예산 '+a2won(totBud)+' · '+(gap>=0 ? a2won(gap)+' 초과' : a2won(-gap)+' 부족'));
+  }
+  var dd = cur-prev;
+  metaParts.push('지난달 '+a2won(prev)+(dd!==0?' ('+(dd>0?'▲ ':'▼ ')+a2won(Math.abs(dd))+')':''));
+  var meta = '<div class="a2-meta">'+metaParts.join('<br>')+'</div>';
   // 메모는 연간 표와 같은 키(그 달|대분류 원래 이름)로 저장해서 연간 표·연간 보드에도 그대로 보이게 한다.
   var rawOf = {};
   txs.forEach(function(t){
@@ -14337,8 +14377,8 @@ function a2FlowCats(kind, ym){
 function a2FlowMajorBody(c, ym){
   var parts = [];
   if(c.bud>0){
-    var gap = c.spend - c.bud;
-    parts.push('목표 '+a2won(c.bud)+' · '+(gap>=0 ? a2won(gap)+' 초과 달성' : a2won(-gap)+' 부족'));
+    var gap = c.bud - c.spend;
+    parts.push('예산 '+a2won(c.bud)+' · '+(gap>=0 ? a2won(gap)+' 남음' : a2won(-gap)+' 초과'));
   }
   var dd = c.spend-c.prev;
   if(c.prev!==0 || c.spend!==0) parts.push('지난달 '+a2won(c.prev)+(dd!==0?' ('+(dd>0?'▲ ':'▼ ')+a2won(Math.abs(dd))+')':''));
@@ -14625,13 +14665,50 @@ function a2FixedVarCardHtml(cats, cur){
     }).join('');
     return '<div id="'+id+'" style="display:none;margin:2px 0 8px">'+(rows || '<div class="a2-empty">없음</div>')+'</div>';
   };
-  var fp = tot>0 ? Math.max(0, Math.min(100, cur.mFix/tot*100)) : 0;
-  var vp = tot>0 ? Math.max(0, Math.min(100, cur.mVar/tot*100)) : 0;
+  // 예산 합 대비 — 항목(카테고리)에 설정해둔 고정·비고정 구분 기준으로 예산 합을 모아 비교한다
+  var budFV = { fixed:{bud:0,spend:0}, var:{bud:0,spend:0} };
+  cats.forEach(function(c){
+    if(c.kind==='orphan' || c.cadence==='event' || !(c.bud>0)) return;
+    var bucket = c.fixed ? budFV.fixed : budFV.var;
+    if(c.pN>1){ bucket.bud += c.qBud; bucket.spend += c.qSpend; }
+    else { bucket.bud += c.bud; bucket.spend += c.spend; }
+  });
+  // 막대 길이 = 예산 대비 사용률(예산이 있을 때). 예산이 없으면 전체 지출 대비 비중으로 대신 보여준다.
+  var fixedPct = budFV.fixed.bud>0 ? Math.round(budFV.fixed.spend/budFV.fixed.bud*100) : null;
+  var varPct   = budFV.var.bud>0   ? Math.round(budFV.var.spend/budFV.var.bud*100)   : null;
+  var fp = fixedPct!==null ? Math.max(0, Math.min(100, fixedPct)) : (tot>0 ? Math.max(0, Math.min(100, cur.mFix/tot*100)) : 0);
+  var vp = varPct!==null   ? Math.max(0, Math.min(100, varPct))   : (tot>0 ? Math.max(0, Math.min(100, cur.mVar/tot*100)) : 0);
+  // 예산이 없으면 중립 회색, 예산 안이면 초록, 넘으면 빨강 — 파랑(브랜드색)은 '판단'과 무관한 용도로만 남겨둔다
+  var fvBarColor = function(pct){ return pct===null ? '#AEB7C4' : (pct>100 ? 'var(--red-vivid)' : 'var(--green-vivid)'); };
+  var fixedBarColor = fvBarColor(fixedPct);
+  var varBarColor   = fvBarColor(varPct);
+  var budPctHtml = function(s){
+    if(!(s.bud>0)) return '<span style="color:var(--txt3)">예산 미설정</span>';
+    var p = Math.round(s.spend/s.bud*100);
+    return '예산대비 <b style="color:'+(p>100?'var(--red-vivid)':p>=90?'var(--warning-vivid)':'var(--green-vivid)')+'">'+p+'%</b> <span style="color:var(--txt3)">('+a2won(s.spend)+' / '+a2won(s.bud)+')</span>';
+  };
+  // 결제수단 — 카테고리의 고정·비고정 설정 + 결제계좌가 카드인지만으로 구분 (항목 자체 분류는 그대로 둠)
+  var payBreak = function(wantFixed){
+    var cardAmt=0, cashAmt=0;
+    cats.forEach(function(c){
+      if(c.kind==='orphan' || !!c.fixed!==wantFixed) return;
+      (c.txs||[]).forEach(function(t){
+        var acc = String(t.outAcct||t.account||'').trim();
+        if(isCardAccount(acc)) cardAmt += Number(t.amount)||0; else cashAmt += Number(t.amount)||0;
+      });
+    });
+    return (cardAmt+cashAmt>0) ? '💳 카드결제 '+a2won(cardAmt)+' · 💵 현금결제 '+a2won(cashAmt) : '';
+  };
+  var fixedMeta = [budPctHtml(budFV.fixed), payBreak(true)].filter(Boolean).join(' · ');
+  var varMeta = [budPctHtml(budFV.var), payBreak(false)].filter(Boolean).join(' · ');
+
   return '<div class="a2-card"><div class="a2-ct"><span>고정비 vs 변동비</span><small>누르면 카테고리별</small></div>'
     +'<div style="margin-top:8px">'
-    +'<div class="a2-fv" onclick="a2ToggleBlock(\'a2fv_fix\')"><b>고정비</b><div class="a2-fvtrack"><div style="width:'+fp.toFixed(1)+'%;background:var(--blue)"></div></div><span class="v">'+a2won(cur.mFix)+'</span></div>'
+    +'<div class="a2-fv" onclick="a2ToggleBlock(\'a2fv_fix\')"><b>고정비</b><div class="a2-fvtrack"><div style="width:'+fp.toFixed(1)+'%;background:'+fixedBarColor+'"></div></div><span class="v">'+a2won(cur.mFix)+'</span></div>'
+    +(fixedMeta?'<div class="a2-note" style="margin:2px 0 6px">'+fixedMeta+'</div>':'')
     +block(true,'a2fv_fix')
-    +'<div class="a2-fv" onclick="a2ToggleBlock(\'a2fv_var\')"><b>변동비</b><div class="a2-fvtrack"><div style="width:'+vp.toFixed(1)+'%;background:var(--green-vivid)"></div></div><span class="v">'+a2won(cur.mVar)+'</span></div>'
+    +'<div class="a2-fv" onclick="a2ToggleBlock(\'a2fv_var\')"><b>변동비</b><div class="a2-fvtrack"><div style="width:'+vp.toFixed(1)+'%;background:'+varBarColor+'"></div></div><span class="v">'+a2won(cur.mVar)+'</span></div>'
+    +(varMeta?'<div class="a2-note" style="margin:2px 0 6px">'+varMeta+'</div>':'')
     +block(false,'a2fv_var')
     +'</div></div>';
 }
@@ -14707,9 +14784,42 @@ function a2TableHtml(){
       +(bt.excl>0?' (누적형·예산 미설정 '+a2won(bt.excl)+' 제외)':'')
       +(bt.reserve>0?' · 아직 도래하지 않은 분기·반기 예산 '+a2won(bt.reserve)+'은 뺐어요':'')+'</div>';
   }
+  // 고정비/비고정비 — 각각의 예산 합 대비 사용률
+  var fv = { fixed:{bud:0,spend:0}, var:{bud:0,spend:0} };
+  cats.forEach(function(c){
+    if(c.kind==='orphan' || c.cadence==='event' || !(c.bud>0)) return;
+    var bucket = c.fixed ? fv.fixed : fv.var;
+    if(c.pN>1){ bucket.bud += c.qBud; bucket.spend += c.qSpend; }
+    else { bucket.bud += c.bud; bucket.spend += c.spend; }
+  });
+  var fvLine = function(label, s){
+    if(!(s.bud>0)) return label+' <span style="color:var(--txt3)">예산 미설정</span>';
+    var p = Math.round(s.spend/s.bud*100);
+    return label+' <b style="color:'+(p>100?'var(--red-vivid)':p>=90?'var(--warning-vivid)':'var(--green-vivid)')+'">'+p+'%</b> <span style="color:var(--txt3)">('+a2won(s.spend)+' / '+a2won(s.bud)+')</span>';
+  };
+  // 고정비 — 결제계좌 기준으로 카드결제/현금결제 구분 (항목 자체의 고정·비고정 설정은 그대로 두고, 결제수단만 나눈다)
+  var fixedCardAmt=0, fixedCashAmt=0;
+  cats.forEach(function(c){
+    if(!c.fixed || c.kind==='orphan') return;
+    (c.txs||[]).forEach(function(t){
+      var acc = String(t.outAcct||t.account||'').trim();
+      if(isCardAccount(acc)) fixedCardAmt += Number(t.amount)||0; else fixedCashAmt += Number(t.amount)||0;
+    });
+  });
+  var fixedPayHtml = (fixedCardAmt+fixedCashAmt>0)
+    ? '<div style="margin-top:2px">💳 카드결제 '+a2won(fixedCardAmt)+' · 💵 현금결제 '+a2won(fixedCashAmt)+'</div>' : '';
+  // 비고정비 — 어디에 많이 썼는지 상위 항목
+  var varTop = cats.filter(function(c){ return !c.fixed && c.kind!=='orphan' && c.spend>0; })
+    .sort(function(a,b){ return b.spend-a.spend; }).slice(0,5);
+  var varTopHtml = varTop.length
+    ? '<div style="margin-top:2px">'+varTop.map(function(c){ return a2e(c.label)+' '+a2won(c.spend); }).join(' · ')+'</div>' : '';
+  var fvBlock = (fv.fixed.bud>0 || fv.var.bud>0 || fixedCardAmt+fixedCashAmt>0 || varTop.length)
+    ? '<div class="a2-card" style="margin-top:10px"><div class="a2-ct"><span>고정비·비고정비 예산대비</span></div>'
+      + '<div class="a2-note" style="margin-top:6px;line-height:1.8">'+fvLine('🔒 고정비', fv.fixed)+fixedPayHtml+'<br><br>'+fvLine('🔁 비고정비', fv.var)+varTopHtml+'</div></div>'
+    : '';
   return '<div class="a2-table-toolbar"><div class="a2-note" style="margin:0">행을 누르면 소분류 → 개별 거래까지 펼쳐져요 · ← 옆으로 끌어서 더 보기</div><div class="a2-collapse-tools"><button type="button" onclick="a2TableToggleAll(false)">모두 접기</button><button type="button" onclick="a2TableToggleAll(true)">모두 펼치기</button></div></div>'
     +'<div class="a2-tblwrap"><table class="a2-tbl"><thead><tr><th>카테고리</th><th>금액</th><th>예산</th><th>예산대비</th><th>지난달대비</th><th style="text-align:left">메모</th></tr></thead><tbody>'
-    +flow+body+'</tbody></table></div>'+note;
+    +flow+body+'</tbody></table></div>'+note+fvBlock;
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -14725,8 +14835,8 @@ function a2Spark(vals, color){
     return x.toFixed(1)+','+y.toFixed(1);
   });
   return '<svg class="a2-spark" width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" aria-hidden="true">'
-    +(n>1 ? '<polyline points="'+pts.join(' ')+'" fill="none" stroke="'+color+'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
-          : '<circle cx="'+pts[0].split(',')[0]+'" cy="'+pts[0].split(',')[1]+'" r="2.5" fill="'+color+'"/>')+'</svg>';
+    +(n>1 ? '<polyline points="'+pts.join(' ')+'" fill="none" stroke="'+color+'" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" opacity=".9"/>'
+          : '<circle cx="'+pts[0].split(',')[0]+'" cy="'+pts[0].split(',')[1]+'" r="2" fill="'+color+'"/>')+'</svg>';
 }
 function a2BudFull(c, year, nMonths){
   var subs = a2OutSubs(c.key);
@@ -15063,7 +15173,11 @@ function a2YearHtml(){
       +'<div class="a2-row" style="margin-top:8px"><span class="a2-note" style="font-size:12px">연간 예산의 '+usedPct+'% 사용</span><span class="a2-note" style="font-size:12px">'+n+'월 기준 경과 '+elapsed+'%</span></div>'
       +'<div class="a2-hr"></div><div class="a2-note" style="margin-bottom:4px">검은 눈금 = 정상 페이스 · 넘어선 순서대로 · 누르면 세부</div>'+prow+'</div>';
   }
-  return '<div class="a2-grid">'+a2AnnualMonthlyTableHtml(y)+kpi+trend+incomeCatCard+saveCatCard+catCard+paceCard+'</div>';
+  // 위는 전체폭(월별 요약표·연간 총괄), 아래는 1단 = 월별 추이 → 수입 → 저축, 2단 = 지출 카테고리 추이, 3단 = 연간 예산 페이스
+  return '<div class="a2-grid a2-dash2 a2-dash3">'+a2AnnualMonthlyTableHtml(y)+kpi
+    +'<div class="a2-stack">'+trend+incomeCatCard+saveCatCard+'</div>'
+    +'<div class="a2-stack">'+catCard+'</div>'
+    +'<div class="a2-stack a2-stack-pace">'+paceCard+'</div></div>';
 }
 
 // 연간 탭 카테고리 세부 — 월별 금액 막대 · 합계/월평균/예산 · 소분류별 합계 · 월별 메모
@@ -15075,7 +15189,10 @@ function a2YearDetailHtml(major, kind){
   var c = d && pool.filter(function(x){ return x.key===major; })[0];
   if(!c) return '<div class="a2-empty">내역 없음</div>';
   var n = d.months.length;
-  var mx = Math.max.apply(null, c.vals.concat([1]));
+  // 월 예산(목표)선 — 연간 budTotal은 '그 달 기준 예산의 합'이라 월별로 조금씩 다를 수 있지만,
+  // 참고선이라 평균(budTotal/개월수)으로 근사한다.
+  var budMonthly = (c.budTotal>0) ? c.budTotal/n : 0;
+  var mx = Math.max.apply(null, c.vals.concat([1, budMonthly]));
   var curYm = a2Month();
   var bars = d.months.map(function(ym,i){
     var v = c.vals[i], h = v>0 ? Math.max(3, Math.round(v/mx*54)) : 2;
@@ -15083,10 +15200,30 @@ function a2YearDetailHtml(major, kind){
       +'<em>'+(v!==0?manW(v):'')+'</em><i style="height:'+h+'px"></i><span>'+parseInt(ym.slice(5,7),10)+'</span></div>';
   }).join('');
   var avg = c.total/n;
+  var budH = budMonthly>0 ? Math.round(budMonthly/mx*54) : 0;
+  var avgH = avg>0 ? Math.round(avg/mx*54) : 0;
+  var refLines = '';
+  // 라벨은 선 끝 오른쪽 여백에 선과 같은 높이로 쓴다. 두 선이 가까워 글자가 겹치면 라벨 높이만 10px 간격으로 벌린다(선 위치는 그대로).
+  var pb = budH>0 ? 15+budH : null, pa = avgH>0 ? 15+avgH : null;
+  var lb = pb, la = pa;
+  if(pb!=null && pa!=null && Math.abs(pb-pa)<10){
+    var mid = (pb+pa)/2, up = pb>=pa ? 'b' : 'a';
+    lb = up==='b' ? mid+5 : mid-5;
+    la = up==='b' ? mid-5 : mid+5;
+  }
+  if(pb!=null && pa!=null && Math.abs(pb-pa)<2){
+    refLines += '<div class="a2-budline" style="bottom:'+Math.round((pb+pa)/2)+'px" title="월평균 예산 '+a2won(budMonthly)+' · 월평균 지출 '+a2won(avg)+'"></div>';
+  } else {
+    if(pb!=null) refLines += '<div class="a2-budline" style="bottom:'+pb+'px" title="월평균 예산 '+a2won(budMonthly)+'"></div>';
+    if(pa!=null) refLines += '<div class="a2-avgline" style="bottom:'+pa+'px" title="월평균 '+(kind==='out'?'지출 ':'')+a2won(avg)+'"></div>';
+  }
+  if(lb!=null) refLines += '<span class="a2-rl bud" style="bottom:'+lb.toFixed(1)+'px">예산</span>';
+  if(la!=null) refLines += '<span class="a2-rl avg" style="bottom:'+la.toFixed(1)+'px">평균</span>';
   var meta = '합계 '+a2won(c.total)+' · 월평균 '+a2won(avg);
-  if(kind==='out' && c.budTotal>0){
+  if(c.budTotal>0){
     var dd = c.total-c.budTotal;
-    meta += '<br>지금까지 예산 '+a2won(c.budTotal)+' · '+(dd>0 ? '<b style="color:var(--red-vivid)">'+a2won(dd)+' 초과</b>' : a2won(-dd)+' 아낌');
+    if(kind==='out') meta += '<br>지금까지 예산 '+a2won(c.budTotal)+' · '+(dd>0 ? '<b style="color:var(--red-vivid)">'+a2won(dd)+' 초과</b>' : a2won(-dd)+' 아낌');
+    else meta += '<br>지금까지 예산 '+a2won(c.budTotal)+' · '+(dd>=0 ? '<b style="color:var(--green-vivid)">'+a2won(dd)+' 초과 달성</b>' : a2won(-dd)+' 부족');
   }
   // 소분류별 연간 합계 · 월평균
   var txs, keyOf;
@@ -15116,7 +15253,7 @@ function a2YearDetailHtml(major, kind){
   // 월별 메모
   var memos = d.months.map(function(ym){ var m = a2MemoGet(ym, major, ''); return m ? '<div class="a2-tx"><span class="d" style="width:30px">'+parseInt(ym.slice(5,7),10)+'월</span><span class="m" style="white-space:normal">'+a2e(m)+'</span></div>' : ''; }).join('');
   return '<div class="a2-meta">'+meta+'</div>'
-    +'<div class="a2-ybars">'+bars+'</div>'
+    +'<div class="a2-ybars-wrap">'+refLines+'<div class="a2-ybars">'+bars+'</div></div>'
     +(subRows ? '<div class="a2-note" style="margin:4px 0 2px">소분류별 올해 합계 · 월평균(합계 ÷ '+n+'개월)</div>'+subRows : '')
     +(memos ? '<div class="a2-note" style="margin:10px 0 2px">📝 월별 메모</div>'+memos : '');
 }
@@ -15306,7 +15443,7 @@ window.addEventListener('load', ()=>{ initFoldableCards(); if(typeof renderAllSe
 #p-ana2 .a2-fold-icon{color:var(--blue);display:inline-block;width:10px;}
 #p-ana2 .a2-annual-cell{border:0!important;outline:0;background:transparent!important;color:inherit;font:inherit;text-align:right;width:100%;min-width:72px;padding:0!important;cursor:pointer;appearance:none;-webkit-appearance:none;box-shadow:none!important;border-radius:0!important;}
 #p-ana2 .a2-annual-table thead button{border:0!important;background:transparent!important;color:inherit;font:inherit;cursor:pointer;padding:2px 4px;appearance:none;-webkit-appearance:none;box-shadow:none!important;}
-#p-ana2 .a2-annual-detail tr.group-start th,#p-ana2 .a2-annual-detail tr.group-start td{border-top:3px solid #CBD5E1!important;}
+#p-ana2 .a2-annual-detail tr.group-start th,#p-ana2 .a2-annual-detail tr.group-start td{border-top:2px solid #D3DAE5!important;}
 #p-ana2 .a2-annual-detail tr.major-row th.item{background:#E9EFF6!important;}
 #p-ana2 .a2-annual-detail tr.major-row td{background:#F6F8FB!important;}
 @media(max-width:859px){
