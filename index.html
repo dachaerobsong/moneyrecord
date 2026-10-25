@@ -578,6 +578,7 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
 }
 /* 월간 보드: 2행 구성 — 1행 지출 요약(전체폭) / 2행 왼쪽 [지출 흐름 + 고정비·변동비], 오른쪽 [어디에 썼을까요?] */
 #p-ana2 .a2-grid.a2-dash2{ grid-template-columns:minmax(0,1fr); align-items:start; }
+@media (min-width:860px){ #p-ana2 .a2-grid.a2-dash2{ grid-template-columns:minmax(0,1fr) minmax(0,1fr); } }
 #p-ana2 .a2-dash2 .a2-stack{ display:flex; flex-direction:column; gap:14px; min-width:0; }
 #p-ana2 .a2-grid.a2-dash2 .a2-full{ grid-column:1 / -1; }
 /* 연간 보드: 넓은 화면(1200px~)에서는 3단 — 1단 추이/수입/저축, 2단 지출 카테고리, 3단 예산 페이스. 그보다 좁으면 2단 + 페이스는 전체폭 */
@@ -14513,8 +14514,7 @@ function a2FlowCats(kind, ym){
     var bud = a2WithBud(ym, function(){ return budgetOf(m, subs, ym)||0; });
     var label = majorLabel(kind==='save'?'이동':'수입', m) || m;
     return { kind:kind, key:m, major:m, label:label, spend:a2Sum(txs), bud:bud, prev:a2Sum(ptxsM), txs:txs };
-  }).filter(function(c){ return c.spend!==0 || c.bud>0; })
-    .sort(function(a,b){ return b.spend-a.spend; });
+  }).sort(function(a,b){ return b.spend-a.spend; });
 }
 // 수입·저축 대분류 한 줄을 펼쳤을 때 — 지출의 "📝 이 달 메모" + 거래 목록과 같은 모양
 function a2FlowMajorBody(c, ym){
