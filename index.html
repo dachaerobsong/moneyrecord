@@ -14216,8 +14216,18 @@ var A2_ANNUAL_PICK = null;
 var A2_SUB_INIT = false;
 var A2_MONTH = '';          // 'YYYY-MM'
 var A2_YEAR = 0;
-var A2_OPEN = {};           // 'view|인코딩된키' → true (펼침) — 달 이동·탭 전환에도 유지
+var A2_OPEN = {};           // 'view|인코딩된키' → true (펼침)
 var A2_SUBOPEN = {};        // '대분류|소분류' → true (소분류 줄 펼침)
+var A2_STATE_LOADED = false;
+function a2LoadOpenState(){
+  if(A2_STATE_LOADED) return;
+  A2_STATE_LOADED = true;
+  try{ A2_OPEN = JSON.parse(LS.get('a2_open_state')||'{}') || {}; }catch(e){ A2_OPEN = {}; }
+  try{ A2_SUBOPEN = JSON.parse(LS.get('a2_subopen_state')||'{}') || {}; }catch(e){ A2_SUBOPEN = {}; }
+}
+function a2SaveOpenState(){
+  try{ LS.set('a2_open_state', JSON.stringify(A2_OPEN)); LS.set('a2_subopen_state', JSON.stringify(A2_SUBOPEN)); }catch(e){}
+}
 var A2_SUBKEY = {};         // 이번에 그린 소분류 줄 id → 위 키
 var A2_BLOCKOPEN = {};      // 고정비/변동비 블록 id → true
 var A2_SEQ = 0;
@@ -14418,6 +14428,7 @@ function a2ToggleSub(id){
   el.style.display = open ? 'block' : 'none';
   if(car) car.textContent = open ? '▾' : '▸';
   if(A2_SUBKEY[id]) A2_SUBOPEN[A2_SUBKEY[id]] = open;   // 기억해 두었다가 다시 그릴 때 복원
+  a2SaveOpenState();
 }
 // 지출 카테고리 한 개의 세부
 function a2OutBody(c, ym, withMeta){
@@ -14560,7 +14571,8 @@ function a2FlowMajorBody(c, ym){
   var grouped = a2GroupsHtml({
     txs:c.txs, ym:ym, major:c.major, regSubs:regSubs, showAllRegSubs:true,
     groupKey:function(t){ return txGroupKey(c.major,t); },
-    subBud:function(sub){ return subBudgetOf(c.major,sub,ym)||0; }
+    subBud:function(sub){ return subBudgetOf(c.major,sub,ym)||0; },
+    subMemo:true
   });
   return meta + memoRow + grouped;
 }
@@ -14605,6 +14617,7 @@ function a2Toggle(view, enc, kind){
   el.style.display = open ? (el.tagName==='TR' ? 'table-row' : 'block') : 'none';
   if(car) car.textContent = open ? '▾' : '▸';
   A2_OPEN[view+'|'+enc] = open;
+  a2SaveOpenState();
 }
 function a2ToggleBlock(id){
   var el = document.getElementById(id);
@@ -14612,6 +14625,7 @@ function a2ToggleBlock(id){
   var open = el.style.display!=='block';
   el.style.display = open ? 'block' : 'none';
   A2_BLOCKOPEN[id] = open;
+  try{ LS.set('a2_blockopen_state', JSON.stringify(A2_BLOCKOPEN)); }catch(e){}
 }
 // 펼침 상태를 기억해 두었다가 다시 그릴 때 그대로 복원한다
 function a2IsOpen(view, enc){ return !!A2_OPEN[view+'|'+enc]; }
@@ -14654,6 +14668,7 @@ function a2GoMonth(ym, sub){
 function renderAna2(){
   var host = document.getElementById('a2-body');
   if(!host) return;
+  a2LoadOpenState();
   if(!A2_SUB_INIT){
     A2_SUB_INIT = true;
     var s = LS.get('a2_sub');
@@ -15481,6 +15496,9 @@ window.addEventListener('load', ()=>{ initFoldableCards(); if(typeof renderAllSe
   #p-ana2 .a2-big{font-size:28px;}
   #p-ana2 .a2-stats{grid-template-columns:repeat(4,minmax(0,1fr));gap:20px;}
   #p-ana2 .a2-annual-month-card{grid-column:1/-1;}
+  #p-ana2 #a2-annual-selected{position:sticky;bottom:0;z-index:8;max-height:38vh;overflow:auto;background:var(--card,#fff);border-top:1px solid #D9E0E8;box-shadow:0 -5px 16px rgba(16,24,40,.08);padding-top:6px;}
+  #p-ana2 #a2-annual-selected:empty{display:none;}
+  #p-ana2 .a2-annual-selected-card{margin-bottom:0;}
   #p-ana2 .a2-annual-table-wrap{overflow-x:auto;width:100%;}
   #p-ana2 table.a2-annual-table{width:100%;min-width:1120px;border-collapse:separate;border-spacing:0;table-layout:fixed;font-variant-numeric:tabular-nums;}
   #p-ana2 .a2-annual-table th,#p-ana2 .a2-annual-table td{padding:10px 8px;text-align:right;border-bottom:1px solid #EEF0F3;white-space:nowrap;font-size:12px;}
