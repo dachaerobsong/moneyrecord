@@ -14368,7 +14368,8 @@ function a2GroupsHtml(opts){
   (opts.regSubs||[]).forEach(function(s){
     var z = stripSp(s);
     if(order.some(function(g){ return stripSp(g)===z; })) return;
-    if(opts.subBud && opts.subBud(s)>0){ groups[s] = []; order.push(s); }
+    // 수입·저축 구성은 예산 유무와 관계없이 등록된 소분류를 모두 보여준다.
+    if(opts.showAllRegSubs || (opts.subBud && opts.subBud(s)>0)){ groups[s] = []; order.push(s); }
   });
   (opts.zeroGroups||[]).forEach(function(g){
     if(!groups[g]){ groups[g] = []; order.push(g); }
@@ -14493,12 +14494,39 @@ function a2FlowBody(kind, ym){
     }
   });
 }
+// 수입·저축 소분류: 사용자 설정(CFG/STATE)을 우선 포함하고 기본값도 보완한다.
+function a2FlowSubs(kind, major){
+  var type = kind==='save' ? '이동' : '수입';
+  var out = [], seen = {};
+  function add(list){ (Array.isArray(list)?list:[]).forEach(function(x){ var v=String(x||'').trim(), k=normBudgetKey(v); if(v && !seen[k]){ seen[k]=1; out.push(v); } }); }
+  var rows = ((CFG||{}).categories||{})[type] || [];
+  var row = rows.filter(function(x){ return x && normBudgetKey(x.major)===normBudgetKey(major); })[0];
+  if(row) add(row.subs);
+  add((((STATE||{}).catMap||{})[type]||{})[major]);
+  add(kind==='save' ? (CAT_MV_SUBS[major]||[]) : (CAT_IN_SUBS[major]||[]));
+  return out;
+}
 // 수입 · 저축 — 지출처럼 대분류 한 줄씩 (금액/예산/예산대비/지난달대비/메모)
 function a2FlowCats(kind, ym){
   var tx = a2TxOf(ym), ptx = a2TxOf(moPrevYm(ym));
   var txsAll = kind==='save' ? tx.filter(isSaveTx) : tx.filter(function(t){ return t.type==='수입'; });
   var ptxsAll = kind==='save' ? ptx.filter(isSaveTx) : ptx.filter(function(t){ return t.type==='수입'; });
-  var regMajors = kind==='save' ? SAVE_MAJORS.slice() : Object.keys(CAT_IN_SUBS||{});
+  // 등록된 카테고리는 이번 달 거래가 0건이어도 모두 표시한다.
+  // 기본 카테고리 객체뿐 아니라 사용자 설정(CFG.categories / STATE.catMap)에만 있는 항목도 포함한다.
+  var regMajors = kind==='save' ? (SAVE_MAJORS||[]).slice() : Object.keys(CAT_IN_SUBS||{});
+  var cfgKind = kind==='save' ? '이동' : '수입';
+  var cfgRows = (CFG && CFG.categories && CFG.categories[cfgKind]) || [];
+  cfgRows.forEach(function(c){
+    if(!c || !c.major) return;
+    if(kind==='save' && String(c.flags||'').indexOf('save')<0 && (SAVE_MAJORS||[]).indexOf(c.major)<0) return;
+    regMajors.push(c.major);
+  });
+  var catMapKind = (STATE.catMap||{})[cfgKind] || {};
+  Object.keys(catMapKind).forEach(function(m){
+    if(kind==='save' && (SAVE_MAJORS||[]).indexOf(m)<0) return;
+    regMajors.push(m);
+  });
+  if(kind==='save') Object.keys(CAT_MV_SUBS||{}).forEach(function(m){ if((SAVE_MAJORS||[]).indexOf(m)>=0) regMajors.push(m); });
   var seen = {}, majors = [];
   regMajors.forEach(function(m){ var nk=normBudgetKey(m); if(m && !seen[nk]){ seen[nk]=1; majors.push(m); } });
   txsAll.concat(ptxsAll).forEach(function(t){
@@ -14510,7 +14538,7 @@ function a2FlowCats(kind, ym){
     var nk = normBudgetKey(m);
     var pred = function(t){ return t.major && normBudgetKey(t.major)===nk; };
     var txs = txsAll.filter(pred), ptxsM = ptxsAll.filter(pred);
-    var subs = kind==='save' ? (CAT_MV_SUBS[m]||[]) : (CAT_IN_SUBS[m]||[]);
+    var subs = a2FlowSubs(kind, m);
     var bud = a2WithBud(ym, function(){ return budgetOf(m, subs, ym)||0; });
     var label = majorLabel(kind==='save'?'이동':'수입', m) || m;
     return { kind:kind, key:m, major:m, label:label, spend:a2Sum(txs), bud:bud, prev:a2Sum(ptxsM), txs:txs };
@@ -14528,9 +14556,9 @@ function a2FlowMajorBody(c, ym){
   var meta = parts.length ? '<div class="a2-meta">'+parts.join('<br>')+'</div>' : '';
   var memoRow = '<div style="margin-bottom:8px"><div class="a2-note" style="margin-bottom:4px">📝 이 달 메모</div>'+a2MemoInput(ym, c.major, '', '', '왜 이랬는지 메모')+'</div>';
   // 대분류를 펼치면 소분류별 합계가 먼저 나오고, 소분류를 다시 누르면 개별 거래가 표시됨.
-  var regSubs = c.kind==='in' ? (CAT_IN_SUBS[c.major]||[]) : (CAT_MV_SUBS[c.major]||[]);
+  var regSubs = a2FlowSubs(c.kind, c.major);
   var grouped = a2GroupsHtml({
-    txs:c.txs, ym:ym, major:c.major, regSubs:regSubs,
+    txs:c.txs, ym:ym, major:c.major, regSubs:regSubs, showAllRegSubs:true,
     groupKey:function(t){ return txGroupKey(c.major,t); },
     subBud:function(sub){ return subBudgetOf(c.major,sub,ym)||0; }
   });
