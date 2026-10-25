@@ -154,7 +154,48 @@ body { padding-bottom:88px; }
 #p-home > .card:first-child .card-title { font-size:14px; font-weight:600; }
 #p-home > .card { margin-bottom:12px; }
 #p-home > .card h2.card-title { font-size:15px; }
-#p-home #h-asset-donut-card { display:none !important; }
+/* 홈: 자산 형성 흐름 · 자산 구성도 · 투자 손익 */
+#h-flow-card{ container-type:inline-size; }
+#h-flow-card .hf-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:14px; }
+#h-flow-card .hf-title{ font-size:15px; font-weight:800; color:var(--txt); }
+#h-flow-card .hf-sub{ font-size:11.5px; color:var(--txt3); margin-top:2px; line-height:1.4; }
+#h-flow-card select{ border:1px solid #E5E8EB; background:#fff; border-radius:10px; padding:6px 8px; font-size:12px; font-weight:600; color:var(--txt2); flex:none; }
+.hf-row{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.hf-card{ position:relative; border-radius:14px; padding:12px 12px 10px; }
+.hf-card .hf-h{ display:flex; align-items:center; gap:6px; font-size:12.5px; font-weight:700; color:var(--txt2); }
+.hf-card .hf-h i{ font-style:normal; font-size:15px; }
+.hf-card .hf-v{ font-size:17px; font-weight:800; color:var(--txt); letter-spacing:-.5px; margin-top:8px; white-space:nowrap; }
+.hf-card .hf-p{ font-size:11px; color:var(--txt3); margin-top:1px; }
+.hf-card .hf-d{ margin-top:8px; padding-top:7px; border-top:1px solid rgba(0,0,0,.06); display:flex; flex-direction:column; gap:3px; }
+.hf-card .hf-d div{ display:flex; justify-content:space-between; gap:6px; font-size:11px; color:var(--txt3); }
+.hf-card .hf-d b{ font-weight:600; color:var(--txt2); }
+.hf-in{ background:#EEF6F1; } .hf-out{ background:#FBEFEE; } .hf-sv{ background:#EAF1FD; } .hf-as{ background:#F1EEFB; }
+.hf-bar{ display:flex; height:12px; border-radius:7px; overflow:hidden; margin:14px 0 8px; background:#EEF0F3; }
+.hf-bar span{ display:block; height:100%; }
+.hf-legend{ display:flex; flex-wrap:wrap; gap:4px 12px; font-size:11px; color:var(--txt3); }
+.hf-legend i{ display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:4px; }
+.hf-note{ font-size:10.5px; color:var(--txt3); margin-top:8px; line-height:1.5; }
+@container (min-width:560px){
+  .hf-row{ grid-template-columns:repeat(4,minmax(0,1fr)); gap:26px; }
+  .hf-card:not(:last-child)::after{ content:'→'; position:absolute; right:-20px; top:50%; transform:translateY(-50%); color:#B0B8C4; font-size:15px; }
+}
+.hd-wrap{ display:flex; align-items:center; gap:18px; flex-wrap:wrap; }
+.hd-wrap svg{ flex:none; width:176px; height:176px; margin:0 auto; }
+.hd-legend{ flex:1 1 190px; display:flex; flex-direction:column; gap:9px; }
+.hd-legend .r{ display:flex; align-items:center; gap:8px; font-size:12.5px; }
+.hd-legend .r .n{ flex:1; color:var(--txt2); display:flex; align-items:center; gap:7px; }
+.hd-legend .r .n i{ width:9px; height:9px; border-radius:50%; flex:none; }
+.hd-legend .r .a{ color:var(--txt2); font-variant-numeric:tabular-nums; }
+.hd-legend .r .pc{ color:var(--txt3); width:38px; text-align:right; font-variant-numeric:tabular-nums; }
+.hi-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
+.hi-tile{ border-radius:14px; padding:12px; }
+.hi-tile.gen{ background:#EEF2FD; } .hi-tile.pen{ background:#EEF6F1; }
+.hi-tile .t{ font-size:12px; font-weight:700; color:var(--txt2); }
+.hi-tile .v{ font-size:18px; font-weight:800; letter-spacing:-.5px; margin-top:6px; white-space:nowrap; }
+.hi-tile .p{ font-size:11px; color:var(--txt3); margin-top:1px; }
+.hi-tile .rows{ margin-top:9px; padding-top:7px; border-top:1px solid rgba(0,0,0,.06); display:flex; flex-direction:column; gap:3px; }
+.hi-tile .rows div{ display:flex; justify-content:space-between; font-size:11.5px; color:var(--txt3); }
+.hi-tile .rows b{ font-weight:600; color:var(--txt2); }
 #sub-analysis-month > .card:first-child { border:0; background:#F2F7FF; }
 #sub-analysis-month > .card:first-child .card-title { margin-bottom:8px; }
 #p-invest .invest-sub-panel:first-of-type { padding-top:0; }
@@ -844,6 +885,32 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
     <div class="hero-sub" id="h-monthly-change" style="color: #D6F5E3;"></div>
   </section>
 
+  <!-- 한눈에 보는 자산 형성 과정: 수입 → 지출 → 저축·투자 → 자산 증가 -->
+  <section class="card" id="h-flow-card">
+    <div class="hf-head">
+      <div>
+        <div class="hf-title">한눈에 보는 자산 형성 과정</div>
+        <div class="hf-sub">얼마 벌어서, 얼마 쓰고, 얼마를 모으고 있는지 흐름으로 확인해요</div>
+      </div>
+      <select id="h-flow-period" onchange="setHomeFlowPeriod(this.value)" aria-label="기간">
+        <option value="month">이번 달</option><option value="year">올해</option><option value="all">전체</option>
+      </select>
+    </div>
+    <div id="h-flow-body"><div style="text-align:center;color:var(--txt3);padding:16px;font-size:13px">거래내역을 불러오면 표시돼요</div></div>
+  </section>
+
+  <!-- 자산 구성도 (파이 + 비중%) -->
+  <section class="card" id="h-asset-donut-card" style="display:none">
+    <h2 class="card-title">자산 구성도</h2>
+    <div id="h-asset-donut"></div>
+  </section>
+
+  <!-- 투자 손익: 일반 투자계좌 / 연금·ISA 구분 (투자 탭 딥링크) -->
+  <section class="card" id="h-invest-summary-card" onclick="goToTab('invest')" style="cursor:pointer">
+    <h2 class="card-title"><span>📈 투자 손익</span><span style="font-size:12px;font-weight:600;color:var(--blue)">자세히 보기 ›</span></h2>
+    <div id="h-invest-summary"></div>
+  </section>
+
   <!-- 자산 구성 (시트 계좌 잔고 기반 실시간 계산) -->
   <section class="card">
     <h2 class="card-title">자산 구성</h2>
@@ -856,24 +923,10 @@ table.inv2-tbl tfoot td:first-child{ background:#FCFCFD; }
     <div id="nw-trend-body"><div style="text-align:center;color:var(--txt3);padding:16px;font-size:13px">데이터 준비 중...</div></div>
   </section>
 
-  <!-- 자산배분 도넛 -->
-  <section class="card" id="h-asset-donut-card" style="display:none">
-    <h2 class="card-title">자산배분</h2>
-    <div id="h-asset-donut"></div>
-  </section>
-
   <!-- 목표 진행률 요약 (목표 탭 카드 일부 발췌) -->
   <section class="card" id="h-goal-summary-card" style="display:none">
     <h2 class="card-title">🎯 목표 진행률</h2>
     <div id="h-goal-summary"></div>
-  </section>
-
-  <!-- [삭제] 이번 달 진단 티저 — 홈에서 필요없다는 요청으로 제거함 (본체는 여전히 분석 › 이번달에 있음) -->
-
-  <!-- 투자 미니요약 (투자 탭 딥링크) -->
-  <section class="card" id="h-invest-summary-card" onclick="goToTab('invest')" style="cursor:pointer">
-    <h2 class="card-title"><span>📈 투자</span><span style="font-size:12px;font-weight:600;color:var(--blue)">자세히 보기 ›</span></h2>
-    <div id="h-invest-summary"></div>
   </section>
 
   <!-- 월별 차트/월평균은 가계부 › 리포트 탭으로 이동함 -->
@@ -4486,6 +4539,7 @@ function renderHome() {
   if(typeof renderMonthlyChart==='function') renderMonthlyChart(); // 월별 수입/지출/저축률 차트 (홈)
   if(typeof renderHomeMonthSummary==='function') renderHomeMonthSummary();
   if(typeof renderHomeInvestSummary==='function') renderHomeInvestSummary();
+  try{ renderHomeFlow(); }catch(e){ console.error('renderHomeFlow', e); }
 }
 
 // 홈 › 이번 달 진단 티저 — 한 줄만. 본체(히어로 판정·근거 칩)는 분석 › 이번달에 있다.
@@ -4504,28 +4558,126 @@ function renderHomeMonthSummary(){
     <div style="font-size:14px;font-weight:700;color:var(--txt);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h.main}</div>`;
 }
 
-// 홈 › 투자 미니요약: 투자 원금 / 분배금·이자 누적 (평가금액·수익률은 추후 스냅샷 기능 후 추가)
+// ── 투자 손익을 '일반 투자계좌'와 '연금·ISA'로 나눠 계산 ──
+// 계좌 구분은 계좌명으로 판단한다(ISA·IRP·연금·연저·퇴직이 들어가면 연금·ISA). 두 그룹의 합은 investIncomeTotals()와 같다.
+function pfAcctGroup(name){ return /ISA|IRP|연금|연저|퇴직/i.test(String(name||'')) ? 'pen' : 'gen'; }
+function investIncomeByGroup(){
+  const mk = ()=>({unrealized:0,costTotal:0,realized:0,dividend:0,interest:0,usage:0});
+  const g = { gen:mk(), pen:mk() };
+  try{ mergedHoldings().filter(h=>h.qty>0.0001 && h.hasPrice).forEach(h=>{ const t=g[pfAcctGroup(h.account)]; t.unrealized += Number(h.unrealizedPnl)||0; t.costTotal += Number(h.costBasis)||0; }); }catch(e){}
+  try{ computeHoldings().forEach(h=>{ g[pfAcctGroup(h.account)].realized += h.realizedPnl||0; }); }catch(e){}
+  (pfTx||[]).forEach(x=>{
+    const t = g[pfAcctGroup(x.account)], amt = Math.abs(Number(x.amount)||0);
+    if(x.type==='분배금') t.dividend += amt; else if(x.type==='이자') t.interest += amt; else if(x.type==='이용료') t.usage += amt;
+  });
+  ['gen','pen'].forEach(k=>{ const t=g[k]; t.income = t.dividend + t.interest - t.usage; t.total = t.unrealized + t.realized + t.income; t.pct = t.costTotal>0 ? Math.round(t.unrealized/t.costTotal*1000)/10 : null; });
+  return g;
+}
+function _sgn(n){ return (n<0?'-':'+') + Math.abs(Math.round(n)).toLocaleString('ko-KR'); }
+function _clr(n){ return n<0 ? 'var(--red-vivid)' : 'var(--green-vivid)'; }
+
+// 홈 › 투자 손익: 일반 투자계좌 / 연금·ISA 두 칸으로 구분
 function renderHomeInvestSummary(){
   const el = document.getElementById('h-invest-summary');
   if(!el) return;
   if(!pfTx || !pfTx.length){
-    el.innerHTML = '<div style="color:var(--txt3);font-size:13px">주식 탭에서 거래를 입력하면 자동 집계돼요</div>';
+    el.innerHTML = '<div style="color:var(--txt3);font-size:13px">투자 탭에서 거래를 입력하면 자동 집계돼요</div>';
     return;
   }
+  const g = investIncomeByGroup();
   const sum=t=>pfTx.filter(x=>x.type===t).reduce((s,x)=>s+Math.abs(Number(x.amount)||0),0);
   const principal = sum('입금') - sum('출금');
-  const divid = sum('분배금') + sum('이자');
-  el.innerHTML = `
-    <div style="display:flex;gap:8px">
-      <div style="flex:1;text-align:center;padding:11px 4px;background:var(--blue-bg);border-radius:14px">
-        <div style="font-size:11px;color:var(--txt3)">투입 원금</div>
-        <div style="font-size:15px;font-weight:800;color:var(--blue)">${principal.toLocaleString('ko-KR')}원</div>
-      </div>
-      <div style="flex:1;text-align:center;padding:11px 4px;background:var(--green-bg);border-radius:14px">
-        <div style="font-size:11px;color:var(--txt3)">분배금·이자</div>
-        <div style="font-size:15px;font-weight:800;color:var(--green)">+${divid.toLocaleString('ko-KR')}원</div>
+  const tile = (cls, title, t)=>`
+    <div class="hi-tile ${cls}">
+      <div class="t">${title}</div>
+      <div class="v" style="color:${_clr(t.total)}">${_sgn(t.total)}원</div>
+      <div class="p">${t.pct!=null ? `평가 수익률 ${t.pct>=0?'+':''}${t.pct}%` : '현재가 없음'}</div>
+      <div class="rows">
+        <div><span>평가손익</span><b style="color:${_clr(t.unrealized)}">${_sgn(t.unrealized)}</b></div>
+        <div><span>실현손익</span><b style="color:${_clr(t.realized)}">${_sgn(t.realized)}</b></div>
+        <div><span>배당·이자</span><b style="color:${_clr(t.income)}">${_sgn(t.income)}</b></div>
       </div>
     </div>`;
+  el.innerHTML = `<div class="hi-grid">${tile('gen','📊 일반 투자계좌',g.gen)}${tile('pen','🛡️ 연금 / ISA',g.pen)}</div>
+    <div class="hf-note">투입 원금 ${principal.toLocaleString('ko-KR')}원 · 계좌명에 ISA·IRP·연금이 들어가면 연금/ISA로 나눠요 · 이용료는 배당·이자에서 차감</div>`;
+}
+
+// ── 자산 구성도: 파이 안에 비중(%) + 오른쪽 범례에 금액·비중 ──
+function homeDonutHtml(items, total){
+  const colors = ['#6B7FD7','#6FC3A0','#B4A8F0','#F4A896','#E8CB8C','#9FD0E6'];
+  const cx=100, cy=100, r1=94, r2=54, rl=(r1+r2)/2;
+  const pt=(r,a)=>[cx+r*Math.sin(a), cy-r*Math.cos(a)];
+  let acc=0, segs='';
+  const rows = items.map((x,i)=>({x, pct:x.val/total*100, c:colors[i%colors.length]}));
+  if(rows.length===1){
+    segs = `<circle cx="${cx}" cy="${cy}" r="${rl}" fill="none" stroke="${rows[0].c}" stroke-width="${r1-r2}"/>`+
+           `<text x="${cx}" y="${cy-rl}" text-anchor="middle" dominant-baseline="middle" font-size="12" font-weight="800" fill="#fff">100%</text>`;
+  } else rows.forEach(rw=>{
+    const a0=acc/100*2*Math.PI, a1=(acc+rw.pct)/100*2*Math.PI; acc+=rw.pct;
+    const [x0,y0]=pt(r1,a0), [x1,y1]=pt(r1,a1), [x2,y2]=pt(r2,a1), [x3,y3]=pt(r2,a0);
+    const big = (a1-a0)>Math.PI ? 1 : 0;
+    segs += `<path d="M${x0.toFixed(2)} ${y0.toFixed(2)} A${r1} ${r1} 0 ${big} 1 ${x1.toFixed(2)} ${y1.toFixed(2)} L${x2.toFixed(2)} ${y2.toFixed(2)} A${r2} ${r2} 0 ${big} 0 ${x3.toFixed(2)} ${y3.toFixed(2)} Z" fill="${rw.c}" stroke="#fff" stroke-width="2"/>`;
+    if(rw.pct>=5){ const [lx,ly]=pt(rl,(a0+a1)/2); segs += `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-size="11.5" font-weight="800" fill="#fff">${Math.round(rw.pct)}%</text>`; }
+  });
+  const eok = total>=1e8 ? (total/1e8).toFixed(2)+'억' : Math.round(total/1e4).toLocaleString('ko-KR')+'만';
+  const svg = `<svg viewBox="0 0 200 200" role="img" aria-label="자산 구성 비중">${segs}
+    <text x="${cx}" y="${cy-8}" text-anchor="middle" font-size="11" fill="#8B95A1">총 자산</text>
+    <text x="${cx}" y="${cy+12}" text-anchor="middle" font-size="16" font-weight="800" fill="#191F28">${eok}</text></svg>`;
+  const legend = rows.map(rw=>`<div class="r"><span class="n"><i style="background:${rw.c}"></i>${rw.x.label}</span><span class="a">${Math.round(rw.x.val).toLocaleString('ko-KR')}</span><span class="pc">${Math.round(rw.pct)}%</span></div>`).join('');
+  return `<div class="hd-wrap">${svg}<div class="hd-legend">${legend}</div></div>
+    <div style="font-size:10.5px;color:var(--txt3);margin-top:10px">* 카드 미결제(부채)는 비중 계산에서 제외 · 투자 손익은 위 투자 손익 카드에서 따로 봐요</div>`;
+}
+
+// ── 한눈에 보는 자산 형성 과정: 수입 → 지출 → 저축·투자 → 자산 증가 ──
+let HOME_FLOW_PERIOD = 'month';
+try{ const _p = LS.get('gb_home_flow_period'); if(_p==='month'||_p==='year'||_p==='all') HOME_FLOW_PERIOD = _p; }catch(e){}
+function setHomeFlowPeriod(v){ HOME_FLOW_PERIOD = v; try{ LS.set('gb_home_flow_period', v); }catch(e){} renderHomeFlow(); }
+function renderHomeFlow(){
+  const body = document.getElementById('h-flow-body'); if(!body) return;
+  const sel = document.getElementById('h-flow-period'); if(sel) sel.value = HOME_FLOW_PERIOD;
+  const all = (STATE.transactions||[]).filter(t=>!isRemovedTx(t));
+  if(!all.length){ body.innerHTML = '<div style="text-align:center;color:var(--txt3);padding:16px;font-size:13px">거래내역을 불러오면 표시돼요</div>'; return; }
+  const ym = currentMonthStr(), yy = ym.slice(0,4);
+  const txs = all.filter(t=>{ const d=String(t.date); return HOME_FLOW_PERIOD==='month' ? d.slice(0,7)===ym : HOME_FLOW_PERIOD==='year' ? d.slice(0,4)===yy : true; });
+  const num = t => Number(t.amount)||0;
+  const incTx = txs.filter(t=>t.type==='수입');
+  const outTx = txs.filter(t=>t.type==='지출' && !isEventTx(t));
+  const saveTx = txs.filter(isSaveTx);
+  const inc = incTx.reduce((a,t)=>a+num(t),0);
+  const fix = outTx.filter(isFixedTx).reduce((a,t)=>a+num(t),0);
+  const out = outTx.reduce((a,t)=>a+num(t),0), vr = out-fix;
+  const save = saveTx.reduce((a,t)=>a+num(t),0);
+  const invMaj = ['주식','연금'];
+  const invest = saveTx.filter(t=>invMaj.indexOf(normBudgetKey(t.major||''))>=0).reduce((a,t)=>a+num(t),0);
+  const plainSave = save - invest;
+  const rest = inc - out - save;            // 쓰고 모으고도 통장에 남은 돈
+  const grow = inc - out;                   // 자산 증가(수입−지출) = 저축·투자 + 남은 돈
+  const byMajor = {}; incTx.forEach(t=>{ const k=t.major||'기타'; byMajor[k]=(byMajor[k]||0)+num(t); });
+  const maj = Object.entries(byMajor).sort((a,b)=>b[1]-a[1]);
+  const incRows = maj.slice(0,2).map(([k,v])=>[k,v]); const etc = maj.slice(2).reduce((a,[,v])=>a+v,0); if(etc>0) incRows.push(['기타',etc]);
+  const pct = v => inc>0 ? (Math.round(v/inc*1000)/10)+'%' : '';
+  const w = v => (v<0?'-':'')+Math.abs(Math.round(v)).toLocaleString('ko-KR')+'원';
+  const row = (l,v,c)=>`<div><span>${l}</span><b${c?` style="color:${c}"`:''}>${v<0?'-':''}${Math.abs(Math.round(v)).toLocaleString('ko-KR')}</b></div>`;
+  const periodLabel = HOME_FLOW_PERIOD==='month' ? `${+ym.slice(5)}월` : HOME_FLOW_PERIOD==='year' ? `${yy}년` : '전체 기간';
+  // 막대: 수입을 100%로 두고 지출 / 저축·투자 / 남은 돈으로 나눈다. 지출+저축이 수입을 넘으면 그 합을 100%로 보고 '초과'를 표시한다.
+  const over = rest<0;
+  const base = over ? (out+save) : inc;
+  const seg = (v,c,t)=> v>0 && base>0 ? `<span style="width:${(v/base*100).toFixed(2)}%;background:${c}" title="${t}"></span>` : '';
+  const bar = `<div class="hf-bar">${seg(out,'#E9A9A3','지출')}${seg(save,'#7F9BEA','저축·투자')}${over?'':seg(rest,'#9ACDB0','남은 돈')}</div>
+    <div class="hf-legend"><span><i style="background:#E9A9A3"></i>지출 ${pct(out)}</span><span><i style="background:#7F9BEA"></i>저축·투자 ${pct(save)}</span>${over
+      ? `<span style="color:var(--red-vivid)"><i style="background:var(--red-vivid)"></i>수입보다 ${w(-rest)} 더 나갔어요</span>`
+      : `<span><i style="background:#9ACDB0"></i>남은 돈 ${pct(rest)}</span>`}</div>`;
+  body.innerHTML = `<div class="hf-row">
+      <div class="hf-card hf-in"><div class="hf-h"><i>💰</i>수입</div><div class="hf-v">${w(inc)}</div><div class="hf-p">${inc>0?'(100%)':''}</div>
+        <div class="hf-d">${incRows.map(r=>row(r[0],r[1])).join('') || '<div><span>내역 없음</span></div>'}</div></div>
+      <div class="hf-card hf-out"><div class="hf-h"><i>💸</i>지출</div><div class="hf-v">${w(out)}</div><div class="hf-p">(${pct(out)||'-'})</div>
+        <div class="hf-d">${row('고정비',fix)}${row('변동비',vr)}</div></div>
+      <div class="hf-card hf-sv"><div class="hf-h"><i>🏦</i>저축 · 투자</div><div class="hf-v">${w(save)}</div><div class="hf-p">(${pct(save)||'-'})</div>
+        <div class="hf-d">${row('저축',plainSave)}${row('투자·연금',invest)}</div></div>
+      <div class="hf-card hf-as"><div class="hf-h"><i>🌱</i>자산 증가</div><div class="hf-v" style="color:${grow<0?'var(--red-vivid)':'var(--txt)'}">${w(grow)}</div><div class="hf-p">(${pct(grow)||'-'})</div>
+        <div class="hf-d">${row('저축·투자로',save)}${row('통장에 남은 돈',rest,rest<0?'var(--red-vivid)':'')}</div></div>
+    </div>${bar}
+    <div class="hf-note">${periodLabel} 기준 · 자산 증가 = 수입 − 지출 (저축·투자로 옮긴 돈 + 통장에 남은 돈) · 투자 평가손익은 포함하지 않아요 · 이벤트성(정산 이월형) 지출은 제외</div>`;
 }
 
 // ── 전체자산: 자산 구성 (시트 계좌 잔고 기반 — 하드코딩 데모값 제거) ──
@@ -4617,11 +4769,11 @@ function renderAssetOverview(){
           <div class="item-right" style="${invGain<0?'color:var(--red)':''}">${invGain<0?'-':'+'}${Math.abs(invGain).toLocaleString('ko-KR')}원</div>
         </div>
         <div id="assetgrp_invgain" style="display:${ASSET_GRP_OPEN['invgain']?'block':'none'};margin:2px 0 4px">
-          ${[['평가손익 (미실현)', Math.round(invT.unrealized)],
+          ${(()=>{ const _g=investIncomeByGroup(); return [['일반 투자계좌 손익 합계', Math.round(_g.gen.total)],['연금 · ISA 손익 합계', Math.round(_g.pen.total)]]; })().concat([['평가손익 (미실현)', Math.round(invT.unrealized)],
              ['실현손익 (매도 확정)', Math.round(invT.realized)],
              ['배당·분배금', Math.round(invT.dividend)],
              ['이자', Math.round(invT.interest)],
-             ['계좌 이용료', -Math.round(invT.usage)]]
+             ['계좌 이용료', -Math.round(invT.usage)]])
             .filter(r=>r[1]!==0).map(r=>`
             <div style="display:flex;justify-content:space-between;padding:5px 0 5px 14px;border-top:1px solid #F2F4F6;font-size:12px">
               <span style="color:var(--txt2)">${r[0]}</span>
@@ -4645,29 +4797,8 @@ function renderAssetOverview(){
       donutCardEl.style.display='none';
     } else {
       donutCardEl.style.display='';
-      const colors = ['#4A7DFF','#34C77B','#FFB020','#FF6B6B','#8A6DFF','#00B8D9'];
       const posSum = posGroups.reduce((s,x)=>s+x.val,0);
-      let accPct = 0;
-      const gradStops = posGroups.map((x,i)=>{
-        const pct = posSum>0 ? x.val/posSum*100 : 0;
-        const start = accPct, end = accPct+pct; accPct = end;
-        return `${colors[i%colors.length]} ${start}% ${end}%`;
-      }).join(', ');
-      donutEl.innerHTML = `<div style="display:flex;align-items:center;gap:18px">
-        <div style="width:96px;height:96px;border-radius:50%;flex:none;background:conic-gradient(${gradStops});position:relative">
-          <div style="position:absolute;inset:14px;border-radius:50%;background:var(--card);display:flex;align-items:center;justify-content:center;font-size:10.5px;color:var(--txt3);text-align:center;line-height:1.3">자산<br>배분</div>
-        </div>
-        <div style="flex:1;display:flex;flex-direction:column;gap:7px">
-          ${posGroups.map((x,i)=>{
-            const pct = posSum>0 ? Math.round(x.val/posSum*100) : 0;
-            return `<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px">
-              <span style="display:flex;align-items:center;gap:6px;color:var(--txt2)"><span style="width:8px;height:8px;border-radius:50%;background:${colors[i%colors.length]};flex:none"></span>${x.label}</span>
-              <span style="color:var(--txt3)">${pct}%</span>
-            </div>`;
-          }).join('')}
-        </div>
-      </div>
-      <div style="font-size:10.5px;color:var(--txt3);margin-top:10px">* 카드 미결제(부채)는 배분 비중 계산에서 제외</div>`;
+      donutEl.innerHTML = homeDonutHtml(posGroups, posSum);
     }
   }
 
@@ -4713,6 +4844,7 @@ function renderAssetOverview(){
     }
   }
 
+  try{ renderHomeInvestSummary(); }catch(e){}   // 현재가(보유종목)가 늦게 도착해도 투자 손익이 따라 갱신되게
   // 전체 수입/지출/저축 총액 + 월평균 (거래내역이 있는 전체 기간 기준 — 특정 달에 종속되지 않음)
   if(trendEl){
     const allTx = (STATE.transactions.length ? STATE.transactions : DEMO).filter(t=>!isRemovedTx(t));
@@ -14079,7 +14211,10 @@ var A2_ANNUAL_PICK = null;
 var A2_SUB_INIT = false;
 var A2_MONTH = '';          // 'YYYY-MM'
 var A2_YEAR = 0;
-var A2_OPEN = {};           // 'view|인코딩된키' → true (펼침)
+var A2_OPEN = {};           // 'view|인코딩된키' → true (펼침) — 달 이동·탭 전환에도 유지
+var A2_SUBOPEN = {};        // '대분류|소분류' → true (소분류 줄 펼침)
+var A2_SUBKEY = {};         // 이번에 그린 소분류 줄 id → 위 키
+var A2_BLOCKOPEN = {};      // 고정비/변동비 블록 id → true
 var A2_SEQ = 0;
 var A2_CACHE = null;        // { ym, cats } — 같은 달 안에서 세부 펼칠 때 재계산 방지
 var A2_YCACHE = null;       // { year, d }
@@ -14241,6 +14376,9 @@ function a2GroupsHtml(opts){
     var items = groups[g].slice().sort(function(a,b){ return String(b.date).localeCompare(String(a.date)); });
     var amt = sum(g);
     var sid = 'a2s'+(++A2_SEQ);
+    var skey = (opts.major||'')+'|'+g;
+    A2_SUBKEY[sid] = skey;
+    var sopen = !!A2_SUBOPEN[skey];
     var sb = opts.subBud ? (opts.subBud(g)||0) : 0;
     var over = sb>0 && amt>sb;
     var share = (tot>0 && amt>0) ? Math.round(amt/tot*100)+'%' : '';
@@ -14256,14 +14394,14 @@ function a2GroupsHtml(opts){
       : (opts.groupMemo ? (opts.groupMemo(g)||'') : '');
     return '<div class="a2-sub">'
       +'<div class="a2-subhead" onclick="a2ToggleSub(\''+sid+'\')">'
-        +'<span class="a2-car" id="'+sid+'_c">▸</span>'
+        +'<span class="a2-car" id="'+sid+'_c">'+(sopen?'▾':'▸')+'</span>'
         +'<span class="a2-subname">'+a2e(g)+'<small>'+groups[g].length+'건</small></span>'
         +(sb>0 ? '<span class="a2-subbud">예산 '+a2num(sb)+'</span>' : '')
         +'<span class="a2-subamt'+(amt<0?' a2-neg':'')+'"'+(over?' style="color:var(--red-vivid)"':'')+'>'+a2won(amt)+'</span>'
         +(share ? '<span class="a2-share" style="min-width:26px">'+share+'</span>' : '')
       +'</div>'
       +(opts.groupMemoInline ? (opts.groupMemoInline(g)||'') : '')
-      +'<div class="a2-subtx" id="'+sid+'">'+memo+rows+'</div>'
+      +'<div class="a2-subtx" id="'+sid+'"'+(sopen?' style="display:block"':'')+'>'+memo+rows+'</div>'
     +'</div>';
   }).join('');
 }
@@ -14273,6 +14411,7 @@ function a2ToggleSub(id){
   var open = el.style.display!=='block';
   el.style.display = open ? 'block' : 'none';
   if(car) car.textContent = open ? '▾' : '▸';
+  if(A2_SUBKEY[id]) A2_SUBOPEN[A2_SUBKEY[id]] = open;   // 기억해 두었다가 다시 그릴 때 복원
 }
 // 지출 카테고리 한 개의 세부
 function a2OutBody(c, ym, withMeta){
@@ -14438,7 +14577,9 @@ function a2Toggle(view, enc, kind){
 function a2ToggleBlock(id){
   var el = document.getElementById(id);
   if(!el) return;
-  el.style.display = (el.style.display==='block') ? 'none' : 'block';
+  var open = el.style.display!=='block';
+  el.style.display = open ? 'block' : 'none';
+  A2_BLOCKOPEN[id] = open;
 }
 // 펼침 상태를 기억해 두었다가 다시 그릴 때 그대로 복원한다
 function a2IsOpen(view, enc){ return !!A2_OPEN[view+'|'+enc]; }
@@ -14463,7 +14604,7 @@ function a2Nav(d){
     if(nx > currentMonthStr()) return;
     A2_MONTH = nx; A2_YEAR = parseInt(nx.slice(0,4),10);
   }
-  A2_OPEN = {};
+  // 펼침 상태(A2_OPEN)는 비우지 않는다 — 같은 항목이면 달을 넘겨도 열린 채로 보이게
   renderAna2();
 }
 function a2SetSub(sub){
@@ -14473,7 +14614,6 @@ function a2SetSub(sub){
 }
 function a2GoMonth(ym, sub){
   A2_MONTH = ym; A2_YEAR = parseInt(ym.slice(0,4),10);
-  A2_OPEN = {};
   if(sub){ A2_SUB = sub; try{ LS.set('a2_sub', sub); }catch(e){} }
   renderAna2();
   window.scrollTo({ top:0, behavior:'smooth' });
@@ -14663,7 +14803,7 @@ function a2FixedVarCardHtml(cats, cur){
         +'<span class="a2-amt">'+a2won(x.v)+'</span></div>'
         +a2DetailHostHtml(view, x.c.key, 'out', open)+'</div>';
     }).join('');
-    return '<div id="'+id+'" style="display:none;margin:2px 0 8px">'+(rows || '<div class="a2-empty">없음</div>')+'</div>';
+    return '<div id="'+id+'" style="display:'+(A2_BLOCKOPEN[id]?'block':'none')+';margin:2px 0 8px">'+(rows || '<div class="a2-empty">없음</div>')+'</div>';
   };
   // 예산 합 대비 — 항목(카테고리)에 설정해둔 고정·비고정 구분 기준으로 예산 합을 모아 비교한다
   var budFV = { fixed:{bud:0,spend:0}, var:{bud:0,spend:0} };
