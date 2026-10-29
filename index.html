@@ -4494,6 +4494,11 @@ function fetchFromSheet(silent) {
         gbMemoMergeFromSheet(data.cellMemos);
       }
 
+      // ⑤ 현금흐름 일정 (시트 '현금흐름_설정'을 원본으로 반영 — 다른 기기에서 체크·수정한 것도 그대로 보이게)
+      if(data.cashPlan){
+        cashPlanMergeFromSheet(data.cashPlan);
+      }
+
       // [수정] 예전엔 여기서 화면을 그리다 에러가 나도 아래 .catch로 떨어져
       //        '시트 연결 실패'라고 떴다. 시트는 잘 받아왔는데 원인을 시트 탓으로
       //        오해하게 만드는 메시지라, 통신 실패와 렌더 실패를 나눠서 알려준다.
@@ -7578,6 +7583,10 @@ function renderCfgAccounts(){
         ? `<input value="${Number(a.goal)||''}" placeholder="목표금액" inputmode="numeric"
              title="이 계좌로 모으려는 최종 금액 — 연간 리포트에 진행률로 표시됩니다"
              oninput="cfgSetAcct(${i},'goal',this.value)" style="${CT.num}">`
+        : a.group==='debt'
+        ? `<input value="${Number(a.goal)||''}" placeholder="한도" inputmode="numeric"
+             title="이 카드의 한도(원) — 설정해두면 카드결제현황에서 사용액 대비 한도를 함께 보여줍니다"
+             oninput="cfgSetAcct(${i},'goal',this.value)" style="${CT.num}">`
         : '<span></span>'}
       <label title="숨기기 (잔액 0인 계좌만)" style="display:flex;justify-content:center;cursor:pointer">
         <input type="checkbox" ${a.hidden?'checked':''} onchange="cfgSetAcct(${i},'hidden',this.checked)">
@@ -7629,7 +7638,7 @@ function renderCfgAccounts(){
     ${datalists}
     <div style="${AT.head}">
       <span>이름</span><span>대분류</span><span>소분류</span>
-      <span style="text-align:right">현재 잔액</span><span style="text-align:right">목표금액</span>
+      <span style="text-align:right">현재 잔액</span><span style="text-align:right">목표금액/한도</span>
       <span style="text-align:center">숨김</span><span></span>
     </div>
     ${blocks || '<div style="font-size:12.5px;color:var(--txt3);padding:12px 0">아직 등록한 계좌가 없어요</div>'}
@@ -11183,7 +11192,32 @@ function loadCashPlan(){
   }catch(e){}
   return p;
 }
-function saveCashPlanObj(p){ try{ LS.set(CASH_PLAN_KEY, JSON.stringify(p)); }catch(e){} }
+// [v1 추가] 현금흐름은 그동안 이 기기의 localStorage에만 저장돼서, 다른 기기·브라우저에서
+//   열면 다른 상태(체크 여부·금액)가 보였다. 구글시트 쪽 핸들러(getCashPlan_/saveCashPlan_)는
+//   이미 있었는데 앱이 한 번도 호출하지 않아 그냥 묵혀 있었다. 이제 저장할 때마다 시트로도
+//   올리고, 시트를 받아올 때(fetchFromSheet)마다 그 값으로 맞춘다 — 기기 간 체크 상태가 어긋나던 문제의 원인.
+let CASH_PLAN_PUSH_TIMER = null;
+function cashPlanPushToSheet(p){
+  const url = getUrl();
+  if(!url) return;
+  clearTimeout(CASH_PLAN_PUSH_TIMER);
+  CASH_PLAN_PUSH_TIMER = setTimeout(function(){
+    fetch(url, { method:'POST', headers:{'Content-Type':'text/plain'},
+      body: JSON.stringify({ action:'saveCashPlan', plan:p }) }).catch(function(){});
+  }, 500);
+}
+function saveCashPlanObj(p){ try{ LS.set(CASH_PLAN_KEY, JSON.stringify(p)); }catch(e){} cashPlanPushToSheet(p); }
+// 시트에서 받은 현금흐름을 로컬에 반영 — 시트가 있으면 시트가 원본
+function cashPlanMergeFromSheet(plan){
+  if(!plan || !Array.isArray(plan.items)) return;
+  CASH_PLAN = plan;
+  if(!CASH_PLAN.cardPayDays) CASH_PLAN.cardPayDays = {};
+  if(!CASH_PLAN.cashAccounts) CASH_PLAN.cashAccounts = [];
+  if(!CASH_PLAN.manual) CASH_PLAN.manual = {};
+  try{ LS.set(CASH_PLAN_KEY, JSON.stringify(CASH_PLAN)); }catch(e){}
+  try{ if(typeof renderCashPlan==='function') renderCashPlan(); }catch(e){}
+  try{ if(typeof renderCashEdit==='function') renderCashEdit(); }catch(e){}
+}
 let CASH_PLAN = null;
 
 // ── 이전 앱의 고정 지출 일정 가져오기 ──
