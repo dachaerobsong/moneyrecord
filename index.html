@@ -11197,19 +11197,41 @@ function loadCashPlan(){
 //   이미 있었는데 앱이 한 번도 호출하지 않아 그냥 묵혀 있었다. 이제 저장할 때마다 시트로도
 //   올리고, 시트를 받아올 때(fetchFromSheet)마다 그 값으로 맞춘다 — 기기 간 체크 상태가 어긋나던 문제의 원인.
 let CASH_PLAN_PUSH_TIMER = null;
+// [v2 수정] 체크하자마자 바로 다른 작업(거래 추가 등)이 "시트 불러오기"를 같이 돌리면,
+//   0.5초 디바운스가 끝나기 전에 옛 시트 값을 먼저 받아와 방금 한 수기 수정을 덮어써버릴
+//   수 있었다. 로컬에서 막 저장한 직후 몇 초간은 시트에서 받은 값으로 덮지 않는다.
+let CASH_PLAN_DIRTY_UNTIL = 0;
 function cashPlanPushToSheet(p){
   const url = getUrl();
-  if(!url) return;
+  // [v3 추가] 이전엔 URL이 비어있거나 전송이 실패해도 조용히 넘어가서, 눈으로는
+  //   저장됐는지 아닌지 알 방법이 개발자도구 없이는 없었다. 이제 성공/실패를 토스트로 바로 보여준다.
+  if(!url){ if(typeof showToast==='function') showToast('⚠️ 현금흐름 저장 실패: 이 기기엔 시트 URL이 설정 안 돼 있어요'); return; }
   clearTimeout(CASH_PLAN_PUSH_TIMER);
   CASH_PLAN_PUSH_TIMER = setTimeout(function(){
     fetch(url, { method:'POST', headers:{'Content-Type':'text/plain'},
-      body: JSON.stringify({ action:'saveCashPlan', plan:p }) }).catch(function(){});
+      body: JSON.stringify({ action:'saveCashPlan', plan:p }) })
+      .then(function(r){ return r.json ? r.json().catch(function(){return null;}) : null; })
+      .then(function(res){
+        CASH_PLAN_DIRTY_UNTIL = 0;
+        if(typeof showToast==='function'){
+          if(res && res.ok===false) showToast('⚠️ 현금흐름 시트 저장 오류: ' + (res.error||''));
+          else showToast('✅ 현금흐름 시트에 저장됨');
+        }
+      })
+      .catch(function(err){
+        if(typeof showToast==='function') showToast('⚠️ 현금흐름 저장 통신 실패: ' + String((err&&err.message)||err).slice(0,60));
+      });
   }, 500);
 }
-function saveCashPlanObj(p){ try{ LS.set(CASH_PLAN_KEY, JSON.stringify(p)); }catch(e){} cashPlanPushToSheet(p); }
+function saveCashPlanObj(p){
+  try{ LS.set(CASH_PLAN_KEY, JSON.stringify(p)); }catch(e){}
+  CASH_PLAN_DIRTY_UNTIL = Date.now() + 4000; // 전송 끝날 때까지 서버값으로 덮어쓰지 않을 유예
+  cashPlanPushToSheet(p);
+}
 // 시트에서 받은 현금흐름을 로컬에 반영 — 시트가 있으면 시트가 원본
 function cashPlanMergeFromSheet(plan){
   if(!plan || !Array.isArray(plan.items)) return;
+  if(Date.now() < CASH_PLAN_DIRTY_UNTIL) return; // 방금 로컬에서 저장한 게 아직 전송 중이면 건너뛴다
   CASH_PLAN = plan;
   if(!CASH_PLAN.cardPayDays) CASH_PLAN.cardPayDays = {};
   if(!CASH_PLAN.cashAccounts) CASH_PLAN.cashAccounts = [];
