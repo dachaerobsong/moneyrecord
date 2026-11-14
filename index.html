@@ -8654,13 +8654,17 @@ function cfgApply(){
       //        결제일만 적어둔 항목(금액 미정) · 계좌를 안 고른 항목이 타임라인에서 통째로
       //        빠지던 원인. 이제 결제일이 있으면 0원으로라도 줄을 만들고(✎로 금액 수정 가능),
       //        카드 예산에는 예전처럼 금액이 있을 때만 더한다.
-      const push = (name, amount, acct, day) => {
+      // [v53] "덕질"처럼 이체(이동) 카테고리 이름을 실제 지출 카테고리로도 그대로 쓰는 경우,
+      //   현금흐름 완료 판정이 그 달의 "실제 쓴 금액(지출)"까지 전부 더해서 이체 예정액(예: 5만원)과
+      //   전혀 안 맞는 금액으로 '완료'로 잡혔다. 이동(이체) 카테고리에서 만든 항목은 기본적으로
+      //   이체(이동/저축) 내역만 완료 근거로 보도록 transferOnly를 표시해 둔다. (findPaidInfo에서 사용)
+      const push = (name, amount, acct, day, kind) => {
         amount = Number(amount)||0;
         day = Number(day)||0;
         acct = String(acct||'').trim();
         const isCard = !!acct && acctGroup[acct]==='debt';
         if(isCard && amount>0) cardBud[acct] = (cardBud[acct]||0) + amount;
-        if(day>0) items.push({ name, amount, day, source: isCard?'card':'bank', acct, auto:true });
+        if(day>0) items.push({ name, amount, day, source: isCard?'card':'bank', acct, auto:true, transferOnly: kind==='이동' });
       };
 
       ['지출','이동'].forEach(kind=>{
@@ -8678,10 +8682,10 @@ function cfgApply(){
                 if(per.from && cm < per.from) return;
                 if(per.to   && cm > per.to)   return;
               }
-              push(sn, Number(sb[sn])||0, m.acct||c.acct||'', Number(m.day||c.day)||0);
+              push(sn, Number(sb[sn])||0, m.acct||c.acct||'', Number(m.day||c.day)||0, kind);
             });
           } else {
-            push(c.major, cfgMajorBudget(c), c.acct||'', Number(c.day)||0);
+            push(c.major, cfgMajorBudget(c), c.acct||'', Number(c.day)||0, kind);
           }
         });
       });
@@ -8702,10 +8706,17 @@ function cfgApply(){
         //   예외가 페이지를 새로고침할 때마다(=cfgApply가 돌 때마다) 사라지고 있었다.
         //   같은 이름의 이전 auto 항목에 overrides가 있으면 새로 만든 항목으로 옮겨 붙인다.
         const prevOverridesByName = {};
+        // [v53] transferOnly를 타임라인 ✎ 옆 체크박스로 직접 바꾼 적이 있으면(transferOnlyManual),
+        //   그 값을 설정 재적용 뒤에도 그대로 유지한다. 안 그러면 설정을 저장할 때마다 되돌아간다.
+        const prevTransferOnlyByName = {};
         (CASH_PLAN.items||[]).forEach(it=>{
           if(it.auto && it.overrides && Object.keys(it.overrides).length) prevOverridesByName[it.name] = it.overrides;
+          if(it.auto && it.transferOnlyManual) prevTransferOnlyByName[it.name] = it.transferOnly;
         });
-        items.forEach(it=>{ if(prevOverridesByName[it.name]) it.overrides = prevOverridesByName[it.name]; });
+        items.forEach(it=>{
+          if(prevOverridesByName[it.name]) it.overrides = prevOverridesByName[it.name];
+          if(prevTransferOnlyByName[it.name] !== undefined){ it.transferOnly = prevTransferOnlyByName[it.name]; it.transferOnlyManual = true; }
+        });
         CASH_PLAN.items = manual.concat(items);
         // [v7 수정] 여기서 설정 › 급여일 값으로 매번 덮어써서, 현금흐름 탭에서 급여일을
         //   따로 바꿔도(예: 카드 결제 기준일 등) 다음 동기화 때 25일로 되돌아갔다.
@@ -11322,6 +11333,9 @@ function cashMatchStrength(name){
 function cashItemMatcher(name){ const m = cashMatchStrength(name); return t => m(t) > 0; }
 // 나가는 돈으로 볼 수 있는 거래 종류만 납부 근거가 된다 (수입·이자·분배금 같은 들어온 돈은 제외)
 const CASH_PAY_TYPES = ['지출','이동','저축','출금'];
+// [v53] "덕질"처럼 이체 카테고리명을 실제 지출 분류로도 쓰는 항목은, 완료 판정에서 '지출' 내역까지
+//   끌어오면 안 된다 — 이체(이동/저축)로 실제 그 계좌에 보낸 돈만 '완료'로 본다.
+const CASH_PAY_TYPES_TRANSFER_ONLY = ['이동','저축','출금'];
 // 내역에 해당 작업이 기록되면 자동 납부로 간주 (같은 달 기준) — 매칭된 거래(들)의 합계 금액 반환
 // 발급사가 같은 카드가 여러 장이면 그 달 결제 이체가 여러 건일 수 있어 반드시 합산해야 함
 // skipManual=true 면 수기 체크를 무시한 '자동 판정'만 돌려준다 (수기 체크 토글용)
@@ -11360,8 +11374,9 @@ function findPaidInfo(e, skipManual){
   //   10월 항목 쪽으로 넘어가 버려서(9월 항목엔 1건만, 10월 항목엔 9월 내역이 잡힘) 달력 월 기준으로 되돌렸다.
   const lo = em+'-01', hi = em+'-31';
   const strength = cashMatchStrength(e.name);
+  const payTypes = e.transferOnly ? CASH_PAY_TYPES_TRANSFER_ONLY : CASH_PAY_TYPES;
   const matches = txs.filter(t=>{
-    if(CASH_PAY_TYPES.indexOf(t.type) < 0) return false;
+    if(payTypes.indexOf(t.type) < 0) return false;
     const ds = String(t.date).slice(0,10);
     return ds >= lo && ds <= hi && done(t) && strength(t) > 0;
   });
@@ -11434,7 +11449,7 @@ function buildCashEvents(plan, offset){
       // [v6 추가] 이 항목이 어느 계좌로 들어가는지(acct/moveTo)를 이벤트에도 그대로 넘긴다.
       //   목적지가 여전히 '1차(가용) 잔고'에 속한 계좌라면 총 현금은 안 줄어드는 내부 이동이라,
       //   이 정보가 있어야 아래에서 그런 이벤트를 필요현금 계산에서 뺄 수 있다.
-      if(eff===dd) events.push({date:new Date(cur), name:it.name, amount, source:it.source||'bank', ym, key: ym+'|'+it.name, cs:cycleStart, ce:viewEnd, overridden: !!ov, acct: it.acct||it.moveTo||''});
+      if(eff===dd) events.push({date:new Date(cur), name:it.name, amount, source:it.source||'bank', ym, key: ym+'|'+it.name, cs:cycleStart, ce:viewEnd, overridden: !!ov, acct: it.acct||it.moveTo||'', transferOnly: !!it.transferOnly});
     });
     Object.entries(plan.cardPayDays||{}).forEach(([issuer,payDay])=>{
       const eff=Math.min(Number(payDay)||14, monLast);
@@ -11770,7 +11785,11 @@ function renderCashEdit(){
         ${srcOpts.map(s=>`<option value="${s}"${it.source===s?' selected':''}>${s==='bank'?'통장':s}</option>`).join('')}
       </select>
       ${locked ? `<span style="font-size:9.5px;color:var(--blue);white-space:nowrap" title="설정 › 카테고리에서 고치세요">🔒자동</span>` : `<button onclick="cashDeleteItem(${i})" style="border:none;background:none;color:var(--txt3);font-size:16px;cursor:pointer;padding:2px">✕</button>`}
-    </div>${moveToTag?`<div style="margin:-5px 0 8px 4px">${moveToTag}</div>`:''}`;
+    </div>${moveToTag?`<div style="margin:-5px 0 8px 4px">${moveToTag}</div>`:''}
+    <label style="display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--txt3);margin:-5px 0 10px 4px;cursor:pointer">
+      <input type="checkbox" ${it.transferOnly?'checked':''} onchange="cashEditField(${i},'transferOnly',this.checked)" style="margin:0">
+      이체(이동)로 보낸 돈만 완료로 인정 <span style="opacity:.75">— 끄면 같은 이름의 실제 지출 내역도 합산해요</span>
+    </label>`;
   }).join('');
   b.innerHTML=`
     <div style="font-size:12px;color:var(--txt3);margin-bottom:10px;line-height:1.6">항목별로 금액·날짜·출금처(통장/비상금/정보용)를 수정하세요. ‘정보’는 현금 계산에서 제외됩니다.<br>
@@ -11810,6 +11829,8 @@ function renderCashEdit(){
 function cashEditField(i,key,val){
   if(key==='amount'||key==='day') val=parseInt(String(val).replace(/[^0-9-]/g,''))||0;
   CASH_PLAN.items[i][key]=val;
+  // [v53] 체크박스로 transferOnly를 직접 바꾸면, 설정 재적용 때도 이 값을 지키도록 표시해 둔다.
+  if(key==='transferOnly') CASH_PLAN.items[i].transferOnlyManual = true;
   saveCashPlanObj(CASH_PLAN);
   renderCashPlan();
 }
