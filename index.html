@@ -1945,11 +1945,15 @@ function nextYmOf(ym){
 //   규칙은 하나로 못 박는다 — M월에 쓴 값은 M+1월에 결제된다.
 function cardPaidMap(ym){
   const want = nextYmOf(ym);
+  // [+1/-1 허용] 원래는 '다음 달'에 찍힌 결제만 완납으로 쳤는데,
+  //   선결제(같은 달에 바로 납부)나 해지 과정에서 밀려서 한 달 늦게(그 다음 달) 같이 결제되는
+  //   경우를 놓쳐서 넓혔다. want 기준 -1(=ym, 선결제) ~ +1(한 달 늦은 결제)까지 인정.
+  const allowYm = [ym, want, nextYmOf(want)];
   const out = {};
   ((typeof STATE!=='undefined' && STATE.transactions) || []).forEach(t=>{
     if(t.type!=='이동' && t.type!=='저축') return;
     if(normBudgetKey(t.major)!=='카드납부') return;
-    if(String(t.date).slice(0,7)!==want) return;
+    if(allowYm.indexOf(String(t.date).slice(0,7)) < 0) return;
     const card = String(t.inAcct||'').trim();
     if(!card) return;
     const rec = out[card] = out[card] || { amount:0, dates:[] };
