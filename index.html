@@ -1945,15 +1945,11 @@ function nextYmOf(ym){
 //   규칙은 하나로 못 박는다 — M월에 쓴 값은 M+1월에 결제된다.
 function cardPaidMap(ym){
   const want = nextYmOf(ym);
-  // [+1/-1 허용] 원래는 '다음 달'에 찍힌 결제만 완납으로 쳤는데,
-  //   선결제(같은 달에 바로 납부)나 해지 과정에서 밀려서 한 달 늦게(그 다음 달) 같이 결제되는
-  //   경우를 놓쳐서 넓혔다. want 기준 -1(=ym, 선결제) ~ +1(한 달 늦은 결제)까지 인정.
-  const allowYm = [ym, want, nextYmOf(want)];
   const out = {};
   ((typeof STATE!=='undefined' && STATE.transactions) || []).forEach(t=>{
     if(t.type!=='이동' && t.type!=='저축') return;
     if(normBudgetKey(t.major)!=='카드납부') return;
-    if(allowYm.indexOf(String(t.date).slice(0,7)) < 0) return;
+    if(String(t.date).slice(0,7)!==want) return;
     const card = String(t.inAcct||'').trim();
     if(!card) return;
     const rec = out[card] = out[card] || { amount:0, dates:[] };
@@ -1968,6 +1964,19 @@ function cardPaidWhen(card){
   const r = CARD_PAID[card];
   if(!r || !r.dates.length) return '';
   return r.dates.sort().map(d=>Number(d.slice(5,7))+'/'+Number(d.slice(8,10))).join(', ');
+}
+// ── 완납 수동 예외 처리 ──
+// 자동 판정(날짜가 '다음 달'인지)에 안 걸리는 특수 케이스(해지하며 두 달치를 한 번에 결제 등)를
+// 위해, 카드×조회월 단위로 "그냥 완납 처리"를 수동으로 켜고 끌 수 있게 한다.
+function cardPaidManual(card, ym){
+  try{ return !!((CFG.cardPaidManual||{})[String(card||'').trim()+'|'+String(ym||'').trim()]); }catch(e){ return false; }
+}
+function cardPaidManualToggle(card, ym){
+  CFG.cardPaidManual = CFG.cardPaidManual || {};
+  const k = String(card||'').trim()+'|'+String(ym||'').trim();
+  if(CFG.cardPaidManual[k]) delete CFG.cardPaidManual[k]; else CFG.cardPaidManual[k] = true;
+  cfgSave();
+  if(typeof renderCardStatus==='function') renderCardStatus();
 }
 
 // [v36] 카드 실적 세부 — 실적 금액(할인·수수료 가감 후) 기준으로 고정비/변동비와 카테고리를 나눈다.
@@ -2214,23 +2223,35 @@ function cardPayLine(card, used, issuer){
   if(used<=0) return '';
   const paid = cardPaidAmt(card);
   const left = used - paid;
-  const settled = left <= Math.max(1000, used*0.01);   // 1% 또는 1,000원 이내면 완납으로 본다
-  if(paid>0 && settled){
+  const auto = left <= Math.max(1000, used*0.01);   // 1% 또는 1,000원 이내면 완납으로 본다
+  const manual = (typeof cardPaidManual==='function') && cardPaidManual(card, CARD_MONTH);
+  const settled = auto || manual;
+  if(settled){
     const when = cardPaidWhen(card);
+    const manualTag = (manual && !auto) ? ' · 예외 처리' : '';
     return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:2px 0 6px;padding:6px 10px;background:var(--green-bg);border-radius:10px;font-size:11.5px">
-      <span style="color:var(--green);font-weight:700">✓ 납부 완료${when?` · ${when} 결제`:''}</span>
-      <span style="color:var(--txt3)">낸 금액 ${won(paid)}</span>
+      <span style="color:var(--green);font-weight:700">✓ 납부 완료${when?` · ${when} 결제`:''}${manualTag}</span>
+      <span style="display:flex;align-items:center;gap:6px">
+        <span style="color:var(--txt3)">낸 금액 ${won(paid)}</span>
+        ${manual ? `<button onclick="event.stopPropagation();cardPaidManualToggle('${jq(card)}','${jq(CARD_MONTH)}')" style="border:none;background:none;color:var(--txt3);font-size:10px;cursor:pointer;text-decoration:underline">예외 해제</button>` : ''}
+      </span>
     </div>`;
   }
+  const exceptBtn = `<button onclick="event.stopPropagation();cardPaidManualToggle('${jq(card)}','${jq(CARD_MONTH)}')"
+    style="margin-top:4px;width:100%;padding:5px 10px;border:1px dashed #C9CDD2;border-radius:10px;background:none;color:var(--txt3);font-size:10.5px;cursor:pointer">다른 달 결제분과 합쳐 냈어요 · 완납으로 예외 처리</button>`;
   if(paid>0){
     return `<div style="margin:2px 0 4px">
       <div style="font-size:11px;color:var(--txt3);padding:0 2px 4px">일부 납부 ${won(paid)} · 남은 결제 예정 <b style="color:var(--txt2)">${won(left)}</b></div>
       <button onclick="event.stopPropagation();cardPayEntry('${jq(issuer)}','${jq(card)}',${Math.round(left)})"
         style="width:100%;padding:7px 10px;border:1px solid #E5E8EB;border-radius:10px;background:#FFF;color:var(--txt2);font-size:11.5px;font-weight:600;cursor:pointer">💳 ${card} 잔액 납부 · ${won(left)}</button>
+      ${exceptBtn}
     </div>`;
   }
-  return `<button onclick="event.stopPropagation();cardPayEntry('${jq(issuer)}','${jq(card)}',${used})"
-    style="width:100%;margin:2px 0 4px;padding:7px 10px;border:1px solid #E5E8EB;border-radius:10px;background:#FFF;color:var(--txt2);font-size:11.5px;font-weight:600;cursor:pointer">💳 ${card} 납부 입력 · ${won(used)}</button>`;
+  return `<div style="margin:2px 0 4px">
+    <button onclick="event.stopPropagation();cardPayEntry('${jq(issuer)}','${jq(card)}',${used})"
+      style="width:100%;padding:7px 10px;border:1px solid #E5E8EB;border-radius:10px;background:#FFF;color:var(--txt2);font-size:11.5px;font-weight:600;cursor:pointer">💳 ${card} 납부 입력 · ${won(used)}</button>
+    ${exceptBtn}
+  </div>`;
 }
 function cardCatLine(card, catByCard){
   const catMap = (catByCard && catByCard[card]) || {};
@@ -2271,11 +2292,16 @@ function cardDetailRows(g, useObj, budObj, catByCard){
     if(!off) F.settled.forEach(x=>allSettled.push(x));
 
     const paidAmt = cardPaidAmt(c);
-    const settledPay = paidAmt>0 && (used - paidAmt) <= Math.max(1000, used*0.01);
+    const autoSettled = paidAmt>0 && (used - paidAmt) <= Math.max(1000, used*0.01);
+    const manualSettled = (typeof cardPaidManual==='function') && cardPaidManual(c, CARD_MONTH);
+    const settledPay = autoSettled || manualSettled;
     const payCell = used<=0 ? '<span style="font-size:11px;color:var(--txt3)">—</span>'
       : settledPay
-        ? `<span style="font-size:10.5px;color:var(--green);font-weight:700">✓ ${cardPaidWhen(c)||'완료'}</span>`
-        : `<button onclick="event.stopPropagation();cardPayEntry('${jq(g.issuer)}','${jq(c)}',${Math.round(used - paidAmt)})" style="font-size:10.5px;padding:3px 8px;border:1px solid #E5E8EB;border-radius:8px;background:#FFF;color:var(--txt2);cursor:pointer;white-space:nowrap">납부</button>`;
+        ? `<span onclick="event.stopPropagation();${manualSettled?`cardPaidManualToggle('${jq(c)}','${jq(CARD_MONTH)}')`:''}" style="font-size:10.5px;color:var(--green);font-weight:700;${manualSettled?'cursor:pointer;text-decoration:underline dotted':''}">✓ ${cardPaidWhen(c)||(manualSettled&&!autoSettled?'완료(예외)':'완료')}</span>`
+        : `<span style="display:inline-flex;gap:4px;align-items:center">
+            <button onclick="event.stopPropagation();cardPayEntry('${jq(g.issuer)}','${jq(c)}',${Math.round(used - paidAmt)})" style="font-size:10.5px;padding:3px 8px;border:1px solid #E5E8EB;border-radius:8px;background:#FFF;color:var(--txt2);cursor:pointer;white-space:nowrap">납부</button>
+            <button onclick="event.stopPropagation();cardPaidManualToggle('${jq(c)}','${jq(CARD_MONTH)}')" title="다른 달 결제분과 합쳐 냈을 때" style="font-size:10.5px;padding:3px 6px;border:1px dashed #C9CDD2;border-radius:8px;background:none;color:var(--txt3);cursor:pointer;white-space:nowrap">예외</button>
+          </span>`;
 
     // [v50] 고정비 항목도 표의 열에 맞춰 찍는다 — 금액이 실적 열 아래 세로로 정렬돼
     //   위 실적 숫자와 바로 비교된다.
