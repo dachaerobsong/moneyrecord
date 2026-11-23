@@ -2014,7 +2014,7 @@ function cfgFixedPayMap(ym){
   const out = {};
   try{
     ((typeof CFG!=='undefined' && CFG && CFG.categories && CFG.categories['지출']) || []).forEach(c=>{
-      if((c.flags||'').indexOf('fixed')<0) return;
+      const isFixedCat = (c.flags||'').indexOf('fixed')>=0;
       const meta = c.subMeta||{}, sb = c.subBudget||{};
       (c.subs||[]).forEach(sn=>{
         if(!sn) return;
@@ -2028,7 +2028,7 @@ function cfgFixedPayMap(ym){
           if((m.from&&ym<m.from)||(m.to&&ym>m.to)) active = false;
           acct = m.acct||c.acct||'';
         }
-        out[stripSp(sn)] = { name:sn, acct, amount, active };
+        out[stripSp(sn)] = { name:sn, acct, amount, active, fixed:isFixedCat };
       });
     });
   }catch(e){}
@@ -2073,7 +2073,7 @@ function cardPerfPendingFixed(ym, cards, fixItems){
     if(fixItems[name] !== undefined){
       // [v47] 이미 나간 고정비 — 예상보다 덜 나왔으면 그만큼 비고정비로 더 써야 실적이 찬다.
       //   "고정비 5만 예상 → 가스비 5천 확정 → 비고정비로 4만5천 더" 흐름이 여기서 나온다.
-      settled.push({ name, actual: Math.abs(fixItems[name]), expect, diff: expect - Math.abs(fixItems[name]) });
+      settled.push({ name, actual: Math.abs(fixItems[name]), expect, diff: expect - Math.abs(fixItems[name]), src: overrideAmt != null ? 'override' : (actualAmt > 0 ? 'last' : 'plan') });
       return;
     }
     // [v47] 예정 금액은 양수로 담는다. 음수로 담았더니 예상 고정비 합계와
@@ -2083,7 +2083,7 @@ function cardPerfPendingFixed(ym, cards, fixItems){
   // 설정상 이 달엔 이 카드로 결제되는데 지난달엔 다른 카드였던 항목(카드 변경분)을 예정으로 추가한다
   Object.keys(eff).forEach(k=>{
     const e = eff[k];
-    if(!e.active || !e.acct || cards.indexOf(e.acct)<0) return;
+    if(!e.fixed || !e.active || !e.acct || cards.indexOf(e.acct)<0) return;
     if(Object.keys(last).some(n=>stripSp(n)===k)) return;                       // 위에서 이미 처리됨
     if(Object.keys(fixItems||{}).some(n=>stripSp(n)===k)) return;               // 이미 이 카드로 나감
     const ov = cardPendOverrideGet(e.name);
@@ -2174,7 +2174,7 @@ function cardPerfDetailHtml(bd, target, perf, ym, cards){
       ${paid.map(([n,v])=>{
         const st = settled.find(x=>x.name===n);
         const tag = (st && Math.abs(st.diff)>=1000)
-          ? ` <span style="font-size:9.5px;color:${st.diff>0?'var(--blue)':'var(--warning)'}">예상 ${won(st.expect)} 대비 ${st.diff>0?'−':'+'}${won(Math.abs(st.diff))}</span>` : '';
+          ? ` <span style="font-size:9.5px;color:${st.diff>0?'var(--blue)':'var(--warning)'}">${st.src==='last'?'전월':st.src==='override'?'직접입력':'설정'} ${won(st.expect)} → ${won(st.actual)} (${st.diff>0?'−':'+'}${won(Math.abs(st.diff))})</span>` : '';
         return line(n + tag, v, true);
       }).join('')}
       ${pending.map(p=>line(p.name, p.amount, false, p.src)).join('')}
@@ -2291,7 +2291,7 @@ function cardDetailRows(g, useObj, budObj, catByCard){
     Object.entries(F.bd.fixItems).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1])).forEach(([n,v])=>{
       const st = F.settled.find(x=>x.name===n);
       const tag = (st && Math.abs(st.diff)>=1000)
-        ? ` <span style="color:${st.diff>0?'var(--blue)':'var(--warning)'}">예상 ${won(st.expect)} 대비 ${st.diff>0?'−':'+'}${won(Math.abs(st.diff))}</span>` : '';
+        ? ` <span style="color:${st.diff>0?'var(--blue)':'var(--warning)'}">${st.src==='last'?'전월':st.src==='override'?'직접입력':'설정'} ${won(st.expect)} → ${won(st.actual)} (${st.diff>0?'−':'+'}${won(Math.abs(st.diff))})</span>` : '';
       fixLines.push(fixRow('✓ ' + n, v, tag));
     });
     F.pend.forEach(x=>{
@@ -10114,7 +10114,27 @@ function renderCardStatus(){
     CARD_PAID = cardPaidMap(ym);
 
     // 집계 대상 카드 목록: 예산 설정된 카드 + 실제 사용한 카드 합집합
-    const allCards = Array.from(new Set([...Object.keys(cardBudget), ...Object.keys(useThis)]));
+    // 설정 › 계좌에서 '숨김'으로 둔 카드(해지 카드)는 그 달에 실제 사용 내역이 있을 때만 보여준다.
+    //   → 해지 전 달(사용 내역 있음)은 그대로, 해지 후 달은 목록에서 사라진다.
+    const hiddenCards = new Set((CFG.accounts||[]).filter(a=>a.hidden && a.key).map(a=>a.key));
+    const cardSet = new Set([...Object.keys(cardBudget), ...Object.keys(useThis)]);
+    // 아직 사용 내역이 없는 '다음 달'을 볼 때는 지난달에 쓴 카드와, 이 달 고정비 예정이 잡힌 카드도 같이 보여준다
+    //   (안 그러면 12월 같은 달에는 예산이 있는 카드만 남고 나머지 카드가 통째로 사라진다)
+    if(ym > currentMonthStr()){
+      const py = +ym.slice(0,4), pm = +ym.slice(5,7);
+      const d0 = new Date(py, pm-2, 1);
+      const prevYm = d0.getFullYear()+'-'+String(d0.getMonth()+1).padStart(2,'0');
+      (STATE.transactions||[]).forEach(t=>{
+        if(t.type!=='지출' || String(t.date).slice(0,7)!==prevYm || !t.account) return;
+        if(typeof isRemovedTx==='function' && isRemovedTx(t)) return;
+        if(isCardAccount(t.account)) cardSet.add(t.account);
+      });
+      (CFG.accounts||[]).filter(a=>a.group==='debt' && a.key && !a.hidden).forEach(a=>{
+        try{ if(cardPerfPendingFixed(ym,[a.key],{}).length) cardSet.add(a.key); }catch(e){}
+      });
+    }
+    const allCards = Array.from(cardSet)
+      .filter(c => !(hiddenCards.has(c) && !(useThis[c] > 0)));
 
     if(!allCards.length){
       cardUnifiedEl.innerHTML = `<div style="color:var(--txt3);font-size:13px;padding:8px 0">${parseInt(ym.split('-')[1])}월 카드 사용 내역 없음</div>`;
@@ -10149,7 +10169,11 @@ function renderCardStatus(){
       cardUnifiedEl.innerHTML = `<div id="budcard-inner"></div>${warnBox}`;
       const budcardBtn = document.getElementById('budcard-toggleall');
       if(budcardBtn) budcardBtn.textContent = CARD_GRP_OPEN['budcard'] ? '모두 접기' : '모두 펼치기';
-      renderCardList(document.getElementById('budcard-inner'), useThis, cardBudget, 'budcard', catByCard);
+      // 목록은 useObj·budObj의 키로 만들어지므로, 위에서 정한 allCards 기준으로 두 객체를 맞춰서 넘긴다
+      //   (사용 0원인 카드도 목록에 뜨게 하고, 숨김 카드는 예산 키에서도 뺀다)
+      const listUse = {}, listBud = {};
+      allCards.forEach(c=>{ listUse[c] = useThis[c] || 0; if(cardBudget[c]) listBud[c] = cardBudget[c]; });
+      renderCardList(document.getElementById('budcard-inner'), listUse, listBud, 'budcard', catByCard);
     }
   }
 }
