@@ -6973,6 +6973,9 @@ function cfgRenameSub(kind, i, j, val){
   const c = CFG.categories[kind][i];
   const old = c.subs[j];
   c.subs[j] = String(val||'').trim();
+  // 소분류 이름이 같으면 결제카드·적용기간·예산이 한 덩어리로 묶여 같이 바뀐다
+  if(c.subs[j] && c.subs.filter(x=>x===c.subs[j]).length>1 && typeof showToast==='function')
+    showToast('같은 이름의 소분류가 이미 있어요. 이름이 같으면 카드·기간이 같이 바뀌니 하나를 지우거나 이름을 구분해 주세요');
   if(c.subBudget && old && c.subBudget[old]!=null && old!==c.subs[j]){
     c.subBudget[c.subs[j]] = c.subBudget[old]; delete c.subBudget[old];
   }
@@ -7098,15 +7101,15 @@ function cfgSubPeriodsInit(kind, i, sub){
   const m = c.subMeta[sub] = c.subMeta[sub] || {};
   const existingAmt = Number((c.subBudget||{})[sub]) || 0;
   m.periods = [
-    { from: m.from||'', to: m.to||'', amount: existingAmt },
-    { from: '', to: '', amount: 0 }
+    { from: m.from||'', to: m.to||'', amount: existingAmt, acct:'', day:0 },
+    { from: '', to: '', amount: null, acct:'', day:0 }   // amount null = 기본 금액 그대로, acct '' = 기본 카드 그대로
   ];
   cfgSaveLocal(); cfgApply(); renderCfgCategories();
 }
 function cfgSubPeriodAdd(kind, i, sub){
   const c = (CFG.categories[kind]||[])[i]; if(!c) return;
   const m = (c.subMeta||{})[sub]; if(!m || !Array.isArray(m.periods)) return;
-  m.periods.push({from:'', to:'', amount:0});
+  m.periods.push({from:'', to:'', amount:null, acct:'', day:0});
   cfgSaveLocal(); cfgApply(); renderCfgCategories();
 }
 function cfgSubPeriodDel(kind, i, sub, pidx){
@@ -7117,7 +7120,9 @@ function cfgSubPeriodDel(kind, i, sub, pidx){
     // 구간이 1개 이하로 줄면 단일모드로 되돌린다 (남은 1개 값을 from/to+subBudget에 다시 반영)
     if(m.periods.length===1){
       m.from = m.periods[0].from||''; m.to = m.periods[0].to||'';
-      c.subBudget = c.subBudget || {}; c.subBudget[sub] = m.periods[0].amount||0;
+      if(m.periods[0].amount!=null){ c.subBudget = c.subBudget || {}; c.subBudget[sub] = m.periods[0].amount||0; }
+      if(m.periods[0].acct) m.acct = m.periods[0].acct;
+      if(m.periods[0].day) m.day = m.periods[0].day;
     }
     delete m.periods;
   }
@@ -7127,7 +7132,9 @@ function cfgSubPeriodSet(kind, i, sub, pidx, field, val){
   const c = (CFG.categories[kind]||[])[i]; if(!c) return;
   const m = (c.subMeta||{})[sub]; if(!m || !Array.isArray(m.periods)) return;
   const p = m.periods[pidx]; if(!p) return;
-  if(field==='amount') p.amount = Number(String(val).replace(/[^0-9-]/g,''))||0;
+  if(field==='amount'){ const t = String(val||'').replace(/[^0-9-]/g,''); p.amount = t==='' ? null : (Number(t)||0); }   // 비우면 기본 금액
+  else if(field==='day') p.day = Math.min(31, Math.max(0, Number(String(val).replace(/[^0-9]/g,''))||0));
+  else if(field==='acct') p.acct = String(val||'');
   else p[field] = String(val||'').trim().slice(0,7);
   cfgSaveLocal(); cfgApply(); renderCfgCategories();
 }
@@ -7141,7 +7148,7 @@ function cfgSubPeriodRow(kind, i, c, sn){
   if(periods){
     // ── 다구간 모드: 구간마다 시작~끝 + 금액을 따로 적는다 ──
     if(!editing) {
-      const label = periods.map(p=>`${p.from||'처음'}~${p.to||'계속'} ${won(p.amount||0)}`).join(' · ');
+      const label = periods.map(p=>`${p.from||'처음'}~${p.to||'계속'} ${p.amount==null?'(기본금액)':won(p.amount||0)}${p.acct?' · '+esc(p.acct):''}${p.day?' · '+p.day+'일':''}`).join(' · ');
       return `<div style="${CT.rowSub}padding:0 0 6px"><span></span><span></span>
         <div style="grid-column:3 / -1;margin-left:12px;font-size:10.5px;color:var(--warning);font-weight:600">📅 ${label}</div></div>`;
     }
@@ -7153,8 +7160,12 @@ function cfgSubPeriodRow(kind, i, c, sn){
         <span>~</span>
         <input type="month" value="${esc(p.to)}" title="종료월 (이 달까지 반영)"
           onchange="cfgSubPeriodSet('${kind}',${i},'${jq(sn)}',${pidx},'to',this.value)" style="${inp}">
-        <input value="${Number(p.amount)||''}" placeholder="금액" inputmode="numeric" title="이 구간의 예산 금액"
+        <input value="${p.amount==null?'':(Number(p.amount)||0)}" placeholder="기본금액" inputmode="numeric" title="이 구간의 예산 금액 (비우면 위의 기본 금액 그대로)"
           onchange="cfgSubPeriodSet('${kind}',${i},'${jq(sn)}',${pidx},'amount',this.value)" style="${numInp}">
+        <select title="이 구간의 결제카드 (기본 카드면 위에서 고른 카드 그대로)"
+          onchange="cfgSubPeriodSet('${kind}',${i},'${jq(sn)}',${pidx},'acct',this.value)" style="${inp}width:112px">${cfgAcctOptions(p.acct||'').replace('(미지정)','기본 카드')}</select>
+        <input value="${p.day||''}" placeholder="결제일" inputmode="numeric" title="이 구간의 결제일 (비우면 기본 결제일)"
+          onchange="cfgSubPeriodSet('${kind}',${i},'${jq(sn)}',${pidx},'day',this.value)" style="${numInp}width:56px">
         <button onclick="cfgSubPeriodDel('${kind}',${i},'${jq(sn)}',${pidx})" title="이 구간 삭제"
           style="border:none;background:none;color:var(--txt3);cursor:pointer;font-size:12px">✕</button>
       </div>`).join('');
@@ -7338,7 +7349,7 @@ function cfgMajorBudget(c, ym){
       const periods = m.periods;
       if(Array.isArray(periods) && periods.length){
         const hit = periods.find(p => (!p.from || targetYm >= p.from) && (!p.to || targetYm <= p.to));
-        total += hit ? (Number(hit.amount)||0) : 0;
+        total += hit ? (hit.amount==null ? (Number(sb[sn])||0) : (Number(hit.amount)||0)) : 0;
       } else {
         const inRange = (!m.from || targetYm >= m.from) && (!m.to || targetYm <= m.to);
         total += inRange ? (Number(sb[sn])||0) : 0;
@@ -8634,7 +8645,7 @@ function cfgApply(){
           (c.subs||[]).forEach(sn=>{
             const m = meta[sn]||{};
             if(Array.isArray(m.periods) && m.periods.length){
-              per[stripSp(sn)] = m.periods.map(p=>({ from:p.from||'', to:p.to||'', amount:Number(p.amount)||0 }));
+              per[stripSp(sn)] = m.periods.map(p=>({ from:p.from||'', to:p.to||'', amount:(p.amount==null ? (Number((c.subBudget||{})[sn])||0) : (Number(p.amount)||0)) }));
             }
           });
         });
@@ -8676,6 +8687,15 @@ function cfgApply(){
             subs.forEach(sn=>{
               const m = meta[sn]||{};
               // 적용기간이 끝난 항목(예: 보람상조 ~2026-06)은 이번 달 현금흐름 일정에서 뺀다
+              // 다구간이면 이번 달에 해당하는 구간의 금액·카드·결제일을 쓴다 (없으면 기본값)
+              if(Array.isArray(m.periods) && m.periods.length){
+                const cm0 = currentMonthStr();
+                const hit = m.periods.find(p => (!p.from || cm0 >= p.from) && (!p.to || cm0 <= p.to));
+                if(!hit) return;
+                push(sn, hit.amount==null ? (Number(sb[sn])||0) : (Number(hit.amount)||0),
+                     hit.acct || m.acct || c.acct || '', Number(hit.day || m.day || c.day)||0, kind);
+                return;
+              }
               const per = (m.from||m.to) ? { from:m.from||'', to:m.to||'' } : null;
               if(per){
                 const cm = currentMonthStr();
@@ -8690,7 +8710,14 @@ function cfgApply(){
         });
       });
 
-      if(Object.keys(cardBud).length) STATE.cardBudget = Object.assign({}, STATE.cardBudget, cardBud);
+      // [수정] 예전엔 새 값을 기존 STATE.cardBudget에 '덮어 합치기'만 해서, 설정에서 카드를 바꿔도
+      //   예전 카드의 예산이 그대로 남았고(시트에 저장→재로드 때도 되살아남) 그 카드로 계속 잡혔다.
+      //   카드 예산은 설정(결제수단)에서 자동 계산되므로, 이번 계산에 없는 카드 계좌는 지운다.
+      if(Object.keys(cardBud).length){
+        const nextCB = Object.assign({}, STATE.cardBudget);
+        Object.keys(nextCB).forEach(k=>{ if(acctGroup[k]==='debt' && !(k in cardBud)) delete nextCB[k]; });
+        STATE.cardBudget = Object.assign(nextCB, cardBud);
+      }
 
       // 현금흐름 일정: 설정에서 만든 항목(auto)만 갈아끼우고, 직접 추가한 항목은 남긴다
       // [버그] CASH_PLAN은 현금흐름 화면을 처음 열 때 비로소 로드된다(그전엔 null).
