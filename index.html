@@ -2007,6 +2007,33 @@ function cardPendOverrideEdit(name){
 // [v42] 아직 안 빠진 고정비 — 지난달에 이 카드로 나갔는데 이번 달엔 아직 없는 항목.
 //   "고정비가 앞으로 얼마 더 나갈 예정이고, 그래서 변동비로 얼마 쓰면 되는지"에 답하려면
 //   이미 나간 것만 세면 안 된다. 전기세처럼 매달 금액이 달라지는 것도 지난달 값으로 어림잡는다.
+// [신규] 설정(카테고리 › 소분류 › 결제카드·적용기간 구간)이 해당 월에 정한 '고정비 소분류별 결제카드·금액'.
+//   카드결제 현황의 '예정' 목록이 지난달 결제 내역만 보고 만들어져서, 설정에서 카드를 바꿔도
+//   예전 카드에 계속 예정으로 남고 새 카드에는 안 뜨던 문제를 막기 위해 설정을 함께 본다.
+function cfgFixedPayMap(ym){
+  const out = {};
+  try{
+    ((typeof CFG!=='undefined' && CFG && CFG.categories && CFG.categories['지출']) || []).forEach(c=>{
+      if((c.flags||'').indexOf('fixed')<0) return;
+      const meta = c.subMeta||{}, sb = c.subBudget||{};
+      (c.subs||[]).forEach(sn=>{
+        if(!sn) return;
+        const m = meta[sn]||{};
+        let acct = '', amount = Number(sb[sn])||0, active = true;
+        if(Array.isArray(m.periods) && m.periods.length){
+          const hit = m.periods.find(p=>(!p.from||ym>=p.from)&&(!p.to||ym<=p.to));
+          if(!hit) active = false;
+          else { acct = hit.acct||m.acct||c.acct||''; if(hit.amount!=null) amount = Number(hit.amount)||0; }
+        } else {
+          if((m.from&&ym<m.from)||(m.to&&ym>m.to)) active = false;
+          acct = m.acct||c.acct||'';
+        }
+        out[stripSp(sn)] = { name:sn, acct, amount, active };
+      });
+    });
+  }catch(e){}
+  return out;
+}
 function cardPerfPendingFixed(ym, cards, fixItems){
   const prev = (()=>{ const y=+String(ym).slice(0,4), m=+String(ym).slice(5,7);
     const d=new Date(y, m-2, 1); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); })();
@@ -2030,7 +2057,11 @@ function cardPerfPendingFixed(ym, cards, fixItems){
   }catch(e){}
 
   const pending = [], settled = [];
+  const eff = cfgFixedPayMap(String(ym).slice(0,7));
   Object.keys(last).forEach(name=>{
+    // 설정에서 이 달엔 다른 카드로 옮겼거나 적용기간이 끝난 항목은 이 카드의 '예정'에서 뺀다
+    const e0 = eff[stripSp(name)];
+    if(e0 && fixItems[name] === undefined && (!e0.active || (e0.acct && cards.indexOf(e0.acct)<0))) return;
     // [v52] 우선순위: ① 직접 수정한 보정값 → ② 지난달 이 카드로 실제 나간 금액(실제 청구 내역)
     //   → ③ 현금흐름 › 고정지출에 적어둔 설정값. 설정값은 실사용 이력조차 없을 때만 쓰인다.
     const overrideAmt = cardPendOverrideGet(name);
@@ -2048,6 +2079,17 @@ function cardPerfPendingFixed(ym, cards, fixItems){
     // [v47] 예정 금액은 양수로 담는다. 음수로 담았더니 예상 고정비 합계와
     //   '더 써야 할 비고정비'가 반대 방향으로 계산됐다.
     pending.push({ name, amount: expect, src: overrideAmt != null ? 'override' : (actualAmt > 0 ? 'last' : 'plan') });
+  });
+  // 설정상 이 달엔 이 카드로 결제되는데 지난달엔 다른 카드였던 항목(카드 변경분)을 예정으로 추가한다
+  Object.keys(eff).forEach(k=>{
+    const e = eff[k];
+    if(!e.active || !e.acct || cards.indexOf(e.acct)<0) return;
+    if(Object.keys(last).some(n=>stripSp(n)===k)) return;                       // 위에서 이미 처리됨
+    if(Object.keys(fixItems||{}).some(n=>stripSp(n)===k)) return;               // 이미 이 카드로 나감
+    const ov = cardPendOverrideGet(e.name);
+    const amt = ov != null ? ov : e.amount;
+    if(!(amt > 0)) return;
+    pending.push({ name:e.name, amount:amt, src: ov != null ? 'override' : 'plan' });
   });
   pending.sort((a,b)=>Math.abs(b.amount)-Math.abs(a.amount));
   settled.sort((a,b)=>Math.abs(b.diff)-Math.abs(a.diff));
