@@ -1896,7 +1896,10 @@ function cardPayEntry(issuer, cardKey, amount){
     }
     const ce = document.getElementById('tx-category');
     if(ce){
-      const opt = [...ce.options].find(o=>o.value===issuer || o.value.indexOf(issuer)>=0);
+      // 카드납부 소분류는 카드사 이름이 아니라 개별 카드 키(국카1, 롯카- 등)로 구성돼 있어서
+      // issuer로 찾으면 매칭이 안 된다. cardKey로 정확히 찾고, 없으면 issuer 포함 매칭으로 보완.
+      const opt = [...ce.options].find(o=>o.value===cardKey)
+               || [...ce.options].find(o=>o.value===issuer || o.value.indexOf(issuer)>=0);
       if(opt) ce.value = opt.value;
     }
     const ia = document.getElementById('tx-in-acct'); if(ia) ia.value = cardKey;
@@ -4200,6 +4203,13 @@ function submitTransaction() {
   // STATE에도 inAcct/outAcct 저장
   data.inAcct  = inAcct;
   data.outAcct = outAcct;
+  // 카드납부(이동)는 소분류 드롭다운이 "카드납부" 한 가지뿐이라 카드를 구분 못 한다.
+  // 입금계좌(어느 카드로 들어가는 납부인지)는 항상 정확히 채워지므로, 그 값을 소분류로도 그대로 써서
+  // 기존 카드별 분석(피벗)이 계속 맞아떨어지게 한다.
+  if(data.type==='이동' && String(data.major||'').indexOf('카드납부')>=0 && inAcct){
+    data.category = inAcct;
+    data.sub = inAcct;
+  }
   // 대분류를 시트 형식(이모지 라벨)으로 변환 — 앱 표시·시트 기록 일관성
   data.major = majorLabel(data.type, data.major);
   const url = getUrl();
@@ -6200,6 +6210,8 @@ function saveEdit() {
     t.outAcct = outA;
     t.inAcct  = inA;
     t.account = outA || inA; // 대표 계좌값 보존
+    // 카드납부면 소분류를 입금계좌(카드)로 맞춰서, 드롭다운에서 뭘 골랐든 분석이 어긋나지 않게 한다
+    if(String(t.major||'').indexOf('카드납부')>=0 && inA) t.category = inA;
   } else {
     t.account = document.getElementById('edit-account').value;
     t.inAcct  = (t.type==='수입') ? t.account : '';
